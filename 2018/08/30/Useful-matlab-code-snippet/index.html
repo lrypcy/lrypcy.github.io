@@ -86,7 +86,7 @@
 <meta property="og:site_name" content="娇女佳人 一身骄傲">
 <meta property="og:description" content="First oneMatlab里面应该多用向量运算，把循环语句转变为向量运算会省很多时间，程序也更简洁易读。 比方说，一个名叫array数组里面，你要将里面大于1的都变成0，就不必用到循环： array(array&amp;gt;1)=0; 把大于1小于3的变成0。 array(and(array&amp;gt;1,array&amp;lt;3))=0; 当然，还可以使用find，这个也很好用。 run matlab f">
 <meta property="og:locale" content="default">
-<meta property="og:updated_time" content="2018-08-30T15:46:30.824Z">
+<meta property="og:updated_time" content="2018-10-08T11:49:06.089Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Useful matlab code snippet">
 <meta name="twitter:description" content="First oneMatlab里面应该多用向量运算，把循环语句转变为向量运算会省很多时间，程序也更简洁易读。 比方说，一个名叫array数组里面，你要将里面大于1的都变成0，就不必用到循环： array(array&amp;gt;1)=0; 把大于1小于3的变成0。 array(and(array&amp;gt;1,array&amp;lt;3))=0; 当然，还可以使用find，这个也很好用。 run matlab f">
@@ -306,7 +306,14 @@
 <p>array(and(array&gt;1,array&lt;3))=0;</p>
 <p>当然，还可以使用find，这个也很好用。</p>
 <h1 id="run-matlab-from-terminal"><a href="#run-matlab-from-terminal" class="headerlink" title="run matlab from terminal"></a>run matlab from terminal</h1><p>nohup matlab -r -nodisplay -nojvm scrip.m &amp;;<br>…</p>
-
+<h1 id="用matlab还只会简单操作矩阵？？？那你也太low咯，让我来教教你"><a href="#用matlab还只会简单操作矩阵？？？那你也太low咯，让我来教教你" class="headerlink" title="用matlab还只会简单操作矩阵？？？那你也太low咯，让我来教教你"></a>用matlab还只会简单操作矩阵？？？那你也太low咯，让我来教教你</h1><p>日期时间类型如果掌握了还是很有用的，比如，至少有些基础的图，你需要日期作为一个坐标轴吧，<a href="https://www.mathworks.com/help/matlab/ref/datestr.html" target="_blank" rel="noopener">datestr</a>,<br><a href="https://www.mathworks.com/help/matlab/ref/datetime.html" target="_blank" rel="noopener">datetime</a></p>
+<h1 id="知道lambda表达式吗，是不是很强大，matlab中也有类似的东西哦，貌似叫啥匿名函数"><a href="#知道lambda表达式吗，是不是很强大，matlab中也有类似的东西哦，貌似叫啥匿名函数" class="headerlink" title="知道lambda表达式吗，是不是很强大，matlab中也有类似的东西哦，貌似叫啥匿名函数"></a>知道lambda表达式吗，是不是很强大，matlab中也有类似的东西哦，貌似叫啥<a href="https://ww2.mathworks.cn/help/matlab/matlab_prog/anonymous-functions.html" target="_blank" rel="noopener">匿名函数</a></h1><p>MATLAB通过定义匿名函数来增强符号运算的功能，哦，原来与数值运算相对的符号运算其实是函数式编程。定义匿名函数的格式为：</p>
+<pre><code>@(&lt;parameters&gt;) &lt;body&gt;
+例如：
+sum_xy = @(x, y) x + y
+</code></pre><p> 但是匿名函数作用可不仅仅局限于此哟，<br> 他可以嵌套的，多重匿名函数，可以实现参数的传递等功能</p>
+<p> 但是还没找到可以再一个匿名函数顺序执行语句的其他方法，有点小忧桑，mark一下</p>
+<h1 id="今天看了matlab的数据类型感觉挺有用的-table-cell-和最基本的matrix，哦对咯，别忘了struct呀"><a href="#今天看了matlab的数据类型感觉挺有用的-table-cell-和最基本的matrix，哦对咯，别忘了struct呀" class="headerlink" title="今天看了matlab的数据类型感觉挺有用的:table,cell,和最基本的matrix，哦对咯，别忘了struct呀"></a>今天看了matlab的数据类型感觉挺有用的:table,cell,和最基本的matrix，哦对咯，别忘了struct呀</h1>
       
     </div>
     
@@ -329,10 +336,6 @@
       
         <div class="post-nav">
           <div class="post-nav-next post-nav-item">
-            
-              <a href="/2018/08/29/hello-world/" rel="next" title="Hello World">
-                <i class="fa fa-chevron-left"></i> Hello World
-              </a>
             
           </div>
 
@@ -428,7 +431,7 @@
               
                 <a href="/archives/">
               
-                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-count">7</span>
                   <span class="site-state-item-name">posts</span>
                 </a>
               </div>
@@ -500,7 +503,7 @@
             
 
             
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#First-one"><span class="nav-number">1.</span> <span class="nav-text">First one</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#run-matlab-from-terminal"><span class="nav-number">2.</span> <span class="nav-text">run matlab from terminal</span></a></li></ol></div>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#First-one"><span class="nav-number">1.</span> <span class="nav-text">First one</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#run-matlab-from-terminal"><span class="nav-number">2.</span> <span class="nav-text">run matlab from terminal</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#用matlab还只会简单操作矩阵？？？那你也太low咯，让我来教教你"><span class="nav-number">3.</span> <span class="nav-text">用matlab还只会简单操作矩阵？？？那你也太low咯，让我来教教你</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#知道lambda表达式吗，是不是很强大，matlab中也有类似的东西哦，貌似叫啥匿名函数"><span class="nav-number">4.</span> <span class="nav-text">知道lambda表达式吗，是不是很强大，matlab中也有类似的东西哦，貌似叫啥匿名函数</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#今天看了matlab的数据类型感觉挺有用的-table-cell-和最基本的matrix，哦对咯，别忘了struct呀"><span class="nav-number">5.</span> <span class="nav-text">今天看了matlab的数据类型感觉挺有用的:table,cell,和最基本的matrix，哦对咯，别忘了struct呀</span></a></li></ol></div>
             
 
           </div>
@@ -714,10 +717,36 @@
   
 
   
+  
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Config({
+        tex2jax: {
+          inlineMath: [ ['$','$'], ["\\(","\\)"]  ],
+          processEscapes: true,
+          skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+        }
+      });
+    </script>
+
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Queue(function() {
+        var all = MathJax.Hub.getAllJax(), i;
+        for (i=0; i < all.length; i += 1) {
+          all[i].SourceElement().parentNode.className += ' has-jax';
+        }
+      });
+    </script>
+    <script type="text/javascript" src="//cdn.bootcss.com/mathjax/2.7.1/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+  
+
 
   
 
   
+
+  <!-- 页面点击小红心 -->
+<script type="text/javascript" src="/js/src/clicklove.js"></script>
 
 </body>
 </html>
+

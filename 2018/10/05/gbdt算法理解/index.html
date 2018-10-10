@@ -86,7 +86,7 @@
 <meta property="og:site_name" content="娇女佳人 一身骄傲">
 <meta property="og:description" content="本文思路：        在介绍gbdt之前先把CART给总结完        关于gbdt需要用到线搜索，所以在这里mark以下：    线搜索        gbdt写完了再写xgboost，之后是lightgbm GBDT知识储备 这篇文章不知道从哪里写起，感觉掌握这种算法，需要涉及的东西太多，先在这里给出大致需要预先掌握或者了解的一些知识，方便后面讲解原理的时候参考： 1. CART回归树">
 <meta property="og:locale" content="default">
-<meta property="og:updated_time" content="2018-10-05T23:50:43.541Z">
+<meta property="og:updated_time" content="2018-10-06T02:17:01.885Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="gbdt算法理解">
 <meta name="twitter:description" content="本文思路：        在介绍gbdt之前先把CART给总结完        关于gbdt需要用到线搜索，所以在这里mark以下：    线搜索        gbdt写完了再写xgboost，之后是lightgbm GBDT知识储备 这篇文章不知道从哪里写起，感觉掌握这种算法，需要涉及的东西太多，先在这里给出大致需要预先掌握或者了解的一些知识，方便后面讲解原理的时候参考： 1. CART回归树">
@@ -304,8 +304,9 @@
 <pre><code>1. CART回归树
 2. 梯度下降原理
 3. 线搜索
-</code></pre><h1 id="GBDT原理"><a href="#GBDT原理" class="headerlink" title="GBDT原理"></a>GBDT原理</h1><h2 id="1-Main-object"><a href="#1-Main-object" class="headerlink" title="1. Main object"></a>1. Main object</h2><p>  机器学习的预测问题当中，我们经常要考虑最小化损失函数的问题，当我们用函数$F(x)$去预测时，整体的损失函数可以表示为$E_{y,x}L(y,F(x))$,而我们的目标就是找到使得损失函数最小的函数$F^<em>$，即<br>  $$F^</em>=arg minE_{y,x}L(y,F(x))$$,<br>  通常情况下，F可以写作$F(<strong>x</strong>;<strong>P</strong>)$的形式，<strong>P</strong>={P_1,P_2,…}是需要确定的参数。在加性模型中$$F(<strong>x</strong>,{\bet_m,<strong>a_m</strong>}<em>0^M)=\sum</em>{m=0}^M\beta_mh(<strong>x</strong>;<strong>a_m</strong>)$$</p>
-<h1 id="参考文献"><a href="#参考文献" class="headerlink" title="参考文献"></a>参考文献</h1><p>  <a href="https://statweb.stanford.edu/~jhf/ftp/trebst.pdf" target="_blank" rel="noopener">greedy function approximation: a gradient boosting machine</a></p>
+</code></pre><h1 id="GBDT原理"><a href="#GBDT原理" class="headerlink" title="GBDT原理"></a>GBDT原理</h1><h2 id="1-Main-object"><a href="#1-Main-object" class="headerlink" title="1. Main object"></a>1. Main object</h2><p>  机器学习的预测问题当中，我们经常要考虑最小化损失函数的问题，当我们用函数$F(x)$去预测时，整体的损失函数可以表示为$E_{y,x}L(y,F(x))$,而我们的目标就是找到使得损失函数最小的函数$F^*$，即<br>  $$F^*=arg minE_{y,x}L(y,F(x))$$,<br>  通常情况下，F可以写作$F(<strong>x</strong>;<strong>P</strong>)$的形式，<strong>P</strong>={P_1,P_2,…}是需要确定的参数。在加性模型中$$F(<strong>x</strong>,{\bet_m,<strong>a_m</strong>}<em>0^M)=\sum</em>{m=0}^M\beta_mh(<strong>x</strong>;<strong>a_m</strong>)$$</p>
+<h3 id="1-1-数值优化"><a href="#1-1-数值优化" class="headerlink" title="1.1 数值优化"></a>1.1 数值优化</h3><p>  选择一个最优的$F(<strong>x</strong>;<strong>P</strong>)$，可以把原来的函数优化问题转化为一个参数优化的问题$$<strong>P</strong>^*=arg min_<strong>P</strong>\Phi(P)$$<br>  这里，<br>  $$E_{y,<strong>x</strong>}L(y,F(<strong>x</strong>;<strong>P</strong>))$$<br>  然后再得到<br>  $$F^*=F(<strong>x</strong>,<strong>P^*</strong>)$$<br>  对大多数的$F(<strong>x</strong>,<strong>P</strong>)$和L,必须用数值优化的方法来求解上面那个方程，所以通常把参数P的解写为：$$P^*=\sum_{m=0}^Mp_m$$</p>
+<h3 id="1-2"><a href="#1-2" class="headerlink" title="1.2"></a>1.2</h3><h1 id="参考文献"><a href="#参考文献" class="headerlink" title="参考文献"></a>参考文献</h1><p>  <a href="https://statweb.stanford.edu/~jhf/ftp/trebst.pdf" target="_blank" rel="noopener">greedy function approximation: a gradient boosting machine</a></p>
 
       
     </div>
@@ -424,7 +425,7 @@
               
                 <a href="/archives/">
               
-                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-count">7</span>
                   <span class="site-state-item-name">posts</span>
                 </a>
               </div>
@@ -496,7 +497,7 @@
             
 
             
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#GBDT知识储备"><span class="nav-number">1.</span> <span class="nav-text">GBDT知识储备</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#GBDT原理"><span class="nav-number">2.</span> <span class="nav-text">GBDT原理</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Main-object"><span class="nav-number">2.1.</span> <span class="nav-text">1. Main object</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#参考文献"><span class="nav-number">3.</span> <span class="nav-text">参考文献</span></a></li></ol></div>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#GBDT知识储备"><span class="nav-number">1.</span> <span class="nav-text">GBDT知识储备</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#GBDT原理"><span class="nav-number">2.</span> <span class="nav-text">GBDT原理</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Main-object"><span class="nav-number">2.1.</span> <span class="nav-text">1. Main object</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-数值优化"><span class="nav-number">2.1.1.</span> <span class="nav-text">1.1 数值优化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2"><span class="nav-number">2.1.2.</span> <span class="nav-text">1.2</span></a></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#参考文献"><span class="nav-number">3.</span> <span class="nav-text">参考文献</span></a></li></ol></div>
             
 
           </div>
@@ -710,10 +711,36 @@
   
 
   
+  
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Config({
+        tex2jax: {
+          inlineMath: [ ['$','$'], ["\\(","\\)"]  ],
+          processEscapes: true,
+          skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+        }
+      });
+    </script>
+
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Queue(function() {
+        var all = MathJax.Hub.getAllJax(), i;
+        for (i=0; i < all.length; i += 1) {
+          all[i].SourceElement().parentNode.className += ' has-jax';
+        }
+      });
+    </script>
+    <script type="text/javascript" src="//cdn.bootcss.com/mathjax/2.7.1/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+  
+
 
   
 
   
+
+  <!-- 页面点击小红心 -->
+<script type="text/javascript" src="/js/src/clicklove.js"></script>
 
 </body>
 </html>
+
