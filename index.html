@@ -232,136 +232,6 @@
   
   
   <div class="post-block">
-    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2018/10/05/gbdt算法理解/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="name" content="裴从渊/Tom Walker">
-      <meta itemprop="description" content="">
-      <meta itemprop="image" content="/images/touxiang.jpg">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="娇女佳人 一身骄傲">
-    </span>
-
-    
-      <header class="post-header">
-
-        
-        
-          <h1 class="post-title" itemprop="name headline">
-                
-                <a class="post-title-link" href="/2018/10/05/gbdt算法理解/" itemprop="url">gbdt算法理解</a></h1>
-        
-
-        <div class="post-meta">
-          <span class="post-time">
-            
-              <span class="post-meta-item-icon">
-                <i class="fa fa-calendar-o"></i>
-              </span>
-              
-                <span class="post-meta-item-text">Posted on</span>
-              
-              <time title="Post created" itemprop="dateCreated datePublished" datetime="2018-10-05T10:15:00+08:00">
-                2018-10-05
-              </time>
-            
-
-            
-
-            
-          </span>
-
-          
-
-          
-            
-          
-
-          
-          
-
-          
-
-          
-
-          
-
-        </div>
-      </header>
-    
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-      
-
-      
-        
-          
-            <p>本文思路：<br>        在介绍gbdt之前先把CART给总结完<br>        关于gbdt需要用到线搜索，所以在这里mark以下：<br>    <a href="http://www.cnblogs.com/kemaswill/p/3416231.html" target="_blank" rel="noopener">线搜索</a><br>        gbdt写完了再写xgboost，之后是lightgbm</p>
-<h1 id="GBDT知识储备"><a href="#GBDT知识储备" class="headerlink" title="GBDT知识储备"></a>GBDT知识储备</h1><p> 这篇文章不知道从哪里写起，感觉掌握这种算法，需要涉及的东西太多，先在这里给出大致需要预先掌握或者了解的一些知识，方便后面讲解原理的时候参考：</p>
-<pre><code> 1. CART回归树
- 2. 梯度下降原理
- 3. 线搜索
-</code></pre><h1 id="GBDT原理"><a href="#GBDT原理" class="headerlink" title="GBDT原理"></a>GBDT原理</h1><h2 id="1-Main-object"><a href="#1-Main-object" class="headerlink" title="1. Main object"></a>1. Main object</h2><p>  机器学习的预测问题当中，我们经常要考虑最小化损失函数的问题，当我们用函数$F(x)$去预测时，整体的损失函数可以表示为$E_{y,x}L(y,F(x))$,而我们的目标就是找到使得损失函数最小的函数$F^*$，即</p>
-<script type="math/tex; mode=display">F^\*=arg minE_{y,x}L(y,F(x))$$,
-  通常情况下，F可以写作$F(**x**;**P**)$的形式，**P**={P_1,P_2,...}是需要确定的参数。在加性模型中$$F(**x**,{\bet_m,**a_m**}_0^M)=\sum_{m=0}^M\beta_mh(**x**;**a_m**)</script><h3 id="1-1-数值优化"><a href="#1-1-数值优化" class="headerlink" title="1.1 数值优化"></a>1.1 数值优化</h3><p>  选择一个最优的$F(<strong>x</strong>;<strong>P</strong>)$，可以把原来的函数优化问题转化为一个参数优化的问题<script type="math/tex">**P**^\*=arg min_**P**\Phi(P)</script><br>  这里，</p>
-<script type="math/tex; mode=display">E_{y,**x**}L(y,F(**x**;**P**))</script><p>  然后再得到</p>
-<script type="math/tex; mode=display">F^\*=F(**x**,**P^\***)</script><p>  对大多数的$F(<strong>x</strong>,<strong>P</strong>)$和L,必须用数值优化的方法来求解上面那个方程，所以通常把参数P的解写为：<script type="math/tex">P^\*=\sum_{m=0}^Mp_m</script></p>
-<h3 id="1-2"><a href="#1-2" class="headerlink" title="1.2"></a>1.2</h3><h1 id="参考文献"><a href="#参考文献" class="headerlink" title="参考文献"></a>参考文献</h1><p>  <a href="https://statweb.stanford.edu/~jhf/ftp/trebst.pdf" target="_blank" rel="noopener">greedy function approximation: a gradient boosting machine</a></p>
-
-          
-        
-      
-    </div>
-    
-    
-    
-
-    
-
-    
-
-    
-
-    <footer class="post-footer">
-      
-
-      
-
-      
-
-      
-      
-        <div class="post-eof"></div>
-      
-    </footer>
-  </div>
-  
-  
-  
-  </article>
-
-
-    
-      
-
-  
-
-  
-  
-  
-
-  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
-  
-  
-  
-  <div class="post-block">
     <link itemprop="mainEntityOfPage" href="http://yoursite.com/2018/09/23/关于L1和L2正则的总结/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -404,6 +274,28 @@
           </span>
 
           
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Machine-Learning/" itemprop="url" rel="index">
+                    <span itemprop="name">Machine Learning</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
 
           
             
@@ -432,14 +324,14 @@
 
       
         
-          
-            <p>学到的东西主要的就看这篇博客吧：<a href="https://blog.csdn.net/jinping_shi/article/details/52433975" target="_blank" rel="noopener">机器学习中正则化项L1和L2的直观理解</a><br>简单总结一下:</p>
-<ol>
-<li>L1正则有利于产生稀疏矩阵，有利于对高位特征的处理</li>
-<li>L2正则对大的outlier不敏感，可以防止过拟合（？再确认确认吧）</li>
-</ol>
-
-          
+          L1 norm and L2 norm thinking
+          <!--noindex-->
+          <div class="post-button text-center">
+            <a class="btn" href="/2018/09/23/关于L1和L2正则的总结/">
+              Read more &raquo;
+            </a>
+          </div>
+          <!--/noindex-->
         
       
     </div>
@@ -528,6 +420,28 @@
           </span>
 
           
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Up-Plan/" itemprop="url" rel="index">
+                    <span itemprop="name">Up Plan</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
 
           
             
@@ -556,19 +470,14 @@
 
       
         
-          
-            <p>在今年12月31日之前要完成的学习目标：</p>
-<ol>
-<li>深度参加与实践一个比赛，最好能拿奖；</li>
-<li>leetcode重点题要完全掌握，medium的题要刷完</li>
-<li>全面掌握svm，xgboost,gbdt，adaboost和lightgbm等算法的原理，其他算法尽量学习掌握，如EM算法，HMM算法等</li>
-<li>要重点理解机器学习里面各种优化的方法</li>
-<li>在神经网络这方面要掌握BP神经网络，CNN,LSTM，DNN</li>
-<li>西瓜书刷一遍，统计学习方法刷两三遍</li>
-<li>多看面试的经验，多总结。</li>
-</ol>
-
-          
+          在今年12月31日之前要完成的学习目标：
+          <!--noindex-->
+          <div class="post-button text-center">
+            <a class="btn" href="/2018/09/21/关于要学习的任务-20180921/">
+              Read more &raquo;
+            </a>
+          </div>
+          <!--/noindex-->
         
       
     </div>
@@ -656,6 +565,28 @@
             
           </span>
 
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/walk-notes/" itemprop="url" rel="index">
+                    <span itemprop="name">walk notes</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
           
 
           
@@ -785,6 +716,28 @@
           </span>
 
           
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Algorithm/" itemprop="url" rel="index">
+                    <span itemprop="name">Algorithm</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
 
           
             
@@ -813,15 +766,14 @@
 
       
         
-          
-            <h1 id="1-C-的学习"><a href="#1-C-的学习" class="headerlink" title="1. C++的学习"></a>1. C++的学习</h1><ul>
-<li>std::max_element,std::min_element,可以用于在vector中查找最大元素和最小元素，</li>
-<li>std::distance可以用来找两个迭代器之“差”</li>
-<li>同时学习了如何用vector的一部分来创建新的vector。</li>
-</ul>
-<h1 id="2-关于Cartesian-Tree也要学习"><a href="#2-关于Cartesian-Tree也要学习" class="headerlink" title="2. 关于Cartesian Tree也要学习"></a>2. 关于Cartesian Tree也要学习</h1><p> <a href="https://www.geeksforgeeks.org/cartesian-tree/" target="_blank" rel="noopener">https://www.geeksforgeeks.org/cartesian-tree/</a></p>
-
-          
+          max_element,min_element,Cartesian Tree
+          <!--noindex-->
+          <div class="post-button text-center">
+            <a class="btn" href="/2018/09/12/Algorithm-notes-20180912/">
+              Read more &raquo;
+            </a>
+          </div>
+          <!--/noindex-->
         
       
     </div>
@@ -909,6 +861,28 @@
             
           </span>
 
+          
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Algorithm/" itemprop="url" rel="index">
+                    <span itemprop="name">Algorithm</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
           
 
           
@@ -1040,6 +1014,28 @@
           </span>
 
           
+            <span class="post-category" >
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">In</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Beautiful-Code-Fragment/" itemprop="url" rel="index">
+                    <span itemprop="name">Beautiful Code Fragment</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
 
           
             
@@ -1068,23 +1064,14 @@
 
       
         
-          
-            <h1 id="First-one"><a href="#First-one" class="headerlink" title="First one"></a>First one</h1><p>Matlab里面应该多用向量运算，把循环语句转变为向量运算会省很多时间，程序也更简洁易读。</p>
-<p>比方说，一个名叫array数组里面，你要将里面大于1的都变成0，就不必用到循环：</p>
-<p>array(array&gt;1)=0;</p>
-<p>把大于1小于3的变成0。</p>
-<p>array(and(array&gt;1,array&lt;3))=0;</p>
-<p>当然，还可以使用find，这个也很好用。</p>
-<h1 id="run-matlab-from-terminal"><a href="#run-matlab-from-terminal" class="headerlink" title="run matlab from terminal"></a>run matlab from terminal</h1><p>nohup matlab -r -nodisplay -nojvm scrip.m &amp;;<br>…</p>
-<h1 id="用matlab还只会简单操作矩阵？？？那你也太low咯，让我来教教你"><a href="#用matlab还只会简单操作矩阵？？？那你也太low咯，让我来教教你" class="headerlink" title="用matlab还只会简单操作矩阵？？？那你也太low咯，让我来教教你"></a>用matlab还只会简单操作矩阵？？？那你也太low咯，让我来教教你</h1><p>日期时间类型如果掌握了还是很有用的，比如，至少有些基础的图，你需要日期作为一个坐标轴吧，<a href="https://www.mathworks.com/help/matlab/ref/datestr.html" target="_blank" rel="noopener">datestr</a>,<br><a href="https://www.mathworks.com/help/matlab/ref/datetime.html" target="_blank" rel="noopener">datetime</a></p>
-<h1 id="知道lambda表达式吗，是不是很强大，matlab中也有类似的东西哦，貌似叫啥匿名函数"><a href="#知道lambda表达式吗，是不是很强大，matlab中也有类似的东西哦，貌似叫啥匿名函数" class="headerlink" title="知道lambda表达式吗，是不是很强大，matlab中也有类似的东西哦，貌似叫啥匿名函数"></a>知道lambda表达式吗，是不是很强大，matlab中也有类似的东西哦，貌似叫啥<a href="https://ww2.mathworks.cn/help/matlab/matlab_prog/anonymous-functions.html" target="_blank" rel="noopener">匿名函数</a></h1><p>MATLAB通过定义匿名函数来增强符号运算的功能，哦，原来与数值运算相对的符号运算其实是函数式编程。定义匿名函数的格式为：</p>
-<pre><code>@(&lt;parameters&gt;) &lt;body&gt;
-例如：
-sum_xy = @(x, y) x + y
-</code></pre><p> 但是匿名函数作用可不仅仅局限于此哟，<br> 他可以嵌套的，多重匿名函数，可以实现参数的传递等功能</p>
-<p> 但是还没找到可以再一个匿名函数顺序执行语句的其他方法，有点小忧桑，mark一下</p>
-<h1 id="今天看了matlab的数据类型感觉挺有用的-table-cell-和最基本的matrix，哦对咯，别忘了struct呀"><a href="#今天看了matlab的数据类型感觉挺有用的-table-cell-和最基本的matrix，哦对咯，别忘了struct呀" class="headerlink" title="今天看了matlab的数据类型感觉挺有用的:table,cell,和最基本的matrix，哦对咯，别忘了struct呀"></a>今天看了matlab的数据类型感觉挺有用的:table,cell,和最基本的matrix，哦对咯，别忘了struct呀</h1>
-          
+          A summay of the common use tips of MATLAB , hope to help!
+          <!--noindex-->
+          <div class="post-button text-center">
+            <a class="btn" href="/2018/08/30/Useful-matlab-code-snippet/">
+              Read more &raquo;
+            </a>
+          </div>
+          <!--/noindex-->
         
       
     </div>
@@ -1168,14 +1155,32 @@ sum_xy = @(x, y) x + y
               
                 <a href="/archives/">
               
-                  <span class="site-state-item-count">7</span>
+                  <span class="site-state-item-count">6</span>
                   <span class="site-state-item-name">posts</span>
                 </a>
               </div>
             
 
             
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">5</span>
+                  <span class="site-state-item-name">categories</span>
+                </a>
+              </div>
+            
 
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">1</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
             
 
           </nav>
@@ -1457,7 +1462,7 @@ sum_xy = @(x, y) x + y
    <script type="text/javascript" src="//cdn.bootcss.com/animejs/2.2.0/anime.min.js"></script> 
    <script type="text/javascript" src="/js/src/fireworks.js"></script>
 
-undefined<!-- hexo-inject:begin --><!-- hexo-inject:end -->
-<script src="/live2dw/lib/L2Dwidget.min.js?0c58a1486de42ac6cc1c59c7d98ae887"></script><script>L2Dwidget.init({"model":"tsumiki","bottom":-30,"log":false,"pluginJsPath":"lib/","pluginModelPath":"assets/","pluginRootPath":"live2dw/","tagMode":false});</script></body>
+undefined
+<script src="/live2dw/lib/L2Dwidget.min.js?0c58a1486de42ac6cc1c59c7d98ae887"></script><script>L2Dwidget.init({"model":"tsumiki","bottom":-30,"log":false,"pluginJsPath":"lib/","pluginModelPath":"assets/","pluginRootPath":"live2dw/","tagMode":false});</script><!-- hexo-inject:begin --><!-- hexo-inject:end --></body>
 </html>
 

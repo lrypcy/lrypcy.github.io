@@ -79,17 +79,17 @@
 
 
 
-<meta name="description" content="本文思路：        在介绍gbdt之前先把CART给总结完        关于gbdt需要用到线搜索，所以在这里mark以下：    线搜索        gbdt写完了再写xgboost，之后是lightgbm GBDT知识储备 这篇文章不知道从哪里写起，感觉掌握这种算法，需要涉及的东西太多，先在这里给出大致需要预先掌握或者了解的一些知识，方便后面讲解原理的时候参考：  1. CART回归">
-<meta property="og:type" content="article">
-<meta property="og:title" content="gbdt算法理解">
-<meta property="og:url" content="http://yoursite.com/2018/10/05/gbdt算法理解/index.html">
+<meta name="description" content="生命要像阿汤哥一样奔跑">
+<meta property="og:type" content="website">
+<meta property="og:title" content="tags">
+<meta property="og:url" content="http://yoursite.com/tags/index.html">
 <meta property="og:site_name" content="娇女佳人 一身骄傲">
-<meta property="og:description" content="本文思路：        在介绍gbdt之前先把CART给总结完        关于gbdt需要用到线搜索，所以在这里mark以下：    线搜索        gbdt写完了再写xgboost，之后是lightgbm GBDT知识储备 这篇文章不知道从哪里写起，感觉掌握这种算法，需要涉及的东西太多，先在这里给出大致需要预先掌握或者了解的一些知识，方便后面讲解原理的时候参考：  1. CART回归">
+<meta property="og:description" content="生命要像阿汤哥一样奔跑">
 <meta property="og:locale" content="default">
-<meta property="og:updated_time" content="2018-10-06T02:17:01.885Z">
+<meta property="og:updated_time" content="2018-10-11T02:53:22.991Z">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="gbdt算法理解">
-<meta name="twitter:description" content="本文思路：        在介绍gbdt之前先把CART给总结完        关于gbdt需要用到线搜索，所以在这里mark以下：    线搜索        gbdt写完了再写xgboost，之后是lightgbm GBDT知识储备 这篇文章不知道从哪里写起，感觉掌握这种算法，需要涉及的东西太多，先在这里给出大致需要预先掌握或者了解的一些知识，方便后面讲解原理的时候参考：  1. CART回归">
+<meta name="twitter:title" content="tags">
+<meta name="twitter:description" content="生命要像阿汤哥一样奔跑">
 
 
 
@@ -119,13 +119,13 @@
 
 
 
-  <link rel="canonical" href="http://yoursite.com/2018/10/05/gbdt算法理解/"/>
+  <link rel="canonical" href="http://yoursite.com/tags/"/>
 
 
 
 
 
-  <title>gbdt算法理解 | 娇女佳人 一身骄傲</title><!-- hexo-inject:begin --><!-- hexo-inject:end -->
+  <title>tags | 娇女佳人 一身骄傲</title><!-- hexo-inject:begin --><!-- hexo-inject:end -->
   
 
 
@@ -220,174 +220,40 @@
 
   <div id="posts" class="posts-expand">
     
-
-  
-
-  
-  
-  
-
-  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
-  
-  
-  
-  <div class="post-block">
-    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2018/10/05/gbdt算法理解/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="name" content="裴从渊/Tom Walker">
-      <meta itemprop="description" content="">
-      <meta itemprop="image" content="/images/touxiang.jpg">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="娇女佳人 一身骄傲">
-    </span>
-
     
+    
+    <div class="post-block page">
       <header class="post-header">
 
-        
-        
-          <h1 class="post-title" itemprop="name headline">gbdt算法理解</h1>
-        
+	<h1 class="post-title" itemprop="name headline">tags</h1>
 
-        <div class="post-meta">
-          <span class="post-time">
-            
-              <span class="post-meta-item-icon">
-                <i class="fa fa-calendar-o"></i>
-              </span>
-              
-                <span class="post-meta-item-text">Posted on</span>
-              
-              <time title="Post created" itemprop="dateCreated datePublished" datetime="2018-10-05T10:15:00+08:00">
-                2018-10-05
-              </time>
-            
 
-            
 
-            
-          </span>
-
-          
-
-          
-            
-          
-
-          
-          
-
-          
-
-          
-
-          
-
-        </div>
-      </header>
-    
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
+</header>
 
       
       
-
       
-        <p>本文思路：<br>        在介绍gbdt之前先把CART给总结完<br>        关于gbdt需要用到线搜索，所以在这里mark以下：<br>    <a href="http://www.cnblogs.com/kemaswill/p/3416231.html" target="_blank" rel="noopener">线搜索</a><br>        gbdt写完了再写xgboost，之后是lightgbm</p>
-<h1 id="GBDT知识储备"><a href="#GBDT知识储备" class="headerlink" title="GBDT知识储备"></a>GBDT知识储备</h1><p> 这篇文章不知道从哪里写起，感觉掌握这种算法，需要涉及的东西太多，先在这里给出大致需要预先掌握或者了解的一些知识，方便后面讲解原理的时候参考：</p>
-<pre><code> 1. CART回归树
- 2. 梯度下降原理
- 3. 线搜索
-</code></pre><h1 id="GBDT原理"><a href="#GBDT原理" class="headerlink" title="GBDT原理"></a>GBDT原理</h1><h2 id="1-Main-object"><a href="#1-Main-object" class="headerlink" title="1. Main object"></a>1. Main object</h2><p>  机器学习的预测问题当中，我们经常要考虑最小化损失函数的问题，当我们用函数$F(x)$去预测时，整体的损失函数可以表示为$E_{y,x}L(y,F(x))$,而我们的目标就是找到使得损失函数最小的函数$F^*$，即</p>
-<script type="math/tex; mode=display">F^\*=arg minE_{y,x}L(y,F(x))$$,
-  通常情况下，F可以写作$F(**x**;**P**)$的形式，**P**={P_1,P_2,...}是需要确定的参数。在加性模型中$$F(**x**,{\bet_m,**a_m**}_0^M)=\sum_{m=0}^M\beta_mh(**x**;**a_m**)</script><h3 id="1-1-数值优化"><a href="#1-1-数值优化" class="headerlink" title="1.1 数值优化"></a>1.1 数值优化</h3><p>  选择一个最优的$F(<strong>x</strong>;<strong>P</strong>)$，可以把原来的函数优化问题转化为一个参数优化的问题<script type="math/tex">**P**^\*=arg min_**P**\Phi(P)</script><br>  这里，</p>
-<script type="math/tex; mode=display">E_{y,**x**}L(y,F(**x**;**P**))</script><p>  然后再得到</p>
-<script type="math/tex; mode=display">F^\*=F(**x**,**P^\***)</script><p>  对大多数的$F(<strong>x</strong>,<strong>P</strong>)$和L,必须用数值优化的方法来求解上面那个方程，所以通常把参数P的解写为：<script type="math/tex">P^\*=\sum_{m=0}^Mp_m</script></p>
-<h3 id="1-2"><a href="#1-2" class="headerlink" title="1.2"></a>1.2</h3><h1 id="参考文献"><a href="#参考文献" class="headerlink" title="参考文献"></a>参考文献</h1><p>  <a href="https://statweb.stanford.edu/~jhf/ftp/trebst.pdf" target="_blank" rel="noopener">greedy function approximation: a gradient boosting machine</a></p>
-
+      <div class="post-body">
+        
+        
+          <div class="tag-cloud">
+            <div class="tag-cloud-title">
+                1 tag in total
+            </div>
+            <div class="tag-cloud-tags">
+              <a href="/tags/Leetcode/" style="font-size: 12px; color: #ccc">Leetcode</a>
+            </div>
+          </div>
+        
+      </div>
+      
+      
       
     </div>
     
     
     
-
-    
-
-    
-
-    
-
-    <footer class="post-footer">
-      
-
-      
-      
-      
-
-      
-        <div class="post-nav">
-          <div class="post-nav-next post-nav-item">
-            
-              <a href="/2018/09/23/关于L1和L2正则的总结/" rel="next" title="关于L1和L2正则的总结">
-                <i class="fa fa-chevron-left"></i> 关于L1和L2正则的总结
-              </a>
-            
-          </div>
-
-          <span class="post-nav-divider"></span>
-
-          <div class="post-nav-prev post-nav-item">
-            
-          </div>
-        </div>
-      
-
-      
-      
-    </footer>
-  </div>
-  
-  
-  
-  </article>
-
-
-
-    <div class="post-spread">
-      
-        <!-- JiaThis Button BEGIN -->
-<div class="jiathis_style">
-<span class="jiathis_txt">分享到：</span>
-<a class="jiathis_button_fav">收藏夹</a>
-<a class="jiathis_button_copy">复制网址</a>
-<a class="jiathis_button_email">邮件</a>
-<a class="jiathis_button_weixin">微信</a>
-<a class="jiathis_button_qzone">QQ空间</a>
-<a class="jiathis_button_tqq">腾讯微博</a>
-<a class="jiathis_button_douban">豆瓣</a>
-<a class="jiathis_button_share">一键分享</a>
-
-<a href="http://www.jiathis.com/share?uid=2140465" class="jiathis jiathis_txt jiathis_separator jtico jtico_jiathis" target="_blank">更多</a>
-<a class="jiathis_counter_style"></a>
-</div>
-<script type="text/javascript" >
-var jiathis_config={
-  data_track_clickback:true,
-  summary:"",
-  shortUrl:false,
-  hideMore:false
-}
-</script>
-<script type="text/javascript" src="http://v3.jiathis.com/code/jia.js?uid=" charset="utf-8"></script>
-<!-- JiaThis Button END -->
-      
-    </div>
   </div>
 
 
@@ -425,17 +291,8 @@ var jiathis_config={
       
 
       
-        <ul class="sidebar-nav motion-element">
-          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
-            Table of Contents
-          </li>
-          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
-            Overview
-          </li>
-        </ul>
-      
 
-      <section class="site-overview-wrap sidebar-panel">
+      <section class="site-overview-wrap sidebar-panel sidebar-panel-active">
         <div class="site-overview">
           <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
             
@@ -454,14 +311,32 @@ var jiathis_config={
               
                 <a href="/archives/">
               
-                  <span class="site-state-item-count">7</span>
+                  <span class="site-state-item-count">6</span>
                   <span class="site-state-item-name">posts</span>
                 </a>
               </div>
             
 
             
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">5</span>
+                  <span class="site-state-item-name">categories</span>
+                </a>
+              </div>
+            
 
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">1</span>
+                  <span class="site-state-item-name">tags</span>
+                </a>
+              </div>
             
 
           </nav>
@@ -516,22 +391,6 @@ var jiathis_config={
         </div>
       </section>
 
-      
-      <!--noindex-->
-        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
-          <div class="post-toc">
-
-            
-              
-            
-
-            
-              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#GBDT知识储备"><span class="nav-number">1.</span> <span class="nav-text">GBDT知识储备</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#GBDT原理"><span class="nav-number">2.</span> <span class="nav-text">GBDT原理</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Main-object"><span class="nav-number">2.1.</span> <span class="nav-text">1. Main object</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-数值优化"><span class="nav-number">2.1.1.</span> <span class="nav-text">1.1 数值优化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2"><span class="nav-number">2.1.2.</span> <span class="nav-text">1.2</span></a></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#参考文献"><span class="nav-number">3.</span> <span class="nav-text">参考文献</span></a></li></ol></div>
-            
-
-          </div>
-        </section>
-      <!--/noindex-->
       
 
       
@@ -774,7 +633,7 @@ var jiathis_config={
    <script type="text/javascript" src="//cdn.bootcss.com/animejs/2.2.0/anime.min.js"></script> 
    <script type="text/javascript" src="/js/src/fireworks.js"></script>
 
-undefined<!-- hexo-inject:begin --><!-- hexo-inject:end -->
-<script src="/live2dw/lib/L2Dwidget.min.js?0c58a1486de42ac6cc1c59c7d98ae887"></script><script>L2Dwidget.init({"model":"tsumiki","bottom":-30,"log":false,"pluginJsPath":"lib/","pluginModelPath":"assets/","pluginRootPath":"live2dw/","tagMode":false});</script></body>
+undefined
+<script src="/live2dw/lib/L2Dwidget.min.js?0c58a1486de42ac6cc1c59c7d98ae887"></script><script>L2Dwidget.init({"model":"tsumiki","bottom":-30,"log":false,"pluginJsPath":"lib/","pluginModelPath":"assets/","pluginRootPath":"live2dw/","tagMode":false});</script><!-- hexo-inject:begin --><!-- hexo-inject:end --></body>
 </html>
 
