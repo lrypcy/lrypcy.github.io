@@ -49,18 +49,21 @@ layout: default
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>
 (function () {
-  // 目录生成：扫描 .post-body 的 h2
+  // 悬浮目录：优先挂到 sidebar（sticky 跟随滚动），否则文章开头
+  // 附带 scrollspy 当前章节高亮 + 平滑跳转
   function buildToc() {
     var body = document.querySelector('.post-body');
     if (!body) return;
     var hs = body.querySelectorAll('h2');
     if (hs.length < 3) return;
+
     var toc = document.createElement('div');
-    toc.className = 'post-toc';
+    toc.className = 'sidebar-toc';
     var title = document.createElement('div');
-    title.className = 'post-toc-title';
+    title.className = 'sidebar-title';
     title.textContent = '📑 目录';
     var ul = document.createElement('ul');
+    var links = [];
     hs.forEach(function (h) {
       if (!h.id) h.id = 'sec-' + Math.random().toString(36).slice(2, 8);
       var li = document.createElement('li');
@@ -69,10 +72,44 @@ layout: default
       a.textContent = h.textContent;
       li.appendChild(a);
       ul.appendChild(li);
+      links.push(a);
     });
     toc.appendChild(title);
     toc.appendChild(ul);
-    body.insertBefore(toc, body.firstChild);
+
+    var sidebar = document.querySelector('.sidebar');
+    if (sidebar) {
+      sidebar.insertBefore(toc, sidebar.firstChild);
+    } else {
+      toc.classList.add('post-toc');
+      body.insertBefore(toc, body.firstChild);
+    }
+
+    // 平滑跳转（sticky header 遮挡由 CSS scroll-margin-top 解决）
+    ul.addEventListener('click', function (e) {
+      var a = e.target.closest('a');
+      if (!a) return;
+      var target = document.getElementById(a.getAttribute('href').slice(1));
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+
+    // scrollspy：高亮当前阅读章节
+    function onScroll() {
+      var y = window.scrollY + 110; // header(64) + 余量
+      var idx = -1;
+      for (var i = 0; i < hs.length; i++) {
+        if (hs[i].getBoundingClientRect().top + window.scrollY <= y) idx = i;
+        else break;
+      }
+      links.forEach(function (a, j) {
+        a.classList.toggle('active', j === idx);
+      });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    setTimeout(onScroll, 100); // 首帧定位
   }
 
   // Mermaid：把 ```mermaid 代码块转为图表（跟随系统深浅色）

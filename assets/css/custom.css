@@ -877,6 +877,58 @@ a { color: var(--primary); }
 }
 .post-body .mermaid svg { max-width: 100%; height: auto; }
 
+/* 悬浮目录（sidebar 内，sticky 跟随滚动） */
+.sidebar-toc {
+  max-height: calc(100vh - var(--header-h) - 160px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(59, 130, 246, 0.35) transparent;
+}
+.sidebar-toc::-webkit-scrollbar { width: 4px; }
+.sidebar-toc::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.35); border-radius: 4px; }
+.sidebar-toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: toc;
+}
+.sidebar-toc li {
+  counter-increment: toc;
+  margin: 3px 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.sidebar-toc li::before {
+  content: counter(toc, decimal-leading-zero);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-light);
+  font-variant-numeric: tabular-nums;
+  margin-right: 8px;
+  opacity: 0.75;
+}
+.sidebar-toc a {
+  display: block;
+  padding: 4px 8px 4px 10px;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 8px;
+  border-left: 2px solid transparent;
+  transition: all 0.2s;
+}
+.sidebar-toc a:hover {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.sidebar-toc a.active {
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-left-color: var(--primary);
+  font-weight: 600;
+}
+/* 点击跳转时 sticky header 不遮挡标题 */
+.post-body h2 { scroll-margin-top: calc(var(--header-h) + 24px); }
+
 /* 暗色模式适配 */
 @media (prefers-color-scheme: dark) {
   .post-body .mermaid { background: var(--card-bg); border-color: var(--border); }
