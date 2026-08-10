@@ -932,7 +932,7 @@ a { color: var(--primary); }
 /* ========== 左侧悬浮目录（横线收起 / hover 原位展开文字）========== */
 .side-toc {
   position: fixed;
-  left: 12px;
+  left: 28px;
   top: 50%;
   transform: translateY(-50%);
   z-index: 90;
