@@ -49,14 +49,87 @@ layout: default
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>
 (function () {
-  // 悬浮目录：优先挂到 sidebar（sticky 跟随滚动），否则文章开头
-  // 附带 scrollspy 当前章节高亮 + 平滑跳转
+  // 悬浮目录：宽屏 = 左侧竖排章节横线（hover 展开完整面板）
+  // 窄屏 = sidebar 内目录卡片；均带 scrollspy 高亮 + 平滑跳转
   function buildToc() {
     var body = document.querySelector('.post-body');
     if (!body) return;
     var hs = body.querySelectorAll('h2');
     if (hs.length < 3) return;
 
+    if (window.innerWidth >= 992) {
+      buildFloatingToc(hs);
+    } else {
+      buildSidebarToc(hs, body);
+    }
+  }
+
+  function buildFloatingToc(hs) {
+    var wrap = document.createElement('div');
+    wrap.className = 'side-toc';
+    var lines = document.createElement('div');
+    lines.className = 'side-toc-lines';
+    var panel = document.createElement('div');
+    panel.className = 'side-toc-panel';
+    var ptitle = document.createElement('div');
+    ptitle.className = 'side-toc-panel-title';
+    ptitle.textContent = '📑 目录';
+    panel.appendChild(ptitle);
+    var list = document.createElement('ul');
+    var lineEls = [], linkEls = [];
+
+    hs.forEach(function (h, i) {
+      if (!h.id) h.id = 'sec-' + Math.random().toString(36).slice(2, 8);
+      var line = document.createElement('div');
+      line.className = 'side-toc-line';
+      line.dataset.idx = i;
+      line.title = h.textContent;
+      lines.appendChild(line);
+      lineEls.push(line);
+
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = '#' + h.id;
+      a.textContent = h.textContent;
+      li.appendChild(a);
+      list.appendChild(li);
+      linkEls.push(a);
+    });
+    panel.appendChild(list);
+    wrap.appendChild(lines);
+    wrap.appendChild(panel);
+    document.body.appendChild(wrap);
+
+    function jumpTo(idx) {
+      var target = document.getElementById(hs[idx].id);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    lines.addEventListener('click', function (e) {
+      var d = e.target.dataset;
+      if (d && d.idx !== undefined) jumpTo(+d.idx);
+    });
+    list.addEventListener('click', function (e) {
+      var a = e.target.closest('a');
+      if (!a) return;
+      e.preventDefault();
+      jumpTo(linkEls.indexOf(a));
+    });
+
+    function onScroll() {
+      var y = window.scrollY + 110;
+      var idx = -1;
+      for (var i = 0; i < hs.length; i++) {
+        if (hs[i].getBoundingClientRect().top + window.scrollY <= y) idx = i;
+        else break;
+      }
+      lineEls.forEach(function (el, j) { el.classList.toggle('active', j === idx); });
+      linkEls.forEach(function (el, j) { el.classList.toggle('active', j === idx); });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    setTimeout(onScroll, 100);
+  }
+
+  function buildSidebarToc(hs, body) {
     var toc = document.createElement('div');
     toc.className = 'sidebar-toc';
     var title = document.createElement('div');
@@ -85,7 +158,6 @@ layout: default
       body.insertBefore(toc, body.firstChild);
     }
 
-    // 平滑跳转（sticky header 遮挡由 CSS scroll-margin-top 解决）
     ul.addEventListener('click', function (e) {
       var a = e.target.closest('a');
       if (!a) return;
@@ -96,9 +168,8 @@ layout: default
       }
     });
 
-    // scrollspy：高亮当前阅读章节
     function onScroll() {
-      var y = window.scrollY + 110; // header(64) + 余量
+      var y = window.scrollY + 110;
       var idx = -1;
       for (var i = 0; i < hs.length; i++) {
         if (hs[i].getBoundingClientRect().top + window.scrollY <= y) idx = i;
@@ -109,7 +180,7 @@ layout: default
       });
     }
     window.addEventListener('scroll', onScroll, { passive: true });
-    setTimeout(onScroll, 100); // 首帧定位
+    setTimeout(onScroll, 100);
   }
 
   // Mermaid：把 ```mermaid 代码块转为图表（跟随系统深浅色）
