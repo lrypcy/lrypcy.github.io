@@ -1,0 +1,43 @@
+# Jekyll 配置
+title: 一身骄傲
+subtitle: 我要写很厉害的代码，用在很厉害的地方，永远爱心中所爱！！！！！！
+description: 生命要像阿汤哥一样奔跑
+author: 裴从渊
+lang: zh-CN
+
+url: https://lrypcy.github.io
+baseurl: ""
+
+# 时间与文章路径
+timezone: Asia/Shanghai
+permalink: /:year/:month/:day/:title/
+
+# Markdown 渲染
+markdown: kramdown
+highlighter: rouge
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  math_engine: mathjax
+  math_engine_opts:
+    preview: true
+    tags: ams
+
+# 分页（主页文章流）
+plugins:
+  - jekyll-paginate
+paginate: 6
+paginate_path: /page:num/
+
+# 构建排除
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - vendor
+  - .git
+  # 旧 Hexo 静态目录（已被 _posts/_layouts 生成的页面替代，保留作 git 历史）
+  - /2018/
+  - /archives/
+  - /categories/
+  - /tags/

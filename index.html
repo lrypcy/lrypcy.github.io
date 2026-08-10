@@ -1,0 +1,88 @@
+---
+layout: default
+title: 首页
+---
+<!-- Hero 区 -->
+<div class="blog-hero">
+  <h1 class="blog-hero-title">{{ site.title }}</h1>
+  <p class="blog-hero-subtitle">{{ site.subtitle }}</p>
+</div>
+
+<!-- 分类卡片 -->
+<section class="home-section">
+  <h2 class="section-title"><span class="section-mark">✦</span> 分类</h2>
+  <div class="category-grid">
+    {% for category in site.categories %}
+    <a class="category-card" href="/categories/#{{ category[0] | url_encode }}">
+      <div class="category-card-icon">📁</div>
+      <h3 class="category-card-name">{{ category[0] }}</h3>
+      <span class="category-card-count">{{ category[1] | size }} 篇</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- 标签云 -->
+<section class="home-section">
+  <h2 class="section-title"><span class="section-mark">✦</span> 标签云</h2>
+  {% assign tag_max = 0 %}
+  {% assign tag_min = 9999 %}
+  {% for tag in site.tags %}
+    {% assign sz = tag[1] | size %}
+    {% if sz > tag_max %}{% assign tag_max = sz %}{% endif %}
+    {% if sz < tag_min %}{% assign tag_min = sz %}{% endif %}
+  {% endfor %}
+  {% assign colors = "#3b82f6,#2563eb,#60a5fa,#1d4ed8,#93c5fd,#1e40af" | split: "," %}
+  <div class="tag-cloud">
+    {% for tag in site.tags %}
+      {% assign tag_size = tag[1] | size %}
+      {% assign span = tag_max | minus: tag_min %}
+      {% if span > 0 %}
+        {% assign ratio = tag_size | minus: tag_min | times: 100 | divided_by: span %}
+      {% else %}
+        {% assign ratio = 50 %}
+      {% endif %}
+      {% assign font_pct = ratio | plus: 100 %}
+      {% assign color_idx = forloop.index0 | modulo: 6 %}
+      {% assign color = colors[color_idx] %}
+      <a class="tag-item" href="/tags/#{{ tag[0] | url_encode }}" style="font-size: {{ font_pct }}%; color: {{ color }};" title="{{ tag_size }} 篇文章">{{ tag[0] }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- 文章流（分页） -->
+<section class="home-section">
+  <h2 class="section-title"><span class="section-mark">✦</span> 最新文章</h2>
+  <div class="post-list">
+    {% for post in paginator.posts %}
+    <article class="post-card">
+      <header class="post-card-header">
+        <time class="post-card-date" datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%Y-%m-%d" }}</time>
+        {% if post.categories %}<span class="post-card-cat">{{ post.categories | join: " / " }}</span>{% endif %}
+      </header>
+      <h2 class="post-card-title"><a href="{{ post.url }}">{{ post.title }}</a></h2>
+      <p class="post-card-excerpt">{{ post.excerpt | strip_html | truncate: 140 }}</p>
+      <footer class="post-card-footer">
+        {% if post.tags %}<span class="post-card-tags">{% for tag in post.tags %}<a href="/tags/#{{ tag | url_encode }}">#{{ tag }}</a> {% endfor %}</span>{% endif %}
+        <a class="post-card-more" href="{{ post.url }}">阅读全文 →</a>
+      </footer>
+    </article>
+    {% endfor %}
+  </div>
+
+  {% if paginator.total_pages > 1 %}
+  <nav class="pagination">
+    {% if paginator.previous_page %}
+    <a class="page-btn" href="{{ paginator.previous_page_path | relative_url }}">← 上一页</a>
+    {% else %}
+    <span class="page-btn disabled">← 上一页</span>
+    {% endif %}
+    <span class="page-info">{{ paginator.page }} / {{ paginator.total_pages }}</span>
+    {% if paginator.next_page %}
+    <a class="page-btn" href="{{ paginator.next_page_path | relative_url }}">下一页 →</a>
+    {% else %}
+    <span class="page-btn disabled">下一页 →</span>
+    {% endif %}
+  </nav>
+  {% endif %}
+</section>
