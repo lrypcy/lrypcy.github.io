@@ -44,3 +44,65 @@ layout: default
     </footer>
   </div>
 </article>
+
+{% if page.layout == 'post' %}
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  // 目录生成：扫描 .post-body 的 h2
+  function buildToc() {
+    var body = document.querySelector('.post-body');
+    if (!body) return;
+    var hs = body.querySelectorAll('h2');
+    if (hs.length < 3) return;
+    var toc = document.createElement('div');
+    toc.className = 'post-toc';
+    var title = document.createElement('div');
+    title.className = 'post-toc-title';
+    title.textContent = '📑 目录';
+    var ul = document.createElement('ul');
+    hs.forEach(function (h) {
+      if (!h.id) h.id = 'sec-' + Math.random().toString(36).slice(2, 8);
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = '#' + h.id;
+      a.textContent = h.textContent;
+      li.appendChild(a);
+      ul.appendChild(li);
+    });
+    toc.appendChild(title);
+    toc.appendChild(ul);
+    body.insertBefore(toc, body.firstChild);
+  }
+
+  // Mermaid：把 ```mermaid 代码块转为图表（跟随系统深浅色）
+  function renderMermaid() {
+    if (!window.mermaid) return;
+    var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'default',
+      securityLevel: 'loose',
+    });
+    var blocks = document.querySelectorAll('.post-body pre > code.language-mermaid');
+    if (!blocks.length) return;
+    var divs = [];
+    blocks.forEach(function (code, i) {
+      var pre = code.parentElement;
+      var div = document.createElement('div');
+      div.className = 'mermaid';
+      div.id = 'mmd-' + i;
+      div.textContent = code.textContent.trim();
+      pre.parentElement.replaceChild(div, pre);
+      divs.push(div);
+    });
+    mermaid.run({ nodes: divs });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    buildToc();
+    renderMermaid();
+  });
+})();
+</script>
+{% endif %}

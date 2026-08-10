@@ -782,3 +782,104 @@ a { color: var(--primary); }
   .header-inner { padding: 0 16px; }
   .menu { gap: 20px; }
 }
+
+/* ========== 文章页增强（2026-08-10：xDSL deepdive 排版）========== */
+/* 正文表格（晴空蓝体系） */
+.post-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 18px 0 26px;
+  font-size: 14px;
+  line-height: 1.7;
+  background: var(--card-bg);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.post-body th {
+  background: var(--primary-soft);
+  color: var(--text);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+.post-body td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.post-body tr:nth-child(even) td { background: var(--bg); }
+.post-body tr:hover td { background: var(--primary-soft); }
+.post-body table code {
+  white-space: nowrap;
+  padding: 1px 6px;
+  font-size: 12.5px;
+}
+@media (max-width: 768px) {
+  .post-body table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+
+/* 文章目录（JS 生成） */
+.post-toc {
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin: 0 0 30px;
+}
+.post-toc-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 0 0 12px;
+  letter-spacing: 0.5px;
+}
+.post-toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 24px;
+  counter-reset: toc;
+}
+.post-toc li { counter-increment: toc; font-size: 13.5px; }
+.post-toc li::before {
+  content: counter(toc, decimal-leading-zero);
+  color: var(--primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-right: 8px;
+  font-size: 12px;
+}
+.post-toc a {
+  color: var(--text);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.post-toc a:hover { color: var(--primary); }
+@media (max-width: 768px) {
+  .post-toc ul { grid-template-columns: 1fr; }
+}
+
+/* Mermaid 图容器 */
+.post-body .mermaid {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 16px;
+  margin: 18px 0 26px;
+  overflow-x: auto;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+.post-body .mermaid svg { max-width: 100%; height: auto; }
+
+/* 暗色模式适配 */
+@media (prefers-color-scheme: dark) {
+  .post-body .mermaid { background: var(--card-bg); border-color: var(--border); }
+  .post-body tr:nth-child(even) td { background: rgba(15, 23, 41, 0.6); }
+  .post-toc { background: rgba(125, 180, 255, 0.06); border-color: var(--border); }
+}
