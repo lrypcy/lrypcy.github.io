@@ -69,50 +69,33 @@ layout: default
     wrap.className = 'side-toc';
     var lines = document.createElement('div');
     lines.className = 'side-toc-lines';
-    var panel = document.createElement('div');
-    panel.className = 'side-toc-panel';
-    var ptitle = document.createElement('div');
-    ptitle.className = 'side-toc-panel-title';
-    ptitle.textContent = '📑 目录';
-    panel.appendChild(ptitle);
-    var list = document.createElement('ul');
-    var lineEls = [], linkEls = [];
+    var items = [];
 
     hs.forEach(function (h, i) {
       if (!h.id) h.id = 'sec-' + Math.random().toString(36).slice(2, 8);
-      var line = document.createElement('div');
-      line.className = 'side-toc-line';
-      line.dataset.idx = i;
-      line.title = h.textContent;
-      lines.appendChild(line);
-      lineEls.push(line);
-
-      var li = document.createElement('li');
-      var a = document.createElement('a');
-      a.href = '#' + h.id;
-      a.textContent = h.textContent;
-      li.appendChild(a);
-      list.appendChild(li);
-      linkEls.push(a);
+      var item = document.createElement('div');
+      item.className = 'side-toc-item';
+      item.dataset.idx = i;
+      item.title = h.textContent;
+      var bar = document.createElement('span');
+      bar.className = 'side-toc-bar';
+      var label = document.createElement('span');
+      label.className = 'side-toc-label';
+      label.textContent = String(i + 1).padStart(2, '0') + '  ' + h.textContent;
+      item.appendChild(bar);
+      item.appendChild(label);
+      lines.appendChild(item);
+      items.push(item);
     });
-    panel.appendChild(list);
     wrap.appendChild(lines);
-    wrap.appendChild(panel);
     document.body.appendChild(wrap);
 
-    function jumpTo(idx) {
-      var target = document.getElementById(hs[idx].id);
-      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    // 点击 item（横线或文字）平滑跳转
     lines.addEventListener('click', function (e) {
-      var d = e.target.dataset;
-      if (d && d.idx !== undefined) jumpTo(+d.idx);
-    });
-    list.addEventListener('click', function (e) {
-      var a = e.target.closest('a');
-      if (!a) return;
-      e.preventDefault();
-      jumpTo(linkEls.indexOf(a));
+      var it = e.target.closest('.side-toc-item');
+      if (!it) return;
+      var target = document.getElementById(hs[+it.dataset.idx].id);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 
     function onScroll() {
@@ -122,8 +105,9 @@ layout: default
         if (hs[i].getBoundingClientRect().top + window.scrollY <= y) idx = i;
         else break;
       }
-      lineEls.forEach(function (el, j) { el.classList.toggle('active', j === idx); });
-      linkEls.forEach(function (el, j) { el.classList.toggle('active', j === idx); });
+      items.forEach(function (el, j) {
+        el.classList.toggle('active', j === idx);
+      });
     }
     window.addEventListener('scroll', onScroll, { passive: true });
     setTimeout(onScroll, 100);

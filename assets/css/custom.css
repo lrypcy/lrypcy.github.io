@@ -929,10 +929,10 @@ a { color: var(--primary); }
 /* 点击跳转时 sticky header 不遮挡标题 */
 .post-body h2 { scroll-margin-top: calc(var(--header-h) + 24px); }
 
-/* ========== 左侧悬浮目录（横线收起 / hover 展开）========== */
+/* ========== 左侧悬浮目录（横线收起 / hover 原位展开文字）========== */
 .side-toc {
   position: fixed;
-  left: 14px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
   z-index: 90;
@@ -940,104 +940,70 @@ a { color: var(--primary); }
 .side-toc-lines {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 4px;
+  gap: 4px;
+  padding: 12px 6px;
+  border-radius: 12px;
   cursor: pointer;
+  transition: background 0.22s ease, box-shadow 0.22s ease;
 }
-.side-toc-line {
+/* hover 整列展开：横线原位拉伸成文字 */
+.side-toc:hover .side-toc-lines {
+  background: rgba(246, 249, 252, 0.94);
+  box-shadow: 0 4px 18px rgba(30, 40, 60, 0.10);
+}
+.side-toc-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 22px;
+  max-width: 28px;
+  overflow: hidden;
+  transition: max-width 0.28s ease;
+  white-space: nowrap;
+}
+.side-toc:hover .side-toc-item,
+.side-toc-item:hover { max-width: 300px; }
+.side-toc-bar {
+  flex-shrink: 0;
   width: 16px;
   height: 3px;
   border-radius: 2px;
   background: #c9d3de;
-  transition: all 0.25s ease;
+  transition: background 0.2s ease, width 0.25s ease, box-shadow 0.25s ease;
 }
-.side-toc-line:hover { background: var(--primary); }
-.side-toc-line.active {
+.side-toc-item:hover .side-toc-bar { background: var(--primary); }
+.side-toc-item.active .side-toc-bar {
   width: 26px;
   background: var(--primary);
   box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
 }
-
-.side-toc-panel {
-  position: absolute;
-  left: calc(100% + 12px);
-  top: 50%;
-  transform: translateY(-50%) translateX(-6px);
-  width: 252px;
-  max-height: 62vh;
-  overflow-y: auto;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 12px 36px rgba(30, 40, 60, 0.16);
-  padding: 16px 12px 12px 20px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.22s ease, transform 0.22s ease;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(59, 130, 246, 0.35) transparent;
-}
-.side-toc-panel::-webkit-scrollbar { width: 4px; }
-.side-toc-panel::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.35); border-radius: 4px; }
-.side-toc:hover .side-toc-panel,
-.side-toc-panel:hover {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(-50%) translateX(0);
-}
-.side-toc-panel-title {
+.side-toc-label {
   font-size: 13px;
-  font-weight: 700;
-  color: var(--primary);
-  margin-bottom: 10px;
-  letter-spacing: 0.5px;
-}
-.side-toc-panel ul {
-  list-style: none;
-  margin: 0;
-  padding: 0 14px 0 0;
-  counter-reset: toc;
-}
-.side-toc-panel li {
-  counter-increment: toc;
-  margin: 3px 0;
-  font-size: 13px;
-  line-height: 1.45;
-}
-.side-toc-panel li::before {
-  content: counter(toc, decimal-leading-zero);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-light);
-  font-variant-numeric: tabular-nums;
-  margin-right: 8px;
-  opacity: 0.75;
-}
-.side-toc-panel a {
-  display: block;
-  padding: 4px 8px 4px 10px;
   color: var(--text);
-  text-decoration: none;
-  border-radius: 8px;
-  border-left: 2px solid transparent;
-  transition: all 0.2s;
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity 0.16s ease 0.04s, transform 0.16s ease 0.04s, color 0.2s;
+  padding-right: 10px;
 }
-.side-toc-panel a:hover {
-  color: var(--primary);
-  background: var(--primary-soft);
+.side-toc:hover .side-toc-label,
+.side-toc-item:hover .side-toc-label {
+  opacity: 1;
+  transform: none;
 }
-.side-toc-panel a.active {
+.side-toc-item:hover .side-toc-label { color: var(--primary); }
+.side-toc-item.active .side-toc-label {
   color: var(--primary);
-  background: var(--primary-soft);
-  border-left-color: var(--primary);
   font-weight: 600;
 }
 
 /* 暗色模式 */
 @media (prefers-color-scheme: dark) {
-  .side-toc-line { background: #39414e; }
-  .side-toc-line.active { box-shadow: 0 0 6px rgba(125, 180, 255, 0.5); }
-  .side-toc-panel { background: var(--card-bg); border-color: var(--border); box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5); }
+  .side-toc-bar { background: #39414e; }
+  .side-toc-item.active .side-toc-bar { box-shadow: 0 0 6px rgba(125, 180, 255, 0.5); }
+  .side-toc:hover .side-toc-lines {
+    background: rgba(31, 35, 58, 0.92);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  }
 }
 
 /* 窄屏隐藏悬浮目录（改用 sidebar / 文章内目录） */
