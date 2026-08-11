@@ -213,7 +213,7 @@ GRPO 的更新与普通推理 RL 完全一致——组内相对优势 + 裁剪 +
 
 $$\mathcal{L}_{\mathrm{GRPO}}(\theta)=-\mathbb{E}\!\left[\frac{1}{G}\sum_{i=1}^{G}\min\!\left(\rho_i A_i,\ \operatorname{clip}(\rho_i,1-\epsilon,1+\epsilon)\,A_i\right)-\beta\,D_{\mathrm{KL}}(\pi_\theta\|\pi_{\mathrm{ref}})\right]$$
 
-其中 $\rho_i=\pi_\theta(o_i|q)/\pi_{\theta_{\mathrm{old}}}(o_i|q)$，$A_i=(r_i-\mathrm{mean}(\mathbf{r}))/\mathrm{std}(\mathbf{r})$ 是组内相对优势。**注意：搜索查询、检索观测全部包含在轨迹 $o_i$ 里参与概率计算**——这正是「搜索策略可学习」的机制：模型提高/降低的不仅是答案的概率，还有搜索查询、甚至「是否搜索」这个决策的概率。
+其中 $\rho_i=\pi_\theta(o_i\mid q)/\pi_{\theta_{\mathrm{old}}}(o_i\mid q)$，$A_i=(r_i-\mathrm{mean}(\mathbf{r}))/\mathrm{std}(\mathbf{r})$ 是组内相对优势。**注意：搜索查询、检索观测全部包含在轨迹 $o_i$ 里参与概率计算**——这正是「搜索策略可学习」的机制：模型提高/降低的不仅是答案的概率，还有搜索查询、甚至「是否搜索」这个决策的概率。
 
 ## 7. 调优清单与陷阱
 
