@@ -80,6 +80,47 @@ $$\nabla_\theta \mathcal{L}_{\mathrm{OPD}} \propto \mathbb{E}_{\hat{y}\sim\pi_\t
 | Sampled-token | 每步只采学生分布里的一个 token，用 $\log p_t(\hat y_t)-\log q_t(\hat y_t)$ 作为该 token 的奖励 | 无偏 MC 估计，**最便宜**，实践中够用 |
 | Top-k | 每步取学生/老师 top-k token 集合上的 KL 近似 | 折中；k 的默认值 16 附近即可，Top-1 会崩（见 §7） |
 
+### 2.1 推导一：反向 KL 的梯度 = 策略梯度（证明）
+
+上面"梯度形式"那个公式不是猜的，值得完整推一遍——它揭示了 OPD 和 RL 的同一个数学根源：**只要目标函数的期望依赖于 $\theta$，就必然出现策略梯度**。
+
+序列级目标 $\mathcal{L}(\theta) = D_{\mathrm{KL}}(q_\theta \| p_T)$ 对 $\theta$ 求导，乘积法则拆成两项：
+
+$$\nabla_\theta \mathcal{L} = \underbrace{\sum_y \nabla_\theta q_\theta(y)\log\frac{q_\theta(y)}{p_T(y)}}_{\text{① 分布项}} + \underbrace{\sum_y q_\theta(y)\nabla_\theta \log\frac{q_\theta(y)}{p_T(y)}}_{\text{② 概率项}}$$
+
+- ① 用 $\nabla_\theta q_\theta(y) = q_\theta(y)\nabla_\theta \log q_\theta(y)$（score function 恒等式）变成期望；
+- ② 里 $p_T$ 与 $\theta$ 无关，$\nabla_\theta\log p_T(y)=0$，剩下 $\sum_y \nabla_\theta q_\theta(y) = \nabla_\theta \sum_y q_\theta(y) = \nabla_\theta 1 = 0$——**这一项整项消零**。
+
+于是只剩 ①：
+
+$$\nabla_\theta \mathcal{L} = \mathbb{E}_{y\sim q_\theta}\Big[\underbrace{\log\frac{q_\theta(y)}{p_T(y)}}_{\text{log-ratio = token 级奖励}}\; \nabla_\theta\log q_\theta(y)\Big]$$
+
+这就是 REINFORCE：奖励 $\log(q_\theta/p_T)$、策略梯度 $\nabla\log q_\theta$。**OPD 不是在"模仿 RL"，OPD 就是 RL**——只是把环境的稀疏结果奖励换成了老师的稠密 logprob。工程上 log-ratio 必须 `.detach()` 当常数奖励（它是"奖励"不是"目标"，期望层面它的梯度贡献合计为 0，逐样本保留只增大方差）。
+
+自回归展开后，序列级 log-ratio 拆成逐 token 求和，按策略梯度定理整理成 reward-to-go 形式（动作 $y_t$ 不影响它之前的奖励，未来奖励归到当前 token）：$R_t=\sum_{t'\ge t} r_t$，$r_t = \log\frac{q_\theta(y_t \mid x,y_{<t})}{p_T(y_t \mid x,y_{<t})}$：
+
+$$\nabla_\theta \mathcal{L} = \mathbb{E}_{y\sim q_\theta}\Big[\sum_{t=1}^{T} R_t\; \nabla_\theta\log q_\theta(y_t \mid x,y_{<t})\Big], \qquad R_t = \sum_{t'=t}^{T}\log\frac{q_\theta(y_{t'} \mid x,y_{<t'})}{p_T(y_{t'} \mid x,y_{<t'})}$$
+
+**MiniLLM 的变体**（论文 Eq. 8-12）：完整 $R_t$ 梯度方差高（reward 在整条序列上累积），MiniLLM 把单步质量 $r_t$ 从 $R_t$ 中拆出来单独优化，得到"Single-step"梯度 $(\nabla\mathcal{L})_{\mathrm{Single}} = -\mathbb{E}\big[\sum_t r_t\nabla\log q_\theta(y_t\mid\cdot)\big]$（原文符号取 $\log(p_T/q_\theta)$ 所以带负号，等价）——**这就是后来 TML 的 discount=0**：每个 token 只用自己位置的 log-ratio 当奖励，方差显著更低。
+
+### 2.2 推导二：forward KL 的梯度 = SFT 交叉熵（证明）
+
+off-policy 蒸馏的目标是正向 KL $D_{\mathrm{KL}}(p_T \| q_\theta)$，求导：
+
+$$\nabla_\theta D_{\mathrm{KL}}(p_T\|q_\theta) = -\mathbb{E}_{y\sim p_T}\big[\nabla_\theta\log q_\theta(y)\big] = -\mathbb{E}_{y\sim p_T}\Big[\sum_t \nabla_\theta\log q_\theta(y_t \mid x,y_{<t})\Big]$$
+
+关键：**期望在 $p_T$ 上、与 $\theta$ 无关**，所以没有策略梯度问题，梯度就是"在老师生成的轨迹上做 teacher-forcing 最大似然"（MLE）——这就是为什么 off-policy 蒸馏在工程上等价于在固定老师数据集上跑 SFT。soft label 版（老师全词表概率做回归目标）是它的无偏形式，hard label 版（argmax token 的 CE）是它的随机近似。**公式 (1) 和 (2) 之间的全部差别，就是期望里 $y \sim q_\theta$ 还是 $y \sim p_T$**——一个决定是否需要策略梯度，另一个决定学的是"老师在它的世界里"还是"学生在学生会遇到的世界里"。
+
+### 2.3 机制：mode-seeking 藏在梯度权重里
+
+同样看梯度式子，mode-seeking 不是玄学，是反向 KL 的权重结构：
+
+- **反向 KL**（学生 $\to$ 老师）：权重 $\log\frac{q_\theta(y_t)}{p_T(y_t)}$ 在 $q_\theta > p_T$（学生自信区）为正、在 $q_\theta < p_T$（学生低估区）为负。梯度方向 = **强化学生已经擅长的 token + 压制学生回避的 token**，质量向"师生共识的高概率模式"集中。学生容量不足时它宁可丢掉老师的次要模式（zero-avoiding：避免在老师低概率处放质量）。
+- **forward KL**（老师 $\to$ 学生）：梯度无权重，老师分布里每个高概率 token 都被推着学，容量不足时只能"摊开"覆盖所有模式（zero-forcing），甚至把质量放到老师认为几乎不可能的区域——表现为学生输出发散、幻觉。
+- **JSD(β)**（GKD 的旋钮）在两者之间插值：$\mathcal{D}_{\mathrm{JSD}(\beta)}(P\|Q) = \beta D_{\mathrm{KL}}(P\|\beta P+(1-\beta)Q) + (1-\beta)D_{\mathrm{KL}}(Q\|\beta P+(1-\beta)Q)$，$\beta\to 0$ 时按比例逼近 forward KL、$\beta\to 1$ 时逼近 reverse KL（Huszár 2015：$\lim_{\beta\to 0} \mathcal{D}_{\mathrm{JSD}(\beta)}(P\|Q)/\beta = D_{\mathrm{KL}}(P\|Q)$）。
+
+GKD 的实验结论与机制一致：temperature sampling 评估下，mode-seeking 散度（reverse KL / JSD(0.9)）普遍优于 forward KL；greedy 评估时差别小。**选散度 = 选"学生学老师多少模式"的立场**。
+
 ## 3. 第一站：MiniLLM —— 为什么是反向 KL
 
 MiniLLM（Gu et al., arXiv:2306.08543，2023）是第一个把 on-policy 反向 KL 系统化用于 LLM 蒸馏的工作，它的动机今天看来依然成立：
@@ -88,6 +129,34 @@ MiniLLM（Gu et al., arXiv:2306.08543，2023）是第一个把 on-policy 反向 
 - **反向 KL 的药**：$D_{\mathrm{KL}}(p\|q)$（学生→老师）是 mode-seeking，学生只在高概率模式上贴近老师，天然抑制低概率区域的过度自信。
 
 MiniLLM 的另一个关键设计是 **on-policy 优化**：直接用策略梯度在采样轨迹上优化这个目标（而不是像传统 KD 那样在老师数据上做回归）。它证明了"目标函数换成反向 KL"和"数据从学生自己采"这两个改动缺一不可——只换目标不换数据，exposure bias 依然在。
+
+### 3.1 MiniLLM 的完整训练算法：策略梯度 + 三件套
+
+MiniLLM 的目标就是 §2.1 推的那个 $\mathcal{L}(\theta) = \mathrm{KL}[q_\theta \| p]$，梯度按策略梯度定理展开（论文 Eq. 8-9）：
+
+$$(\nabla\mathcal{L})_{\mathrm{Long}} = -\mathbb{E}_{y\sim q_\theta}\Big[\sum_{t=1}^{T} R_t\, \nabla\log q_\theta(y_t \mid y_{<t}, x)\Big], \qquad R_t=\sum_{t'=t}^{T}\log\frac{p(y_{t'} \mid y_{<t'}, x)}{q_\theta(y_{t'} \mid y_{<t'}, x)}$$
+
+**问题：方差太高，训练不稳定。** 论文为此上了三个稳定技巧（MiniLLM 论文 Section 2.2），这也是"为什么后来的 OPD 实现大多没直接用 MiniLLM 原版"的原因：
+
+1. **Single-step decomposition**：$R_t$ 把未来所有 token 的 log-ratio 都算进当前 token 的"奖励"，但生成质量在序列前端最敏感（前部 token 的误差沿序列累积放大）。所以把 $r_t$ 从 $R_t$ 中拆出来单独算梯度 $(\nabla\mathcal{L})_{\mathrm{Single}} = -\mathbb{E}[\sum_t r_t \nabla\log q_\theta(y_t\mid\cdot)]$，等价于**只看当前 token 的奖励**——这就是 TML 后来直接定义为 discount=0 的东西；
+2. **Teacher-mixed sampling**：从 $\tilde p_t = (1-\alpha) q_\theta(\cdot\mid y_{<t}) + \alpha p(\cdot\mid y_{<t})$ 采样，用老师帮学生压制低质量生成、缓解 reward hacking（学生钻"老师说好但实际错"的 token 的空子）；
+3. **Importance sampling 校正**：因为实际从 $\tilde p$ 采样而非 $q_\theta$，梯度要乘 IS 权重 $\frac{q_\theta(y_t\mid\cdot)}{\tilde p(y_t\mid\cdot)}$ 保持无偏（论文 Eq. 13-15）。
+
+训练流程是**两阶段**（Algorithm 1）：
+
+```
+Phase 1（暖机）: 学生在指令数据集 D 上 SFT 3 epochs，选验证 loss 最低的 checkpoint ——
+                 保证后续 PG 时学生"会说人话"，采样轨迹不至于全是噪声
+Phase 2（蒸馏）:  循环 {
+    学生采样响应 y ~ q_theta(·|x)            # on-policy 数据
+    老师给逐 token logprob p(y_t|y_<t,x)     # 一次前向
+    loss = -Σ_t R_t·log q_theta(y_t|·)       # 或 Single 版：-Σ_t r_t·log q_theta(y_t|·)
+    loss += beta·L_PT(x)                     # 混入预训练 LM loss，防止灾难性遗忘
+    策略梯度更新
+}
+```
+
+超参（论文报告）：lr 按规模 5e-4~5e-6 搜索（≤1.3B 用 5e-4/1e-4/5e-5，更大模型 5e-5/1e-5/5e-6），batch 32-64，小模型 20 epochs / 大模型 10 epochs。**注意 MiniLLM 是三年前的"第一版"，它的三件套后来被 GKD 的"不通过采样回传"和 OPD 的 discount=0 大幅简化了**——要复现现代 OPD 别直接抄 MiniLLM 的完整算法。
 
 ## 4. GKD：把 on-policy 变成旋钮
 
@@ -103,6 +172,53 @@ $\lambda=0$ 退化为传统 off-policy 蒸馏，$\lambda=1$ 是纯 on-policy。�
 
 **与 RLHF 的衔接**：GKD 的训练循环与 RLHF 几乎同构（采样 → 打分 → 策略梯度），可以直接把 PPO 的 KL 正则项替换成蒸馏损失，实现"蒸馏与 RL 的 seamless integration"。这个性质后来被 TML 推到极致：**OPD 可以是一行代码改动**（把 RL 的 regularizer model 换成老师，见 §8）。
 
+### 4.1 GKD 的训练流程：不通过采样回传 + λ 旋钮
+
+GKD 与 MiniLLM 最关键的工程分水岭是**不通过采样过程回传梯度**（no backprop through sampling，论文 3.2 节明确写了这一点）：on-policy 只决定"数据从哪来"（学生自己采样），但更新方式是监督式的散度最小化，采样路径本身不参与梯度。这让 GKD 的训练稳定性和 SFT 一样高，不需要 MiniLLM 那三件套——论文里点名说 MiniLLM "relies on a number of stabilizing tricks"。
+
+训练流程：
+
+```
+前置：学生必须先 SFT 过（能生成有质量、可被老师反馈的序列），类似 RLHF 的两阶段
+循环 {
+    1. 采样两条数据流：
+       a) 固定数据流：(x, y) ~ D_T（老师生成的离线数据或标注数据）
+       b) on-policy 流：x ~ D_x，学生采样 y ~ p_S(·|x)，温度 γ=1（鼓励多样性）
+    2. 老师在两个流的序列上给逐 token 概率分布 p_T(·|y_<n, x)（soft target）
+    3. loss = (1-λ)·L_SD + λ·L_OD，D 可选 forward KL / reverse KL / JSD(β)
+       对 on-policy 流的采样路径 stop-gradient（不通过采样回传）
+    4. 更新学生
+}
+```
+
+超参（论文报告）：lr 默认 3e-4（T5-base/large；T5-small 用 1e-3；**reverse KL 对高 lr 更敏感，统一 3e-4 更稳**）；学生采样温度 γ=1；老师 softmax 温度 1.0（greedy 评估）/ 0.1（温度采样评估的报告口径）；λ ∈ {0, 0.5, 1}，on-policy 与 mixed 一致优于纯 supervised（λ=0）。
+
+TRL 里开箱即用（`GKDTrainer`）：
+
+```python
+from trl import GKDTrainer, GKDConfig
+
+config = GKDConfig(
+    per_device_train_batch_size=16,
+    learning_rate=3e-4,                 # reverse KL 别加高
+    frac_student_samples=1.0,           # λ：on-policy 学生数据占比（0.5~1.0 常见）
+    divergence_type="reverse",          # reverse / forward / jsd
+    teacher_temperature=1.0,            # 老师分布温度
+    temperature=1.0,                    # 学生采样温度
+    num_epochs=3,
+)
+trainer = GKDTrainer(
+    model=student,                      # 需先 SFT 过
+    teacher_model=teacher,
+    args=config,
+    train_dataset=prompts_only_dataset, # λ=1 时只需要 prompts；λ<1 时给 (x,y) 对
+    processing_class=tokenizer,
+)
+trainer.train()
+```
+
+（字段名以 TRL 版本为准。）
+
 ## 5. 理论统一：OPD 到底在优化什么
 
 2025-2026 年有两篇工作把 OPD 从"一种技巧"变成了"坐标系里的一点"。
@@ -117,6 +233,16 @@ $$\mathcal{J}(\theta)=\mathbb{E}_{\hat{y}\sim\pi_\theta}\left[\sum_{t=1}^{T}\gam
 
 - $\gamma=\beta=1$、$\pi_{\mathrm{ref}}=\pi_\theta$（旧策略）时还原为标准 OPD；
 - **$\gamma>\beta$（奖励外推，ExOPD）时，可以推着学生超越老师**——因为学生不再被"贴近老师分布"约束，而是在老师偏好方向上走得更远。论文在 math 推理和代码生成上验证：ExOPD 跨多种师生尺寸组合一致优于标准 OPD。这是"学生 ≤ 老师"铁律的第一个系统性突破。
+
+**GRPO 的实现级同构**（把"OPD 是 RL"落实到最后一行代码）。GRPO（DeepSeekMath）的逐 token KL 正则项用的是无偏估计：
+
+$$\widehat{\mathrm{KL}}_{i,t} = \frac{\pi_{\mathrm{ref}}(o_{i,t}\mid q,o_{i,<t})}{\pi_\theta(o_{i,t}\mid q,o_{i,<t})} - \log\frac{\pi_{\mathrm{ref}}(o_{i,t}\mid q,o_{i,<t})}{\pi_\theta(o_{i,t}\mid q,o_{i,<t})} - 1$$
+
+GRPO 的目标是
+
+$$\mathbb{E}\Big[\frac{1}{\lvert o_i \rvert}\sum_{t}\big(A_{i,t}\log\pi_\theta(o_{i,t}\mid q,o_{i,<t}) - \beta\, \widehat{\mathrm{KL}}_{i,t}\big)\Big]$$
+
+现在做三处替换：**reference model 换成老师**（$\pi_{\mathrm{ref}} \to \pi_T$）、**奖励项归零**（$A_{i,t} = 0$）、**去掉组内归一化**（$n=1$）——GRPO 的 loss 就变成了 OPD 的蒸馏 loss，训练循环完全不用重写。verl 的 `ADV_ESTIMATOR=token_reward_direct` 就是把这个同构做成配置：优势函数直接设成逐 token 的 teacher−student log-ratio。所以 G-OPD 说的"OPD 是 dense KL-constrained RL 的特例"不是理论修辞，是**训练框架里的一个配置组合**。
 
 ### 5.2 Decoupling KL and Trajectories：四象限坐标系
 
@@ -177,6 +303,61 @@ OPD 不是免费的。2026 年出现了大量失败模式分析，核心几条�
 **MiniCPM5-1B（OpenBMB）**：管线是 "RL + OPD" 组合——OPD 做能力下放与冷启动，RL 做最后的超越与对齐。GLM-5、MiMo 的技术报告也都把 OPD 列入 post-training。
 
 **verl 落地**：THUNLP 的 OPD 实现基于 verl v0.7.0（`ADV_ESTIMATOR=token_reward_direct`），其 top-k overlap 诊断（`distillation/overlap_ratio`、`distillation/overlap_token_advantage`）已合入 verl 主线（PR #6469）。训练时监控这两个指标 + 熵差，比盯 loss 可靠得多——OPD 的成败在 token 级，肉眼不可见。
+
+### 8.1 训练实现速查：四种方法的配置总表
+
+把本文所有方法的训练配置收拢成一张表，选型时直接对照：
+
+| | **MiniLLM** | **GKD** | **OPD（狭义，TML/veRL）** | **OPSD 自蒸馏** |
+|---|---|---|---|---|
+| 目标函数 | 序列级 reverse KL | 插值散度 $(1-\lambda)L_{SD}+\lambda L_{OD}$ | 逐 token reverse KL（discount=0） | 学生→"特权上下文自己"的 reverse KL |
+| 数据流 | 学生采样完整轨迹 | 固定数据 + 学生采样混合 | 学生采样轨迹，老师只打分 | 学生采样轨迹，老师=带特权上下文的自己 |
+| 更新方式 | 策略梯度（三件套稳定） | **监督式散度最小化**（不通过采样回传） | 带权 REINFORCE（r_t·∇log π） | 同 OPD |
+| 老师角色 | 给 logprob 当奖励 | 给逐 token soft target | 给 logprob 当稠密奖励 | 给"上帝视角"logprob |
+| 关键超参 | lr 5e-4~5e-6，batch 32-64 | lr 3e-4，λ 0.5-1.0，温度 γ=1 | lr 1e-6（全参）/1e-4~3e-4（LoRA），prefix 128 | 同 OPD + 特权上下文构造 |
+| 稳定技巧 | 需要（Single/teacher-mix/IS） | 不需要（天然稳定） | detach log-ratio + discount=0 | 需防 fork suppression |
+| 代表实现 | MiniLLM 官方 | TRL `GKDTrainer` | thunlp/OPD（verl v0.7.0+）、tinker-cookbook | Self-Distilled Reasoner |
+
+**一句话选型**：想省事用 GKD（稳定、有 TRL 现成 Trainer）；想要最前沿效果用 OPD 的 discount=0 + sampled-token（Qwen3/TML 已验证）；要在 agent 多轮场景零环境交互用 ReOPD（见系列前篇）；没有外部老师但有真值/反馈再考虑 OPSD。
+
+### 8.2 可直接跑的 OPD 训练循环（工程版）
+
+与系列前篇的教学版循环互补，这里补上工程细节：老师前向缓存、loss 位置 mask、log-ratio 的 detach 位置。
+
+```python
+# opd_train.py —— 现代 OPD 工程版（sampled-token reverse KL，TML/verl 风格）
+# 数学（§2.1）：min E[Σ_t r_t·log π_θ(y_t|x,y_<t)]，r_t = log π_θ(y_t|·) − log π_T(y_t|·)（detach）
+import torch
+
+def train_step(student, teacher, tokenizer, prompts, args):
+    # 1. on-policy 采样：学生完整生成（含前缀），温度 0.7~1.0
+    xb, seq, attn_mask = rollout(student, tokenizer, prompts,
+                                 max_new_tokens=args.response_len,
+                                 temperature=args.temperature, top_p=0.9)
+    # seq = [prompt | response]；loss 只算 response 段（去掉 prompt 部分）
+
+    # 2. 老师打分：一次前向给全序列逐 token logprob（T=1.0），no_grad + 可缓存
+    with torch.no_grad():
+        t_logp = teacher.compute_logprobs(seq, attn_mask)          # log π_T(y_t|x,y_<t)
+
+    # 3. 学生前向（要梯度）+ 构造稠密奖励
+    s_logp = student.compute_logprobs(seq, attn_mask)              # log π_θ(y_t|x,y_<t)
+    r_t = (s_logp - t_logp).detach()                               # ★ 奖励，不是目标
+
+    # 4. 带权 REINFORCE：loss = mean(r_t · log p)，只统计 response 段
+    response_mask = attn_mask.clone()
+    response_mask[:, :prompt_len] = 0                              # 不监督 prompt 段
+    loss = (r_t * s_logp * response_mask).sum() / response_mask.sum()
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(student.parameters(), 1.0)
+    return loss.item()
+```
+
+**三个工程细节**（踩坑实录）：
+
+1. **log-ratio 必须 detach，loss 不加负号**——$r_t$ 自带符号：学生比老师更自信的 token 被强化，学生回避的 token 被压低（§2.3 的 mode-seeking 机制）。加负号会反转成"学老师低概率区域"，训练直接崩；
+2. **老师打分必须和学生前向用同一个序列**——老师输入是"prompt + 学生生成的响应"，不是老师自己采样的响应，否则 log-ratio 在错误状态上计算（暴露偏差原地复活）；
+3. **loss mask 只算 response 段**——prompt 段是输入不是输出，计入 loss 会把"复述 prompt"当成学习目标。
 
 ## 9. 决策指南：什么时候用哪个
 

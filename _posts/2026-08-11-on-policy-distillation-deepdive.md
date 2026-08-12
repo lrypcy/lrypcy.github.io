@@ -92,6 +92,52 @@ OPD 常被描述为「把 RL 的探索替换成老师监督」。两者对比如
 
 这就是清华论文标题里的"免费午餐"质疑：**dense token 级奖励让训练又快又稳，但学生永远学不到老师没展示过的东西**——而 RL 的价值恰恰在于发现超越老师/超越数据的策略。
 
+### 2.4 数学原理：OPD 的梯度为什么是 REINFORCE
+
+先厘清一个文献里经常混为一谈的问题：**OPD 有两条数据流实现，数学上并不等价**。
+
+- **DAgger 流**（THUNLP / ReOPD，即 §2.2 的 CE 公式）：学生只生成前缀，老师**补全**剩余内容，学生 teacher-forcing 学习老师补全的 token。监督是"学生状态 + 老师 token"——**状态 on-policy、目标 off-policy**，落在"前缀来源 × KL 方向"四象限的"学生前缀 × forward KL"格（详见姊妹篇《在线蒸馏方法全景》§5.2）。优点是更新稳定（每个 token 都是监督式拟合）、老师主动帮助学生探索；缺点是老师补全的内容与学生会自己生成的内容可能有风格差——这正是 THUNLP 说的"思考模式兼容性"问题（§3 条件一）。
+- **REINFORCE 流**（MiniLLM / GKD / TML / veRL）：学生采样**完整轨迹**，老师不补全，只对这些 token 给 logprob 当稠密奖励，用反向 KL 的策略梯度更新。这才是"序列级反向 KL 的无偏估计"（四象限的"学生前缀 × reverse KL"格）。优点是目标语义与"学生学老师"完全一致；缺点是方差高——MiniLLM 为此上了三件套稳定技巧，GKD 则干脆不通过采样过程回传梯度。
+
+下面推导 REINFORCE 流的数学。令学生 $\pi_\theta$、老师 $\pi_T$，学生自回归采样 $y \sim \pi_\theta(\cdot \mid x)$。目标写成序列级**反向 KL**（学生 $\to$ 老师）：
+
+$$\mathcal{L}_{\mathrm{OPD}}(\theta) = D_{\mathrm{KL}}\big(\pi_\theta(\cdot \mid x) \;\|\; \pi_T(\cdot \mid x)\big) = \mathbb{E}_{y \sim \pi_\theta(\cdot \mid x)}\left[\log\frac{\pi_\theta(y \mid x)}{\pi_T(y \mid x)}\right]$$
+
+注意期望内层是 $y \sim \pi_\theta$——这是"on-policy"三个字在数学上的位置：**目标函数自己依赖采样分布，而采样分布随 $\theta$ 移动**。所以不能直接对目标做普通梯度下降（$\theta$ 既出现在 $\pi_\theta(y)$ 里、又出现在取期望的分布里），必须走策略梯度。用 score function 技巧：
+
+$$\nabla_\theta \mathcal{L}_{\mathrm{OPD}} = \mathbb{E}_{y \sim \pi_\theta}\left[\underbrace{\log\frac{\pi_\theta(y \mid x)}{\pi_T(y \mid x)}}_{\text{序列级 log-ratio，当作奖励}}\;\nabla_\theta \log \pi_\theta(y \mid x)\right]$$
+
+推导只有两步：乘积法则把 $\nabla_\theta \pi_\theta(y)$ 拆成 $\pi_\theta(y)\nabla_\theta \log \pi_\theta(y)$；另一项 $\mathbb{E}_{y\sim\pi_\theta}[\nabla_\theta \log \pi_T(y)] = 0$——老师与 $\theta$ 无关，且 $\sum_y \nabla_\theta \pi_\theta(y) = \nabla_\theta \sum_y \pi_\theta(y) = \nabla_\theta 1 = 0$。**结果和 REINFORCE 一模一样：log-ratio 是"奖励"，$\nabla_\theta \log \pi_\theta$ 是策略梯度**——OPD 与 RL 在数学上没有本质区别，只是把 reward 换成了师生 log-ratio。
+
+自回归分解后，序列级 log-ratio 拆成逐 token 求和，每个 token 有即时奖励 $r_t$ 和 reward-to-go $R_t$：
+
+$$r_t = \log\frac{\pi_\theta(y_t \mid x, y_{<t})}{\pi_T(y_t \mid x, y_{<t})}, \qquad R_t = \sum_{t'=t}^{T} r_{t'}, \qquad \nabla_\theta \mathcal{L}_{\mathrm{OPD}} = \mathbb{E}_{y\sim\pi_\theta}\Big[\sum_{t=1}^{T} R_t\, \nabla_\theta \log \pi_\theta(y_t \mid x, y_{<t})\Big]$$
+
+（最后一步是策略梯度定理：动作 $y_t$ 不影响它之前的 reward，所以未来奖励可以归到当前 token。）从这里产生两个**工程上最关键的决定**：
+
+1. **log-ratio 必须 stop-gradient**。展开的梯度里 $\log\frac{\pi_\theta}{\pi_T}$ 中的 $\pi_\theta$ 也是 $\theta$ 的函数，但标准 REINFORCE 把它当常数奖励处理：期望层面 $\nabla r$ 的贡献合计为 0（上面第二项消零是同一回事），逐样本保留反而增大方差。实现时对 log-ratio 做 `.detach()`，只留 $\nabla_\theta \log \pi_\theta$ 一条回传路径。
+2. **discount = 0（只看当前 token）**。$R_t$ 里装着未来所有 token 的 log-ratio——这是 MiniLLM 高方差、需要三件套稳定技巧的根源。Thinking Machines 的复现直接取 **discount = 0**：$R_t \approx r_t$，每个 token 只用自己的 log-ratio 当奖励。数学上是"只保留梯度展开的对角项"，方差显著更低；配合 sampled-token 估计，单 token 梯度项为：
+
+$$\nabla_\theta \mathcal{L}_{\mathrm{OPD}}^{(t)} \approx \mathbb{E}_{y_t \sim \pi_\theta}\Big[\big(\log\pi_\theta(y_t \mid \cdot) - \log\pi_T(y_t \mid \cdot)\big)\,\nabla_\theta \log \pi_\theta(y_t \mid \cdot)\Big]$$
+
+这就是 veRL `ADV_ESTIMATOR=token_reward_direct` 做的事：**token 级奖励 = 学生 logprob − 老师 logprob**，一个带权 REINFORCE 项。§6.1 的代码就是这一行的落地。
+
+### 2.5 对照：off-policy SFT 蒸馏在数学上是什么
+
+把同样的推导套到传统蒸馏，差距一目了然。off-policy SFT 的目标是**正向 KL**（老师 $\to$ 学生）在固定老师数据上的期望：
+
+$$\mathcal{L}_{\mathrm{SFT}}(\theta) = D_{\mathrm{KL}}\big(\pi_T(\cdot \mid x) \;\|\; \pi_\theta(\cdot \mid x)\big) = \mathbb{E}_{y\sim\pi_T(\cdot \mid x)}\left[\log\frac{\pi_T(y \mid x)}{\pi_\theta(y \mid x)}\right]$$
+
+关键区别：**期望内层是 $y \sim \pi_T$，与 $\theta$ 无关**——没有策略梯度问题，直接求导：
+
+$$\nabla_\theta \mathcal{L}_{\mathrm{SFT}} = \mathbb{E}_{y\sim\pi_T(\cdot \mid x)}\big[-\nabla_\theta \log \pi_\theta(y \mid x)\big] = -\mathbb{E}_{y\sim\pi_T}\Big[\sum_{t=1}^{T} \nabla_\theta \log \pi_\theta(y_t \mid x, y_{<t})\Big]$$
+
+这正是"在老师生成的轨迹上做 teacher-forcing 最大似然"的梯度。**off-policy 蒸馏 = 老师分布下的 MLE，仅此而已**——梯度在老师的分布上取期望，学到的是"老师在它的世界里怎么做"；而 OPD 的梯度在学生分布上取期望、且每个 token 多一个 log-ratio 权重，学的才是"在我（学生）会遇到的状态下老师会怎么做"。两者只差"期望放在哪个分布上"，但这一差就是 exposure bias 的全部来源：训练分布（老师前缀）与推理分布（学生前缀）不一致。
+
+**mode-seeking vs mode-covering 的机制也藏在梯度里**。反向 KL 的权重 $\log\frac{\pi_\theta}{\pi_T}$ 在 $\pi_\theta > \pi_T$（学生自信区）为正、在 $\pi_\theta < \pi_T$（学生低估区）为负——**学生已经擅长的 token 被强化，学生回避的区域被压制**，质量向"师生共识的高概率模式"集中（mode-seeking / zero-avoiding）。正向 KL 的梯度没有权重，老师分布里每个高概率 token 都被推着学，学生容量不足时只能把质量"摊开"覆盖（mode-covering / zero-forcing），甚至会把质量放到老师认为几乎不可能的区域。直观例子：老师分布有两个峰、学生只装得下一个峰——正向 KL 的最优解是摊在两峰之间（两边都不像），反向 KL 的最优解是干脆挑一个峰集中（至少有一个模式是对的）。GKD 的实验指向同一结论：temperature sampling 评估下，mode-seeking 的散度（reverse KL 或 JSD(0.9)）普遍优于 forward KL。
+
+**温度缩放**再补一刀。Hinton 2015 蒸馏中老师分布除以温度软化：$\pi_T^{(T)}(y_t) = \frac{\exp(z_{y_t}/T)}{\sum_v \exp(z_v/T)}$。$T\to 0$ 退化为 one-hot（hard label），$T>1$ 把"次优 token 的相对排序"也传给学生。forward KL 蒸馏里 $T$ 是核心旋钮（分类任务常用 2-4），因为学生要模仿老师的全部模式；**OPD 里 $T=1.0$ 是默认**——反向 KL 本来只需要老师的高概率模式，softening 边际收益小，而 TML/veRL 的实现里老师直接给 logprob（一次前向，不用采样）。
+
 ## 3. 机制拆解：OPD 什么时候成功、什么时候失败（清华 OPD，arXiv:2604.13016）
 
 清华这篇（2026-04，ICML 2026 FoGen Workshop）是 OPD 的第一篇系统性机制研究。核心结论是两个**成败条件**：
@@ -165,28 +211,81 @@ ReOPD 的改动非常工程化：
 
 ## 6. 工程骨架：最小 OPD 实现
 
-### 6.1 Online OPD（单轮，核心就三行）
+### 6.1 Online OPD：先跑通 DAgger 流（最简，§2.2 的 CE）
 
 ```python
-# opd.py —— online OPD：学生走前缀，老师补全，学生学补全
+# opd.py —— DAgger 流：学生走前缀，老师补全，学生学补全（最简可跑版本）
 def opd_step(student, teacher, prompt: str, prefix_len: int, teach_len: int):
     # 1. 学生生成前缀（学生自己的状态分布 —— on-policy 的关键）
     prefix = student.generate(prompt, max_new_tokens=prefix_len,
                               sampling_params={"temperature": 0.7})
 
     # 2. 老师在「prompt + 学生前缀」上补全（dense 监督）
-    completion = teacher.generate(prompt + prefix, max_new_tokens=teach_len)
+    with torch.no_grad():                                  # 老师永远不训练
+        completion = teacher.generate(prompt + prefix, max_new_tokens=teach_len)
     completion = completion[len(prompt) + len(prefix):]
 
-    # 3. 学生在自己的前缀上最大化老师续写的概率（teacher-forcing CE）
+    # 3. 学生在自己的前缀上学习老师补全（teacher-forcing CE / forward KL 的 MC 估计）
     logits = student(prompt + prefix, completion)          # 前向
     loss = cross_entropy(logits, completion_tokens)        # token 级监督
     loss.backward(); student.step()
 ```
 
-**唯一容易错的地方**：第 2 步老师的输入必须是 `prompt + 学生前缀`，不是 `prompt + 老师自己生成的前缀`——写错就退化成 off-policy 蒸馏，distribution mismatch 会回来。
+**DAgger 流最容易错的地方**：第 2 步老师的输入必须是 `prompt + 学生前缀`，不是 `prompt + 老师自己生成的前缀`——写错就退化成 off-policy 蒸馏，distribution mismatch 会回来。
 
-### 6.2 ReOPD：离线 prefix 池
+### 6.2 Online OPD：REINFORCE 流完整训练循环（§2.4 的数学落地）
+
+```python
+# opd_train.py —— REINFORCE 流：学生采样完整轨迹，老师打 logprob 当稠密奖励
+# 数学对应（§2.4）：min L = E_{y~pi_theta}[ sum_t r_t * log pi_theta(y_t|x,y_<t) ]，
+#   r_t = log pi_theta(y_t|·) - log pi_T(y_t|·)，detach 后当作稠密 token 奖励
+# 常用超参（TML 复现 Qwen3 配方）：前缀 128 token，batch 64 prompts × 4 samples，
+#   lr 全参 1e-6 / LoRA(rank 128) 1e-4~3e-4，学生采样温度 0.7~1.0，老师温度 1.0
+def opd_train_loop(student, teacher, prompts, steps, args):
+    opt = torch.optim.AdamW(student.parameters(), lr=args.lr)
+    for _ in range(steps):
+        # 1. on-policy：学生采样完整轨迹（前缀要短，老师信号随前缀长度衰减，见 §6.5）
+        xb = sample(prompts, args.batch)
+        y = student.generate(xb, max_new_tokens=args.response_len,
+                             temperature=args.temperature, top_p=0.9)
+
+        # 2. 老师打分：对学生的轨迹做一次前向 compute_logprobs（T=1.0，无需采样）
+        with torch.no_grad():
+            t_logp = teacher.compute_logprobs(xb, y)       # log pi_T(y_t | x, y_<t)
+
+        # 3. 学生前向 + 构造稠密奖励并 detach（§2.4 决定 1）
+        s_logp = student.compute_logprobs(xb, y)           # log pi_theta(y_t | x, y_<t)
+        r_t = (s_logp - t_logp).detach()                   # ★ stop-gradient，只留 PG 路径
+
+        # 4. 带权 REINFORCE：loss = mean(r_t * log p)，
+        #    梯度下降 = 最小化反向 KL（负号已含在 r_t 的符号里，这里不要再加负号）
+        loss = (r_t * s_logp).mean()
+        loss.backward()
+        clip_grad_norm_(student.parameters(), 1.0)
+        opt.step(); opt.zero_grad()
+```
+
+**REINFORCE 流三个容易错的地方**：
+
+1. **`r_t` 必须 `.detach()`**——它是"奖励"不是"目标"。回传后 log-ratio 里的 $\pi_\theta$ 若参与梯度，等价于把 mode-seeking 变成了未知目标，方差爆炸；
+2. **loss 不加负号**。$r_t = \log\pi_\theta - \log\pi_T$ 自带符号：学生比老师更可能的 token（$r_t>0$）被正向强化，学生低估老师高概率的 token（$r_t<0$）被压低——这就是 mode-seeking 梯度（§2.5）；再加负号会反转成"学老师低概率区域"，直接崩；
+3. **老师输入必须是学生的轨迹**（prompt + student-completed response），不能是老师自己采样的轨迹。第 2 步和第 3 步的条件必须完全相同，否则 log-ratio 在错误的状态上计算。
+
+如果要更精确（也更贵），把第 3-4 步换成 full-vocabulary 反向 KL——每步需要师生全词表 logits：
+
+```python
+# 备选：full-vocab 反向 KL（每 token 全词表，最准；THUNLP 三种粒度之一）
+loss = 0.0
+for t in range(args.response_len):
+    p_s = softmax(student_logits[:, t])                    # 学生 next-token 分布
+    p_t = softmax(teacher_logits[:, t])                    # 老师 next-token 分布
+    loss += (p_s * (p_s.log() - p_t.log())).sum(dim=-1)    # token 级 D_KL(p_s || p_t)
+loss = loss.mean() / args.response_len
+```
+
+三种粒度（THUNLP 分类，verl 都支持）：full-vocab 最准但每步要全词表 logits 最贵；**sampled-token**（§6.2 的写法）用学生采到的 token 做无偏 MC 估计，最便宜且实践中够用；top-k 折中（k≈16，避开 Top-1 会崩）。
+
+### 6.3 ReOPD：离线 prefix 池（多轮 agent 场景）
 
 ```python
 # reOPD.py —— prefix replay：零环境交互
@@ -204,9 +303,24 @@ def reOPD_step(student, pool, kappa: float = 0.6):
     # 全程没有环境调用、没有老师在线推理
 ```
 
-### 6.3 与 veRL 结合
+### 6.4 与 veRL 结合
 
 veRL 的 OPD 支持（v0.7.0+）：rollout 用学生权重采样 prefix，teacher 作为另一个 actor 补全，loss 走 `distillation` 模式；训练时用 `distillation/overlap_ratio`（师生 top-k token 重叠率）和 `overlap_token_advantage`（重叠 token 的优势贡献）诊断——这两个指标是清华论文的 token 级分析直接落地的。
+
+对应 §2.4 的数学：veRL 里 `ADV_ESTIMATOR=token_reward_direct` 就是把优势函数设成逐 token 的 `log π_student − log π_teacher`，然后走标准的 GRPO 更新循环（组内归一化那一步直接跳过或设 n=1）——**从 GRPO 训练脚本到 OPD 是配置级改动**：KL 正则的 reference model 换成老师、reward 换成 token 级 log-ratio，这正是 GKD 论文和 TML 都强调的"一行代码"论断。
+
+### 6.5 训练超参数速查
+
+| 超参 | 推荐值（来源） | 说明 |
+|------|---------------|------|
+| prefix / response 长度 | 前缀 128 token（TML）；响应 1K-7K 是甜点区（THUNLP） | 前缀过长 → 老师信号衰减（+0.37 @1K → +0.02 @16K）；响应超 10K-15K 训练后期坍缩 |
+| 学生采样温度 | 0.7-1.0（GKD 用 1.0） | 温度放开保多样性，on-policy 数据覆盖面才够 |
+| 老师温度 | 1.0（TML / veRL 默认） | reverse KL 场景不需要软化（§2.5） |
+| learning rate | 全参 1e-6（Qwen3 复现）；LoRA 1e-4~3e-4（GKD 的 T5 用 3e-4） | **reverse KL 对高 lr 敏感**（GKD 论文明确），先小后大 |
+| batch | 64 prompts × 4 samples（TML）；GRPO 风格 n=8 | 比 RL 小很多就能稳（dense 监督的信息密度高） |
+| λ（GKD 数据混合比） | 0.5-1.0 | 0.5 掺固定数据防 on-policy 分布坍缩，1.0 纯 on-policy |
+| discount | 0（TML / veRL token_reward_direct） | 只看当前 token 的 log-ratio，方差最小 |
+| 采样 n / 梯度步 | 单 prompt 20 步 × 256 rollouts 即可接近老师（TML） | dense 监督下数据效率远超 RL（见姊妹篇《在线蒸馏方法全景》§8 效率账） |
 
 ## 7. 调优清单与陷阱
 
