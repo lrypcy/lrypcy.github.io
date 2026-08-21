@@ -1,3 +1,6 @@
 # Jekyll 构建产物（GitHub Pages 会自动构建，无需提交）
 _site/
 .jekyll-cache/
+
+# Obsidian 编辑器配置
+.obsidian/

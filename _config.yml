@@ -34,7 +34,7 @@ paginate_path: /page:num/
 # 未填或为占位符时，评论区不渲染（见 _includes/giscus.html 的防护逻辑）
 giscus:
   category: Announcements
-  category_id: ""   # TODO: 填入 giscus.app 生成的 ID
+  category_id: "DIC_kwDOCLvNNM4DD5Cr"   # Announcements（giscus.app 生成）
 
 
 # 构建排除
