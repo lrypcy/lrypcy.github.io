@@ -163,6 +163,14 @@ def ppo_update(policy, opt, batch, clip_eps=0.2, vf_coef=0.5, ent_coef=0.01, epo
 | KL 无监控 | 数据复用过久，静默 off-policy 化 | 记录 $\bar D_{KL}(\theta_{old}, \theta)$，超阈值提前终止 epoch |
 | 学习率恒定 | 后期震荡不收敛 | 线性退火到 0 |
 
+### 4.4 实验验证：信赖域动力学的实跑证据
+
+同一网格世界三条线对比（`experiments/run.py`，exp2）：REINFORCE 用原始回报信号，分别配大学习率（0.03）与小学习率（0.002）；PPO-clip 直接上大学习率（0.4，是前两者的 13~200 倍）——
+
+![PPO 信赖域动力学：左上 oversized lr 断崖崩坏；右上 PPO 的 KL 被 clip 钉在 10^-3 量级；左下 clip fraction 稳定在 2%~10%；右下学到的最优路径](/assets/img/rl/ppo_trust_region_dynamics.png)
+
+四个子图各自回答一个问题。**左上**（回报）：oversized lr 在第 ~10 次更新断崖崩坏且永不恢复（末段平均 -108.7）；小步长稳但慢（-15.5）；PPO 用最大的学习率反而最快最稳（-13.3）。**右上**（本篇的主角）：每次更新的 approx-KL——oversized lr 飙到 $10^0$ 且剧烈震荡（分布空间乱窜），而 PPO 全程被钉在 $10^{-3}$ 量级——**clip 就是一个隐式的信赖域**。**左下**：clip fraction 稳定在 2%~10%，证明「钳子」每轮都在真实地掐灭越界梯度，不是摆设。**右下**：PPO 学到的贪心策略正确绕开全部陷阱。
+
 ## 5. PPO 统治 RLHF，然后撞墙
 
 InstructGPT（2022）确立了 RLHF 三阶段范式：SFT → 训练奖励模型 → PPO 优化。此后几乎所有对齐工作默认 PPO。但把 PPO 放进 LLM 场景，第三篇以来的所有"贵"都被放大了：

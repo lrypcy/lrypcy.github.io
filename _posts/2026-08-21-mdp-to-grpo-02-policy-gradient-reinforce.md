@@ -212,6 +212,14 @@ $$\nabla_\theta J(\theta) \;=\; \mathbb{E}\left[\; \sum_{t} \nabla_\theta \log \
 
 \* 严格说 batch 统计量引入了样本间耦合，是有偏的，但实践中人人在用、效果稳定——RL 工程里"理论有偏、实践无敌"的第一个例子，后面 PPO 的 clip 会再遇到同类取舍。
 
+### 5.5 实验验证：同一个学习率，两种命运
+
+以上结论可以在一个 5x5 网格世界上直接验证（配套代码 `experiments/run.py`，exp1，纯 numpy 可复现）：vanilla REINFORCE 与 REINFORCE+baseline 使用**完全相同的学习率** $\alpha=0.03$——
+
+![REINFORCE vs REINFORCE+baseline：左图相同学习率下 vanilla 崩坏而 baseline 稳定收敛；右图显示 baseline 把更新信号幅度压低约 30 倍](/assets/img/rl/reinforce_vs_baseline_learning.png)
+
+左图：vanilla REINFORCE（红线）在训练早期就断崖式崩坏并永久躺平（末段平均回报 -201；不同 seed 的崩坏时刻与深度都不同——大步长下训练成败是运气问题）；加 baseline 后（蓝线）同样学习率稳定收敛到最优 -7 附近（末段平均 -13）。右图是关键中间变量：更新信号幅度 $\mathbb{E}\lvert G_t - b(s_t)\rvert$ 被从 ~17 压到 ~0.5，**方向不变、幅度缩小约 30 倍**——这就是「无偏降方差」的直观形态。
+
 ## 6. on-policy 困境：好数据只能用一次
 
 还有最后一座大山。注意策略梯度定理里的期望是对 $p_\theta(\tau)$ 取的——**梯度估计只在数据来自当前策略时无偏**。可是神经网络一更新，$\theta$ 变了，刚才采的那批数据立刻"过期"。于是 REINFORCE 的训练变成：
