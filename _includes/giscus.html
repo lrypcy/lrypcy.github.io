@@ -1,0 +1,23 @@
+<!-- giscus 评论系统（数据存本仓库 GitHub Discussions，主题跟随系统深浅色） -->
+{% assign giscus_ready = false %}
+{% if site.giscus.category_id and site.giscus.category_id != "" and site.giscus.category_id != "__GISCUS_CATEGORY_ID__" %}
+  {% assign giscus_ready = true %}
+{% endif %}
+{% if giscus_ready %}
+<script src="https://giscus.app/client.js"
+        data-repo="lrypcy/lrypcy.github.io"
+        data-repo-id="MDEwOlJlcG9zaXRvcnkxNDY1MjU0OTI="
+        data-category="{{ site.giscus.category }}"
+        data-category-id="{{ site.giscus.category_id }}"
+        data-mapping="pathname"
+        data-strict="0"
+        data-reactions-enabled="1"
+        data-emit-metadata="0"
+        data-input-position="top"
+        data-theme="preferred_color_scheme"
+        data-lang="zh-CN"
+        data-loading="lazy"
+        crossorigin="anonymous"
+        async>
+</script>
+{% endif %}

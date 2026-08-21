@@ -45,6 +45,14 @@ layout: default
   </div>
 </article>
 
+{% assign giscus_id = site.giscus.category_id | default: "" %}
+{% if page.comments != false and giscus_id != "" and giscus_id != "__GISCUS_CATEGORY_ID__" %}
+<section class="post-comments">
+  <h2 class="comments-title">💬 评论</h2>
+  {% include giscus.html %}
+</section>
+{% endif %}
+
 {% if page.layout == 'post' %}
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>

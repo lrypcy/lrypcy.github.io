@@ -29,6 +29,14 @@ plugins:
 paginate: 6
 paginate_path: /page:num/
 
+# giscus 评论系统（GitHub Discussions）
+# category_id 获取：https://giscus.app/zh-CN 输入仓库后复制 data-category-id
+# 未填或为占位符时，评论区不渲染（见 _includes/giscus.html 的防护逻辑）
+giscus:
+  category: Announcements
+  category_id: ""   # TODO: 填入 giscus.app 生成的 ID
+
+
 # 构建排除
 exclude:
   - README.md
