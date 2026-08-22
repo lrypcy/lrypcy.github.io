@@ -4,6 +4,8 @@ date: 2026-08-22
 categories:
   - 强化学习
 tags: [irl, inverse-reinforcement-learning, maxent-irl, gail, apprenticeship-learning, reward-learning]
+layout: post
+mathjax: true
 ---
 
 > **TL;DR 三连**

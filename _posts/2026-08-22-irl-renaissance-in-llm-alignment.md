@@ -4,6 +4,8 @@ date: 2026-08-22
 categories:
   - 强化学习
 tags: [irl, rlhf, reward-model, dpo, rlvr, alignment]
+layout: post
+mathjax: true
 ---
 
 > **TL;DR 三连**
