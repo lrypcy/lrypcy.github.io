@@ -100,6 +100,17 @@ until 收敛
 
 PyTorch 实现（CartPole 为例，可直接运行）：
 
+##### 变量映射表（数学 ↔ 代码）
+
+| 数学符号 | 代码变量 | Shape / 类型 | 含义 |
+|---|---|---|---|
+| $\pi_\theta(a\mid s)$ | `policy(state)` → `Categorical` | logits `(2,)` | 参数化策略 |
+| $\log \pi_\theta(a_t\mid s_t)$ | `dist.log_prob(action)` | 标量/`(T,)` | log-derivative 项素材 |
+| $G_t$ | `returns`（折扣累加） | `(T,)` | reward-to-go 回报 |
+| $\alpha$ | `lr=1e-3` | 标量 | Adam 学习率 |
+| $b$（baseline） | 尚未实现 | — | §5 的方差武器，见动手练习 |
+
+
 ```python
 import torch
 import torch.nn as nn
@@ -259,9 +270,11 @@ $$\frac{p_\theta(\tau)}{p_{\theta'}(\tau)} = \prod_{t} \frac{\pi_\theta(a_t \mid
 4. [从 MDP 到 GRPO（四）：PPO——用一阶方法驯服策略更新](/2026/08/21/mdp-to-grpo-04-ppo-clipped-surrogate/)
 5. [从 MDP 到 GRPO（五）：GRPO——组相对优势与大模型时代的 RL](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/)
 
-**参考与延伸阅读**
+> 🧪 **动手练习**：① 给上面的 REINFORCE 加一个 running baseline，固定 5 个 seed 对比梯度方差与收敛速度（对应 §5.3 结论）；② 扫 `lr ∈ {3e-4, 1e-3, 3e-3}`，画出回报曲线，找出方差战争最惨烈的档位。
+
+## 参考与延伸阅读
 
 * Williams, "Simple Statistical Gradient-Following Algorithms for Connectionist RL" (1992) —— REINFORCE 原始论文，baseline 技巧也出自这里
 * Sutton & Barto, *Reinforcement Learning: An Introduction* (2nd ed.), Ch. 13 —— 策略梯度定理的标准推导
-* Schulman et al., "High-Dimensional Continuous Control Using Generalized Advantage Estimation" (arXiv:1506.02438) —— advantage 与方差-偏差权衡的深入分析
+* Schulman et al., "High-Dimensional Continuous Control Using Generalized Advantage Estimation" ([arXiv:1506.02438](https://arxiv.org/abs/1506.02438)) —— advantage 与方差-偏差权衡的深入分析
 * OpenAI Spinning Up, "Policy Gradients" —— 本篇第 5 节结构与 spinning up 的讲法相互印证

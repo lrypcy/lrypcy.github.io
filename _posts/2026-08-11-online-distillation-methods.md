@@ -14,7 +14,7 @@ mathjax: true
 > * **为什么非 on-policy 不可**：off-policy 蒸馏的 exposure bias 会随序列长度近似**平方级**放大（Tencent Survey 的结论）——学生训练时只见过老师"完美"的前缀，推理时却要面对自己犯错后越走越偏的轨迹。误差一旦开始累积，模仿信号就失效了。
 > * **方法谱系有一条清晰的收敛线**：MiniLLM（2023，反向 KL + 策略梯度）→ GKD（ICLR 2024，把 on-policy 变成插值旋钮）→ **理论统一**：G-OPD 证明 OPD 是 dense KL-constrained RL 的特例（奖励外推 ExOPD 甚至能超越老师）；Decoupling KL 论文把 SFT / DAgger / 离线 RL 蒸馏 / OPD 放进"前缀来源 × KL 方向"的同一张四象限表。2026 年的 OPD 已经不是"一种技巧"，而是一个有坐标系的方法族。
 > * **工业端已经全面采用**：Qwen3 的 post-training 标配 OPD；Thinking Machines Lab 复现 Qwen3 配方，**7-10× 更少的梯度步、50-100× 的计算效率**（dense 监督 ≈ 每 token 一个 bit，RL 每 episode 只有 O(1) bit）；MiniCPM5-1B 走 "RL + OPD" 组合；verl 已内置 OPD 训练与 overlap 诊断指标。
-> * **机制与边界**（清华 THUNLP，arXiv:2604.13016）：OPD 成功需要两个条件——师生**思考模式兼容** + 老师拥有**真新知识**（同家族 1.5B/7B 老师从学生视角看分布上不可区分）；dense token 奖励随轨迹深度衰减，**长视野蒸馏是当前没有定论的边界**。
+> * **机制与边界**（清华 THUNLP，[arXiv:2604.13016](https://arxiv.org/abs/2604.13016)）：OPD 成功需要两个条件——师生**思考模式兼容** + 老师拥有**真新知识**（同家族 1.5B/7B 老师从学生视角看分布上不可区分）；dense token 奖励随轨迹深度衰减，**长视野蒸馏是当前没有定论的边界**。
 
 ```mermaid
 flowchart LR
@@ -42,7 +42,7 @@ flowchart LR
 
 知识蒸馏（KD）2015 年就有了（Hinton et al.），2023 年 Alpaca 把"LLM 老师生成数据 → 学生 SFT"变成工业默认动作，OpenThoughts 之类的蒸馏数据集动辄百万级。但这条 off-policy 路线有两个结构性问题，随着任务变长、推理变深而愈发致命：
 
-**问题一：Exposure bias（暴露偏差）随长度平方级放大。** 学生在训练时看到的上下文，全是老师生成的"完美"前缀；推理时学生自己生成，任何一个小错都会让后续状态偏离训练分布，而且偏离会自我累积——这正是 Bengio 2015 年在 sequence prediction 里描述的 exposure bias。Tencent 的 OPD 综述（arXiv:2604.00626）给出一个量化视角：**这个误差近似随序列长度的平方增长**。短任务（分类、抽取）问题不大，长推理（CoT、agent 多轮）直接踩爆。
+**问题一：Exposure bias（暴露偏差）随长度平方级放大。** 学生在训练时看到的上下文，全是老师生成的"完美"前缀；推理时学生自己生成，任何一个小错都会让后续状态偏离训练分布，而且偏离会自我累积——这正是 Bengio 2015 年在 sequence prediction 里描述的 exposure bias。Tencent 的 OPD 综述（[arXiv:2604.00626](https://arxiv.org/abs/2604.00626)）给出一个量化视角：**这个误差近似随序列长度的平方增长**。短任务（分类、抽取）问题不大，长推理（CoT、agent 多轮）直接踩爆。
 
 **问题二：模仿风格 ≠ 模仿事实。** "The False Promise of Imitating Proprietary LLMs"（Gudibande et al., 2023）早就指出：学生可以学会老师的口吻和自信，但学不会老师的正确率。off-policy 蒸馏本质是让学生拟合"老师在老师自己的状态分布下的输出"，而不是"老师在我（学生）的状态下的行为"。
 
@@ -70,7 +70,7 @@ $$\mathcal{L}_{\mathrm{OPD}}(\theta)=\mathbb{E}_{x\sim\mathcal{D}_x,\;\hat{y}\si
 
 $$\nabla_\theta \mathcal{L}_{\mathrm{OPD}} \propto \mathbb{E}_{\hat{y}\sim\pi_\theta}\left[\sum_{t=1}^{T}\underbrace{\log\frac{\pi_\theta(\hat{y}_t\mid x,\hat{y}_{<t})}{\pi_T(\hat{y}_t\mid x,\hat{y}_{<t})}}_{\text{token 级优势}}\nabla_\theta\log\pi_\theta(\hat{y}_t\mid x,\hat{y}_{<t})\right]$$
 
-所以 OPD 在工程上就是"把 RL 的 reward 换成一个稠密 token 级 log-ratio"，Decoupling KL 论文（arXiv:2605.16826）把这个等价性严格化：**reverse KL + student prefix = dense-reward REINFORCE**。
+所以 OPD 在工程上就是"把 RL 的 reward 换成一个稠密 token 级 log-ratio"，Decoupling KL 论文（[arXiv:2605.16826](https://arxiv.org/abs/2605.16826)）把这个等价性严格化：**reverse KL + student prefix = dense-reward REINFORCE**。
 
 **三种监督粒度**（THUNLP 论文的分类，verl 都支持）：
 
@@ -194,6 +194,20 @@ GKD 与 MiniLLM 最关键的工程分水岭是**不通过采样过程回传梯�
 超参（论文报告）：lr 默认 3e-4（T5-base/large；T5-small 用 1e-3；**reverse KL 对高 lr 更敏感，统一 3e-4 更稳**）；学生采样温度 γ=1；老师 softmax 温度 1.0（greedy 评估）/ 0.1（温度采样评估的报告口径）；λ ∈ {0, 0.5, 1}，on-policy 与 mixed 一致优于纯 supervised（λ=0）。
 
 TRL 里开箱即用（`GKDTrainer`）：
+
+##### 变量映射表（数学 ↔ 代码）
+
+| 数学符号 | 代码变量 | Shape / 类型 | 含义 |
+|---|---|---|---|
+| 反向 KL 梯度权重 $r_t=\log\pi_S-\log\pi_T$ | `r_t`（teacher 侧 detach） | `(T,)` | mode-seeking 来源 |
+| 前向 KL（表征级） | `mse(logits_S, logits_T)` | `(B,T,V)` | 覆盖教师全分布 |
+| $\lambda$ 内插旋钮 | `loss = λ·fwd + (1-λ)·rev` | 标量 | GKD 的 on-policy 程度 |
+
+
+`rewards/r` 为规则奖励标量、`advantages` 为组内标准化后的优势、`ratio/logp/old_logp`
+为 token 级重要性比率三件套、`format_score/correctness` 类为分项奖励。若与具体框架
+命名有出入，以你所用版本的 reward_score 插件签名为准。
+
 
 ```python
 from trl import GKDTrainer, GKDConfig
@@ -379,6 +393,8 @@ def train_step(student, teacher, tokenizer, prompts, args):
 3. **超越老师的机制**：G-OPD 的奖励外推能做，但 THUNLP 的机制研究提示"学生访问不到老师有效状态"是结构性障碍；OPSD 的 fork suppression 又说明自蒸馏可能过拟合特权信号。两条路都还没走通。
 4. **几何视角**：HKUST 等的《On the Geometry of On-Policy Distillation》（arXiv:2606.07082）发现 OPD 的参数更新稀疏度（51.6%）介于 SFT（8.1%）与 RLVR（77.2%）之间，且早期会锁定到低秩更新通道——"OPD 学什么"的答案可能藏在参数空间里。
 
+> 🧪 **动手练习**：① 在 GKD 的 λ 旋钮上取 {0, 0.5, 1} 三点（纯 reverse / 混合 / 纯 forward），对比模式覆盖；② 去掉教师做 OPSD 自蒸馏，复现 §7 的失败模式之一。
+
 ## 参考与延伸阅读
 
 - 论文：Yaxuan Li et al., *Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism, and Recipe*, arXiv:2604.13016（清华 THUNLP；本篇 §2/§5/§7 的机制与配方来源）
@@ -390,6 +406,9 @@ def train_step(student, teacher, tokenizer, prompts, args):
 - 论文：Yuqian Fu et al., *Revisiting On-Policy Distillation: Empirical Failure Modes and Simple Fixes*, arXiv:2603.25562（CASIA）
 - 综述：Mingyang Song & Mao Zheng, *A Survey of On-Policy Distillation for LLMs*, arXiv:2604.00626（腾讯）
 - 博客：Kevin Lu et al., *On-Policy Distillation*, Thinking Machines Lab, 2025.10（50-100× 效率数据的出处）
-- 代码：https://github.com/thunlp/OPD（verl 底座）；https://github.com/thinking-machines-lab/tinker-cookbook（TML 参考实现）；TRL `experimental/`（GKD 等 Trainer）
-- 生态索引：https://github.com/thinkwee/AwesomeOPD（820+ star 的 OPD 方法图谱）
+- 代码：[thunlp/OPD](https://github.com/thunlp/OPD)（verl 底座）；[thinking-machines-lab/tinker-cookbook](https://github.com/thinking-machines-lab/tinker-cookbook)（TML 参考实现）；TRL `experimental/`（GKD 等 Trainer）
+- 生态索引：[thinkwee/AwesomeOPD](https://github.com/thinkwee/AwesomeOPD)（820+ star 的 OPD 方法图谱）
 - 系列前篇：本站《On-Policy Distillation 深度剖析》（2026-08-11，Agentic RL 视角 + ReOPD）；《ToolRL 深度剖析》（2026-08-10）；《Search RL 深度剖析》（2026-08-11）
+* 2026-08 新作速览："Step-Level On-Policy Distillation" ([arXiv:2608.16333](https://arxiv.org/abs/2608.16333)，SFT↔OPD 光谱插值)；"Group-Calibrated OPD for Long-Context Reasoning" ([arXiv:2608.19181](https://arxiv.org/abs/2608.19181))；"Open-MOPD 多教师能力失衡诊断" ([arXiv:2608.19098](https://arxiv.org/abs/2608.19098))；"OPD 泛化性的双刃剑" ([arXiv:2608.16647](https://arxiv.org/abs/2608.16647))
+* 生态索引持续更新：[AwesomeOPD](https://github.com/thinkwee/AwesomeOPD)（2026-07-23 版新增审读 191 条，覆盖白盒/黑盒教师、OPSD、OPD-RL 混合、Agent OPD 等分类）
+* 系列延伸（象限Ⅱ）：《[逆强化学习五十年](/2026/08/22/irl-fifty-years-from-demonstrations/)》 · 《[正向学策略，反向学奖励：IRL 在 LLM 对齐里的复活](/2026/08/22/irl-renaissance-in-llm-alignment/)》（X-KD 一节与本篇直接相关）

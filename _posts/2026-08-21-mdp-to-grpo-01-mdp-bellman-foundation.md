@@ -167,6 +167,17 @@ $$V^\ast(s) = \max_a \sum_{s'} p(s' \mid s, a)\,\Big[\, r(s,a,s') + \gamma\, V^\
 
 有了不动点方程，最朴素的算法就是**值迭代**：反复施加贝尔曼最优算子直到收敛。
 
+##### 变量映射表（数学 ↔ 代码）
+
+| 数学符号 | 代码变量 | Shape / 类型 | 含义 |
+|---|---|---|---|
+| $\gamma$ | `GAMMA` | 标量 | 折扣因子（episodic 任务取 1.0） |
+| $V^*(s)$ | `V` | `(N, N)` ndarray | 最优值函数（迭代收敛后） |
+| $\theta$（收敛阈值） | `theta` | 标量 | 贝尔曼残差停止条件 |
+| $p(s',r\mid s,a)$ | 由 `ACTIONS` 与网格结构隐式给出 | — | 确定性转移 |
+| $\pi^*(a\mid s)$ | `np.argmax(vals)` 贪心提取 | `(N, N)` | 由 $V^*$ 恢复最优策略 |
+
+
 ```python
 import numpy as np
 
@@ -270,9 +281,12 @@ print(V)
 4. [从 MDP 到 GRPO（四）：PPO——用一阶方法驯服策略更新](/2026/08/21/mdp-to-grpo-04-ppo-clipped-surrogate/)
 5. [从 MDP 到 GRPO（五）：GRPO——组相对优势与大模型时代的 RL](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/)
 
-**参考与延伸阅读**
+> 🧪 **动手练习**：① 把 `GAMMA` 改成 0.9 重跑值迭代，观察最优策略是否改变并解释原因；② 任选一格手工由 $V^*$ 计算 $Q^*(s,a)$，验证 $V^*(s)=\max_a Q^*(s,a)$。
+
+## 参考与延伸阅读
 
 * Sutton & Barto, *Reinforcement Learning: An Introduction* (2nd ed.), Ch. 3–4 —— MDP、贝尔曼方程、动态规划的权威表述
 * David Silver, UCL RL Course, Lecture 1–3 —— 与本篇结构最接近的视频课程
 * OpenAI Spinning Up, "Kinds of RL Algorithms" —— 值函数方法 vs 策略梯度方法的分类视角
-* DeepSeek-AI, "DeepSeekMath: Pushing the Limits of Mathematical Reasoning" (arXiv:2402.03300) —— GRPO 的原始出处，第五篇的主角
+* DeepSeek-AI, "DeepSeekMath: Pushing the Limits of Mathematical Reasoning" ([arXiv:2402.03300](https://arxiv.org/abs/2402.03300)) —— GRPO 的原始出处，第五篇的主角
+- 中文社区视角：《【强化学习课程笔记 二】马尔可夫决策过程(下)(周博磊老师课程)》（知乎）https://zhuanlan.zhihu.com/p/168768560

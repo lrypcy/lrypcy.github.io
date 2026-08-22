@@ -186,13 +186,40 @@ $$\text{GRPO} \;=\; \underbrace{\text{REINFORCE with baseline}}_{\text{第二篇
 4. [从 MDP 到 GRPO（四）：PPO——用一阶方法驯服策略更新](/2026/08/21/mdp-to-grpo-04-ppo-clipped-surrogate/)
 5. **从 MDP 到 GRPO（五）：GRPO——组相对优势与大模型时代的 RL**（本篇，完结）
 
-**参考与延伸阅读**
+##### 变量映射表（数学 ↔ 代码）
 
-* Shao et al., "DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models" (arXiv:2402.03300) —— GRPO 原始出处，第 4 节推导与本篇第 2-3 节对应
-* DeepSeek-AI, "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning" (arXiv:2501.12948) —— R1-Zero、aha moment、RLVR
-* Liu et al., "Understanding R1-Zero-Like Training: A Critical Perspective" (arXiv:2503.20783) —— Dr.GRPO，对 std/长度归一化的批判
+以 veRL 风格的最小实现为参照：
+
+```python
+ratio      = torch.exp(logp - old_logp)              # ρ_t(θ)，token 级
+advantages = (rewards - rewards.mean()) / (rewards.std() + 1e-8)   # Â_i 组相对优势
+advantages = advantages.unsqueeze(-1)                # (K,) -> (K,1) 广播到 token 维
+s1 = ratio * advantages
+s2 = torch.clamp(ratio, 1 - eps, 1 + eps) * advantages
+pi_loss = -torch.min(s1, s2).mean()                  # PPO 壳
+delta   = ref_logp - logp                            # log(π_ref/π_θ)
+k3_loss = (delta.exp() - delta - 1).mean()           # k3 无偏 KL 估计器
+```
+
+| 数学符号 | 代码变量 | Shape / 类型 | 含义 |
+|---|---|---|---|
+| $q,\ o_i \sim \pi_\theta(\cdot\mid q)$ | rollout 输出 | `(K, T)` | 同一 prompt 组内 K 条采样 |
+| $r_i$ | `rewards` | `(K,)` | 规则奖励（组内） |
+| $\hat{A}_i=\frac{r_i-\mathrm{mean}}{\mathrm{std}+\epsilon}$ | `advantages` | `(K,)` → 广播 | 组相对优势 |
+| $\rho_t(\theta)$ | `ratio` | `(K, T)` | token 级重要性比率 |
+| $\mathbb{D}_{KL}^{k3}$ | `delta.exp() - delta - 1` | `(K, T)` | 无偏 KL 估计器 |
+
+
+> 🧪 **动手练习**：① 固定采样预算，对比组大小 K ∈ {4, 8, 16} 的优势估计噪声与最终成绩；② 把 std 归一化改成 Dr.GRPO 式常数除法，复现本文 toy 实验中"小信号 regime 反而更慢"的现象，并写出你的 regime 解释。
+
+## 参考与延伸阅读
+
+* Shao et al., "DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models" ([arXiv:2402.03300](https://arxiv.org/abs/2402.03300)) —— GRPO 原始出处，第 4 节推导与本篇第 2-3 节对应
+* DeepSeek-AI, "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning" ([arXiv:2501.12948](https://arxiv.org/abs/2501.12948)) —— R1-Zero、aha moment、RLVR
+* Liu et al., "Understanding R1-Zero-Like Training: A Critical Perspective" ([arXiv:2503.20783](https://arxiv.org/abs/2503.20783)) —— Dr.GRPO，对 std/长度归一化的批判
 * Yu et al., "DAPO: An Open-Source LLM RL System at Scale" (arXiv:2503.14476) —— clip-higher、动态采样
 * Zheng et al., "Group Sequence Policy Optimization" (arXiv:2507.18071) —— GSPO，序列级比率
 * Ahmadian et al., "Back to Basics: Revisiting REINFORCE-style Optimization" (arXiv:2402.14740) —— RLOO，极简路线
 * Schulman, "Approximating KL Divergence" (blog, 2016) —— k1/k2/k3 估计器的原始分析
 * veRL (ByteDance)、AReal、OpenRLHF —— hybrid engine 与异步 rollout 的工程实现
+- 中文社区视角：《速读deepseek v2 (三)- 理解GRPO(deepseekmath 与 deepseek coder)》（知乎）https://zhuanlan.zhihu.com/p/700878867

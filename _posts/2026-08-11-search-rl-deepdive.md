@@ -12,7 +12,7 @@ mathjax: true
 >
 > * **Search RL 回答了推理模型的最后一公里问题**：R1 式 RL 把模型的推理能力拉满，但事实性与时效性仍然依赖参数记忆——知识截止、幻觉、多跳事实推理差。Search RL 把「搜索引擎/检索器」变成 RL 的动作空间，让模型在训练中自己学会**何时搜索、搜什么、怎么用检索结果**，推理与搜索在轨迹层面交织（reasoning-search interleaved）。
 > * **一个反直觉的结论**：Search-R1 用 **3B 的 base 模型 + 纯规则奖励**，就能从零长出「搜索调用」能力——不需要 SFT 教它用搜索工具，Qwen2.5-7B-base 甚至自主学会了**多轮搜索**（搜→读→再搜→答）。奖励只有「最终答案对不对 + 格式对不对」，搜索行为是 RL 自发涌现的。
-> * **定位**：Search-R1（arXiv:2503.09516 / 2505.15117）是「搜索增强 RL」的开源奠基工作，基于 veRL，支持 PPO/GRPO/reinforce、本地检索器（BM25 / dense+ANN）与在线搜索引擎；2025-2026 已被 veRL 官方集成、被 SkyRL 支持、被 Thinking Machines Lab 的 Tinker 收录。它与 ToolRL（工具调用奖励设计）、RAGEN（多轮轨迹 MDP）、WebRL（网页 Agent）一起构成 Agentic RL 的开源版图。
+> * **定位**：Search-R1（[arXiv:2503.09516](https://arxiv.org/abs/2503.09516) / 2505.15117）是「搜索增强 RL」的开源奠基工作，基于 veRL，支持 PPO/GRPO/reinforce、本地检索器（BM25 / dense+ANN）与在线搜索引擎；2025-2026 已被 veRL 官方集成、被 SkyRL 支持、被 Thinking Machines Lab 的 Tinker 收录。它与 ToolRL（工具调用奖励设计）、RAGEN（多轮轨迹 MDP）、WebRL（网页 Agent）一起构成 Agentic RL 的开源版图。
 
 ```mermaid
 flowchart TD
@@ -95,6 +95,20 @@ Search-R1 基于 veRL，训练架构分三层：
 | **奖励** | 规则判定（答案匹配 + 格式） | 为轨迹打分，驱动 GRPO/PPO 更新 |
 
 数据格式（veRL 生态标准，后续工作都沿用它）：
+
+##### 变量映射表（数学 ↔ 代码）
+
+| 数学符号 | 环境/奖励变量 | Shape / 类型 | 含义 |
+|---|---|---|---|
+| $a_t$: `<search>q</search>` | `action`（`env.step` 输入） | str | 搜索动作空间 |
+| $O_t$（检索观测） | `observation` 拼接进轨迹 | str | top-k 文档注入 |
+| $R = \mathrm{EM/F1} - \alpha\cdot\mathbb{1}[格式违规]$ | `compute_score(ans, gold, fmt_ok)` | 标量 | 结果 + 格式惩罚 |
+| $\hat{A}_i$ | `advantages` | `(K,)` | 组内标准化优势 |
+
+`rewards/r` 为规则奖励标量、`advantages` 为组内标准化后的优势、`ratio/logp/old_logp`
+为 token 级重要性比率三件套、`format_score/correctness` 类为分项奖励。若与具体框架
+命名有出入，以你所用版本的 reward_score 插件签名为准。
+
 
 ```python
 data = {
@@ -233,12 +247,15 @@ Search RL 已经证明了「模型可以学会搜索」，但还有几个明确�
 3. **成本结构**：多轮搜索 RL 的 rollout 成本是普通 RL 的数倍（检索延迟 + 长上下文）。效率方向（如 distill 搜索策略到小模型、共享检索缓存）会是下一个竞争点。
 4. **与通用 Agentic RL 的合流**：搜索只是工具的一种。当 ToolRL（奖励设计）、RAGEN（轨迹动力学）、WebRL（网页环境）与 Search-R1（检索策略）这些碎片拼在一起，我们看到的是一条主线：**把「与环境交互」本身变成 RL 可优化的对象**。search RL 是这个方向第一个被产品验证的子集，不会是最后一个。
 
+> 🧪 **动手练习**：① 把检索 top-k 从 3 提到 5，对比 EM/F1 与平均轮数的变化；② 将格式惩罚系数翻倍，观察模型搜索行为是变规范还是直接摆烂。
+
 ## 参考与延伸阅读
 
-- 论文：Bowen Jin et al., *Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning*, arXiv:2503.09516（2025-03）
-- 论文：Bowen Jin et al., *An Empirical Study on Reinforcement Learning for Reasoning-Search Interleaved LLM Agents*, arXiv:2505.15117（2025-05）
-- 代码：https://github.com/PeterGriffinJin/Search-R1 （veRL + vLLM 底座，支持 PPO/GRPO/reinforce，多机 30B+）
+- 论文：Bowen Jin et al., *Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning*, [arXiv:2503.09516](https://arxiv.org/abs/2503.09516)（2025-03）
+- 论文：Bowen Jin et al., *An Empirical Study on Reinforcement Learning for Reasoning-Search Interleaved LLM Agents*, [arXiv:2505.15117](https://arxiv.org/abs/2505.15117)（2025-05）
+- 代码：[PeterGriffinJin/Search-R1](https://github.com/PeterGriffinJin/Search-R1) （veRL + vLLM 底座，支持 PPO/GRPO/reinforce，多机 30B+）
 - 生态：veRL 多轮搜索官方示例 / SkyRL 的 skyrl-train/examples/search / Thinking Machines Lab Tinker 的 tool_use/search 食谱
 - 网页 Agent：THUDM/WebRL（*Building Open LLM Web Agents with Self-Evolving Online Curriculum RL*）
 - 相关：Satori（ICML 2025，Chain-of-Action-Thought RL）、RAGEN（arXiv:2504.20073 多轮轨迹 MDP）、ToolRL（arXiv:2504.13958 工具奖励设计，见本站同系列文章）
 - 产品：OpenAI Deep Research（2025-02）、Kimi K2/K2.5 技术报告、智谱 GLM-4.5/GLM-5
+- 中文社区视角：《【LLM技术论文】《Search-o1:具有主动搜索增强功能的大规模推理模型》》（知乎）https://zhuanlan.zhihu.com/p/18162015488

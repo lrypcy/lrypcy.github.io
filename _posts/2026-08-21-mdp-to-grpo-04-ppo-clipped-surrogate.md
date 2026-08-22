@@ -115,6 +115,17 @@ $$L(\theta) \;=\; \mathbb{E}_t\Big[\, L_t^{\mathrm{CLIP}}(\theta) \;-\; c_1\, \b
 
 ### 4.2 PyTorch 骨架
 
+##### 变量映射表（数学 ↔ 代码）
+
+| 数学符号 | 代码变量 | Shape / 类型 | 含义 |
+|---|---|---|---|
+| $\rho_t(\theta)=\frac{\pi_\theta}{\pi_{\theta_{old}}}$ | `ratio = torch.exp(logp - old_logp)` | `(B,)` | 重要性比率 |
+| $\hat{A}_t$ | `adv`（GAE 输出，已归一化） | `(B,)` | 优势估计 |
+| clip 半径 $\epsilon$ | `clip_eps=0.2` | 标量 | 信赖域宽度 |
+| $c_1,\ c_2$ | `vf_coef=0.5`, `ent_coef=0.01` | 标量 | value / 熵系数 |
+| $L^{CLIP}$ | `pi_loss = -torch.min(s1, s2).mean()` | 标量 | 悲观下界损失 |
+
+
 ```python
 import torch
 from torch.distributions import Categorical
@@ -219,10 +230,13 @@ flowchart LR
 4. **从 MDP 到 GRPO（四）：PPO——用一阶方法驯服策略更新**（本篇）
 5. [从 MDP 到 GRPO（五）：GRPO——组相对优势与大模型时代的 RL](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/)
 
-**参考与延伸阅读**
+> 🧪 **动手练习**：① 扫 `clip_eps ∈ {0.1, 0.2, 0.4}`，记录 KL 与 clip fraction 曲线，复现 §2.3 的"隐式信赖域"证据；② `epochs=4` 时关掉优势归一化，观察训练是否失稳。
 
-* Schulman et al., "Proximal Policy Optimization Algorithms" (arXiv:1707.06347) —— 本篇主角，全文仅 8 页
-* Schulman et al., "High-Dimensional Continuous Control Using Generalized Advantage Estimation" (arXiv:1506.02438) —— GAE 的偏差-方差分析
-* Ouyang et al., "Training language models to follow instructions with human feedback" (arXiv:2203.02155) —— InstructGPT，PPO 进驻 RLHF 的标志
+## 参考与延伸阅读
+
+* Schulman et al., "Proximal Policy Optimization Algorithms" ([arXiv:1707.06347](https://arxiv.org/abs/1707.06347)) —— 本篇主角，全文仅 8 页
+* Schulman et al., "High-Dimensional Continuous Control Using Generalized Advantage Estimation" ([arXiv:1506.02438](https://arxiv.org/abs/1506.02438)) —— GAE 的偏差-方差分析
+* Ouyang et al., "Training language models to follow instructions with human feedback" ([arXiv:2203.02155](https://arxiv.org/abs/2203.02155)) —— InstructGPT，PPO 进驻 RLHF 的标志
 * Engstrom et al., "Implementation Matters in Deep RL: A Case Study on PPO and TRPO" (ICLR 2020) —— 证明 PPO≈TRPO+若干实现细节，"实现细节考古"必读
 * veRL (ByteDance) / OpenRLHF 文档 —— LLM 场景下 PPO 的工程形态
+- 中文社区视角：《一文搞懂DPO、PPO和GRPO;附代码理解》（知乎）https://zhuanlan.zhihu.com/p/27332009509

@@ -179,10 +179,34 @@ until 收敛
 4. [从 MDP 到 GRPO（四）：PPO——用一阶方法驯服策略更新](/2026/08/21/mdp-to-grpo-04-ppo-clipped-surrogate/)
 5. [从 MDP 到 GRPO（五）：GRPO——组相对优势与大模型时代的 RL](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/)
 
-**参考与延伸阅读**
+##### 变量映射表（数学 ↔ 代码）
 
-* Schulman et al., "Trust Region Policy Optimization" (arXiv:1502.05477, ICML 2015) —— 本篇主角
+TRPO 没有官方最小实现，这里给出核心三件套的等价 PyTorch 骨架：
+
+```python
+logp  = dist.log_prob(act)
+rho   = torch.exp(logp - old_logp)                  # ρ_t(θ)
+surr  = (rho * adv).mean()                          # max_θ  L(θ)
+kl    = (old_logp.exp() * (old_logp - logp)).mean() # E[KL(π_old ‖ π_θ)] ≤ δ
+# g = ∇_θ surr；F x ≈ Fisher-vector product（共轭梯度解 F x = g）
+# 步长经 backtracking 线搜索同时满足 kl ≤ δ 且 surr 单调不降
+```
+
+| 数学符号 | 代码变量 | Shape / 类型 | 含义 |
+|---|---|---|---|
+| $L(\theta)$ | `surr` | 标量 | 代理目标 |
+| $\delta$ | `kl ≤ delta` | 标量 | 信任域半径 |
+| $F$（Fisher） | fisher-vector product | `(n,)` | 自然梯度度量（CG 求解） |
+| $\alpha$ | backtracking 步长 | 标量 | 线搜索系数 |
+
+
+> 🧪 **动手练习**：① 用有限差分验证你实现的 Fisher-vector product 正确性；② 扫 $\delta \in \{0.001, 0.01, 0.05\}$，统计每次更新的 backtrack 次数，体会"信任域半径换稳定性"的权衡。
+
+## 参考与延伸阅读
+
+* Schulman et al., "Trust Region Policy Optimization" ([arXiv:1502.05477](https://arxiv.org/abs/1502.05477), ICML 2015) —— 本篇主角
 * Kakade & Langford, "Approximately Optimal Approximate RL" (ICML 2002) —— 性能差异恒等式与 CPI 算法的源头
 * Schulman et al., "Optimizing Expectations" (PhD thesis, 2016) —— TRPO 推导最完整的版本
 * Amari, "Natural Gradient Works Efficiently in Learning" (1998) —— 自然梯度的信息几何起源
 * John Schulman 的 Berkeley CS294 演讲 "Deep RL Bootcamp Lecture 6: Nuts and Bolts of Deep RL Experimentation" 与 TRPO 讲义 —— 工程视角的最佳补充
+- 中文社区视角：《凸优化中,信任域方法有什么优势?》（知乎）https://www.zhihu.com/question/58100346

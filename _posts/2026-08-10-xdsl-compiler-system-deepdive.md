@@ -835,3 +835,24 @@ print(stub.generate())
 - **生产化**：RISC-V 等后端方言持续演进，在 DSA（领域专用架构）编译器研究中逐步落地。
 
 xDSL 的价值不在于替代 MLIR，而在于**用 1/100 的代码量复刻了 MLIR 的抽象体系**——对想深入理解多级 IR 编译器的人而言，它是目前最清晰、最可运行的"教科书实现"。
+
+##### 概念映射表（MLIR ↔ xDSL）
+
+| MLIR 概念 | 本篇对应物 | 见章节 |
+|---|---|---|
+| Dialect / ODS 方言定义 | IRDL 声明式定义（Python-first） | §4、§10 实战 |
+| Pattern 重写生态 | rewrite 规则与驱动器 | §6–§7 |
+| Pass 管线 | PassManager 工作流 | §8 |
+| 序列化与执行 | 字节码 + PDL-interp | §9 |
+| 双向互操作 | PyRDL ↔ IRDL | §12 展望 |
+
+
+> 🧪 **动手练习**：① 照 §10 的流程给你的张量方言新增一个算子定义并用 IRDL 校验；② 写一个把该算子 lower 到 arith 的 rewrite pattern，挂进 §8 的 Pass 管线跑通端到端。
+
+## 参考与延伸阅读
+
+* xDSL 项目：https://github.com/xdsl-project/xdsl —— 本篇主角，MLIR 的 Python-first 复刻
+* MLIR 官网：https://mlir.llvm.org/ —— 方言/Pass/PDL 等概念的上游出处
+* 系列互引：本站《从 MDP 到 GRPO》系列（2026-08-21）—— 编译器之外的后训练战场
+
+> 注：性能数据与 API 细节以上述仓库对应版本的官方文档为准；本篇基于 0.22→0.63 迁移实测。

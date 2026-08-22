@@ -11,8 +11,8 @@ mathjax: true
 > **TL;DR**
 >
 > * **OPD 回答了 post-training 的成本问题**：Agentic RL 贵在「多轮 rollout × 环境交互 × 奖励模型」三件套。On-Policy Distillation 把探索外包给老师——**学生自己走前缀（on-policy 状态分布），老师在前缀上补全并提供逐 token 监督**。学生学到的是「在我自己会遇到的状态下，老师会怎么做」，而不是「老师在它的状态分布里怎么做」——这是它与传统蒸馏的本质区别。
-> * **两个反直觉发现**（清华 OPD，arXiv:2604.13016）：① 弱到强反向蒸馏实验显示，同家族的 1.5B 和 7B 老师，从学生视角看**分布上不可区分**——「更聪明的老师」未必是更好的蒸馏源；② 成功的 OPD 本质是**高概率 token 的渐进对齐**，一个小的共享 token 集合集中了 97%-99% 的概率质量——OPD 的"免费午餐"（dense token 级奖励）有隐性代价，能否扩展到长视野蒸馏存疑。
-> * **Agent 场景的落地**（ReOPD，arXiv:2607.04763）：多轮 OPD 有「前缀陷阱」——让历史更贴近学生，会让学生在老师**目标不可靠**的位置上查询老师。ReOPD 用预收集的教师轨迹做 **prefix replay**（采样位置 $p_t \propto \kappa^t$，$\kappa=0.6$），实现**零环境交互、4-9× 更快的 rollout**，准确率不降反升。与 ToolRL（工具奖励）、Search RL（搜索动作）一起，构成 2025-2026 Agentic RL 训练的第三条技术路线。
+> * **两个反直觉发现**（清华 OPD，[arXiv:2604.13016](https://arxiv.org/abs/2604.13016)）：① 弱到强反向蒸馏实验显示，同家族的 1.5B 和 7B 老师，从学生视角看**分布上不可区分**——「更聪明的老师」未必是更好的蒸馏源；② 成功的 OPD 本质是**高概率 token 的渐进对齐**，一个小的共享 token 集合集中了 97%-99% 的概率质量——OPD 的"免费午餐"（dense token 级奖励）有隐性代价，能否扩展到长视野蒸馏存疑。
+> * **Agent 场景的落地**（ReOPD，[arXiv:2607.04763](https://arxiv.org/abs/2607.04763)）：多轮 OPD 有「前缀陷阱」——让历史更贴近学生，会让学生在老师**目标不可靠**的位置上查询老师。ReOPD 用预收集的教师轨迹做 **prefix replay**（采样位置 $p_t \propto \kappa^t$，$\kappa=0.6$），实现**零环境交互、4-9× 更快的 rollout**，准确率不降反升。与 ToolRL（工具奖励）、Search RL（搜索动作）一起，构成 2025-2026 Agentic RL 训练的第三条技术路线。
 
 ```mermaid
 flowchart LR
@@ -138,7 +138,7 @@ $$\nabla_\theta \mathcal{L}_{\mathrm{SFT}} = \mathbb{E}_{y\sim\pi_T(\cdot \mid x
 
 **温度缩放**再补一刀。Hinton 2015 蒸馏中老师分布除以温度软化：$\pi_T^{(T)}(y_t) = \frac{\exp(z_{y_t}/T)}{\sum_v \exp(z_v/T)}$。$T\to 0$ 退化为 one-hot（hard label），$T>1$ 把"次优 token 的相对排序"也传给学生。forward KL 蒸馏里 $T$ 是核心旋钮（分类任务常用 2-4），因为学生要模仿老师的全部模式；**OPD 里 $T=1.0$ 是默认**——反向 KL 本来只需要老师的高概率模式，softening 边际收益小，而 TML/veRL 的实现里老师直接给 logprob（一次前向，不用采样）。
 
-## 3. 机制拆解：OPD 什么时候成功、什么时候失败（清华 OPD，arXiv:2604.13016）
+## 3. 机制拆解：OPD 什么时候成功、什么时候失败（清华 OPD，[arXiv:2604.13016](https://arxiv.org/abs/2604.13016)）
 
 清华这篇（2026-04，ICML 2026 FoGen Workshop）是 OPD 的第一篇系统性机制研究。核心结论是两个**成败条件**：
 
@@ -212,6 +212,19 @@ ReOPD 的改动非常工程化：
 ## 6. 工程骨架：最小 OPD 实现
 
 ### 6.1 Online OPD：先跑通 DAgger 流（最简，§2.2 的 CE）
+
+##### 变量映射表（数学 ↔ 代码）
+
+| 数学符号 | 代码变量 | Shape / 类型 | 含义 |
+|---|---|---|---|
+| $r_t=\log\pi_\theta(y_t\mid\cdot)-\log\pi_T(y_t\mid\cdot)$ | `student_logp - teacher_logp.detach()` | `(T,)` | token 级稠密奖励 |
+| $L=-\mathbb{E}\sum_t r_t\log\pi_\theta(y_t\mid\cdot)$ | `loss = -(r_t * student_logp).sum()` | 标量 | 策略梯度式蒸馏损失 |
+| replay 条目 `{prefix, targets}` | 经验池样本 | dict | DAgger 式前缀回放 |
+
+`rewards/r` 为规则奖励标量、`advantages` 为组内标准化后的优势、`ratio/logp/old_logp`
+为 token 级重要性比率三件套、`format_score/correctness` 类为分项奖励。若与具体框架
+命名有出入，以你所用版本的 reward_score 插件签名为准。
+
 
 ```python
 # opd.py —— DAgger 流：学生走前缀，老师补全，学生学补全（最简可跑版本）
@@ -338,12 +351,17 @@ veRL 的 OPD 支持（v0.7.0+）：rollout 用学生权重采样 prefix，teache
 3. **与 RL 的合流不是二选一**：MiniCPM5-1B 的管线是 "RL + OPD" 组合——OPD 做能力下放和冷启动，RL 做最后的超越与对齐。ToolRL（奖励设计）解决"RL 怎么学工具"，Search RL（搜索动作）解决"学什么"，OPD 解决"能不能便宜地学"——三者拼起来，才是完整的 Agentic post-training 版图。
 4. **诊断工具会越来越重要**：OPD 的成败在 token 级（97-99% 概率质量集中），肉眼不可见。veRL 把 overlap 指标做成框架级诊断，说明这个领域正在从"玄学"走向"工程"——这和 ToolRL 把奖励设计工程化是同一个趋势。
 
+> 🧪 **动手练习**：① 学生采样温度扫 {0.7, 1.0}，对比稠密奖励信号的方差；② prefix 长度取 64/128/256 三档，画出达到同等 BLEU 所需的真实教师 token 数。
+
 ## 参考与延伸阅读
 
 - 论文：Yaxuan Li et al., *Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism, and Recipe*, arXiv:2604.13016（清华 NLP，ICML 2026 FoGen）
 - 论文：Baohao Liao et al., *Multi-Turn On-Policy Distillation with Prefix Replay*, arXiv:2607.04763（ReOPD，2026-07）
 - 论文：Jiazhan Feng et al., *ReTool: Reinforcement Learning for Strategic Tool Use in LLMs*, arXiv:2504.11536（ReOPD 的 math 环境基础）
 - 综述：*A Survey of On-Policy Distillation for Large Language Models*, arXiv:2604.00626（OPDHub）
-- 代码：https://github.com/thunlp/OPD （veRL v0.7.0 底座）；https://github.com/BaohaoLiao/ReOPD （slime 底座，含 math/search 两环境评估）
+- 代码：[thunlp/OPD](https://github.com/thunlp/OPD) （veRL v0.7.0 底座）；[BaohaoLiao/ReOPD](https://github.com/BaohaoLiao/ReOPD) （slime 底座，含 math/search 两环境评估）
 - 生态：G-OPD（RUCBM，reward extrapolation）、RLCSD（THU-BPM）、CaOPD（Salesforce）、MiniCPM5-1B（OpenBMB）、veRL PR #6469（overlap 诊断）
 - 系列前篇：本站《ToolRL 深度剖析》（2026-08-10）、《Search RL 深度剖析》（2026-08-11）
+* 2026-08 新作速览："Step-Level On-Policy Distillation" ([arXiv:2608.16333](https://arxiv.org/abs/2608.16333)，SFT↔OPD 光谱插值)；"Group-Calibrated OPD for Long-Context Reasoning" ([arXiv:2608.19181](https://arxiv.org/abs/2608.19181))；"Open-MOPD 多教师能力失衡诊断" ([arXiv:2608.19098](https://arxiv.org/abs/2608.19098))；"OPD 泛化性的双刃剑" ([arXiv:2608.16647](https://arxiv.org/abs/2608.16647))
+* 生态索引持续更新：[AwesomeOPD](https://github.com/thinkwee/AwesomeOPD)（2026-07-23 版新增审读 191 条，覆盖白盒/黑盒教师、OPSD、OPD-RL 混合、Agent OPD 等分类）
+* 系列延伸（象限Ⅱ）：《[逆强化学习五十年](/2026/08/22/irl-fifty-years-from-demonstrations/)》 · 《[正向学策略，反向学奖励：IRL 在 LLM 对齐里的复活](/2026/08/22/irl-renaissance-in-llm-alignment/)》（X-KD 一节与本篇直接相关）

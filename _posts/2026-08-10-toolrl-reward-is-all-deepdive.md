@@ -11,7 +11,7 @@ layout: post
 >
 > * **ToolRL 回答了 Agent 时代的一个核心问题**：大模型 SFT 学出来的工具调用能力泛化差，换一批 API、换一种组合就露馅；而用 RL 学工具调用，奖励怎么设计是成败关键——论文提出了一套「格式奖励 + 正确性奖励」双层分解方案，用 GRPO 在 Qwen-2.5 / Llama-3.2 系列上把 BFCL V3 成绩做到 **61.31%（1.5B 满血 GRPO vs 30.65% 原始模型 / 53.60% SFT）**，相较基座平均提升 17%、相较同数据量 SFT 提升 15%。
 > * **三个反直觉结论**：① 给思考长度发奖励（length reward）不但没用，还可能**伤害**小模型——工具使用任务里「想得长」不等于「做得好」；② 正确性奖励的**归一化尺度必须压过**格式奖励，否则模型会退化成「格式正确、调用全错」的 reward hacking；③ 细粒度的**逐步中间奖励**比只看最终结果的粗奖励训练更稳。
-> * **定位**：ToolRL（UIUC，arXiv:2504.13958）是工具选择与调用领域**第一篇系统研究奖励设计**的 RL 工作，代码基于 veRL + TinyZero 开源。它和 RAGEN / Search-R1 / Agent-R1 / OpenManus-RL 一起构成了 2025-2026 年「Agentic RL」开源版图的骨干。
+> * **定位**：ToolRL（UIUC，[arXiv:2504.13958](https://arxiv.org/abs/2504.13958)）是工具选择与调用领域**第一篇系统研究奖励设计**的 RL 工作，代码基于 veRL + TinyZero 开源。它和 RAGEN / Search-R1 / Agent-R1 / OpenManus-RL 一起构成了 2025-2026 年「Agentic RL」开源版图的骨干。
 
 ```mermaid
 flowchart TD
@@ -165,6 +165,20 @@ R1 之后社区有个惯性：**想让模型变聪明，就给思考长度发奖
 
 ToolRL 的奖励实现在 `verl/utils/reward_score/rlla.py`，核心逻辑（示意，非逐行原文）：
 
+##### 变量映射表（数学 ↔ 代码）
+
+| 数学符号 | 插件/框架变量 | Shape / 类型 | 含义 |
+|---|---|---|---|
+| $r_{format}$ | `format_score` | 标量 | 格式合规分项 |
+| $r_{correct}$ | `correctness` | 标量 | 工具执行正确性分项 |
+| $R_i$ | `reward = w_f·format + w_c·correct − len_pen` | 标量 | 第 $i$ 条样本加权总奖励 |
+| $\hat{A}_i=\frac{R_i-\mathrm{mean}}{\mathrm{std}+\epsilon}$ | `advantages` | `(K,)` | GRPO 组相对优势 |
+
+`rewards/r` 为规则奖励标量、`advantages` 为组内标准化后的优势、`ratio/logp/old_logp`
+为 token 级重要性比率三件套、`format_score/correctness` 类为分项奖励。若与具体框架
+命名有出入，以你所用版本的 reward_score 插件签名为准。
+
+
 ```python
 def compute_tool_reward(prompt, response, target, **kwargs):
     # parse model output: <think> ... <tool_call>... <response>...
@@ -260,12 +274,15 @@ ToolRL 的价值是「把奖励从玄学变成工程」，但它的边界也要�
 
 展望一条主线：**ToolRL（单轮工具奖励）→ RAGEN（多轮轨迹 MDP）→ 带学习型过程奖励的 Agent RL → 与世界交互的完整闭环**。奖励设计的原则（尺度分层、粒度匹配、防 hack）会贯穿始终——这才是这篇文章真正想沉淀的东西。
 
+> 🧪 **动手练习**：① 调整格式/正确性奖励权重比，找到格式开始崩坏的临界点，验证"正确性必须压过格式"；② 仿照 `rlla.py` 插件结构给你的自定义工具写一个奖励函数，跑通一组 4-sample 组相对优势。
+
 ## 参考与延伸阅读
 
-- 论文：Cheng Qian et al., *ToolRL: Reward is All Tool Learning Needs*, arXiv:2504.13958（UIUC）
-- 代码：https://github.com/qiancheng0/ToolRL （veRL + TinyZero 底座，奖励模块 `verl/utils/reward_score/rlla.py`）
+- 论文：Cheng Qian et al., *ToolRL: Reward is All Tool Learning Needs*, [arXiv:2504.13958](https://arxiv.org/abs/2504.13958)（UIUC）
+- 代码：[qiancheng0/ToolRL](https://github.com/qiancheng0/ToolRL) （veRL + TinyZero 底座，奖励模块 `verl/utils/reward_score/rlla.py`）
 - 数据：ToolACE (Liu et al., 2024) / Hammer (Lin et al., 2024) / xLAM (Zhang et al., 2024)
-- RAGEN：*Understanding Self-Evolution in LLM Agents via Multi-Turn RL*, arXiv:2504.20073；RAGEN-2: *Reasoning Collapse in Agentic RL*, arXiv:2604.06268
-- veRL：https://github.com/volcengine/verl ；TinyZero：https://github.com/Jiayi-Pan/TinyZero
+- RAGEN：*Understanding Self-Evolution in LLM Agents via Multi-Turn RL*, [arXiv:2504.20073](https://arxiv.org/abs/2504.20073)；RAGEN-2: *Reasoning Collapse in Agentic RL*, arXiv:2604.06268
+- veRL：[volcengine/verl](https://github.com/volcengine/verl) ；TinyZero：[Jiayi-Pan/TinyZero](https://github.com/Jiayi-Pan/TinyZero)
 - Benchmark：BFCL V3（gorilla.cs.berkeley.edu）、API-Bank (Li et al., 2023)、Bamboogle (Press et al., 2022)
 - 延伸：Search-R1 / Agent-R1 / OpenManus-RL / WebRL / Kimi K2 技术报告
+- 中文社区视角：《大模型Agent技术路线解析:模块化vs端到端,强化学习工具调用指南!》（知乎）https://zhuanlan.zhihu.com/p/1955641191589720532
