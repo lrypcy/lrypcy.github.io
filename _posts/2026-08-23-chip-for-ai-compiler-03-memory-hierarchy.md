@@ -1,6 +1,6 @@
 ---
 title: "给 AI 编译器工程师的芯片课（三）：存储层次——从寄存器堆到 HBM"
-date: 2026-08-23 20:30:00 +0800
+date: 2026-08-23 11:30:00 +0800
 categories:
   - 芯片架构
 tags: [ai-compiler, chip-architecture, sram, cache, hbm, memory-hierarchy, roofline]

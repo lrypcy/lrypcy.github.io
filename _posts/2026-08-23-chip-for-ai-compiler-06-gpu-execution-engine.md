@@ -1,6 +1,6 @@
 ---
 title: "给 AI 编译器工程师的芯片课（六）：GPU 执行引擎——warp 调度、Tensor Core 流水线与异步执行"
-date: 2026-08-23 21:30:00 +0800
+date: 2026-08-23 14:45:00 +0800
 categories:
   - 芯片架构
 tags: [ai-compiler, chip-architecture, simt, warp-scheduler, tensor-core, cp-async, tma, occupancy]

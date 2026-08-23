@@ -1,6 +1,6 @@
 ---
 title: "给 AI 编译器工程师的芯片课（五）：指令集与电路执行（二）——流水线、冒险与 FMA 单元"
-date: 2026-08-23 20:30:00 +0800
+date: 2026-08-23 14:20:00 +0800
 categories:
   - 芯片架构
 tags: [ai-compiler, chip-architecture, pipeline, hazards, forwarding, branch-prediction, fma, vliw]

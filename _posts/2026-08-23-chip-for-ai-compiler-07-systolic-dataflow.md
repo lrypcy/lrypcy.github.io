@@ -1,6 +1,6 @@
 ---
 title: "给 AI 编译器工程师的芯片课（七）：数据流架构——脉动阵列、TPU 与 NPU"
-date: 2026-08-23 22:30:00 +0800
+date: 2026-08-23 15:30:00 +0800
 categories:
   - 芯片架构
 tags: [ai-compiler, chip-architecture, systolic-array, tpu, dataflow, davinci-cube, groq-lpu, cerebras]

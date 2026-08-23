@@ -1,6 +1,6 @@
 ---
 title: "给 AI 编译器工程师的芯片课（四）：指令集与电路执行（一）——ISA 编码、解码器与数据通路"
-date: 2026-08-23 20:30:00 +0800
+date: 2026-08-23 13:50:00 +0800
 categories:
   - 芯片架构
 tags: [ai-compiler, chip-architecture, isa, decoder, datapath, booth-multiplier, sass]
