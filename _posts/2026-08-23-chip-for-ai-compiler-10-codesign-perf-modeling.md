@@ -1,6 +1,6 @@
 ---
 title: "给 AI 编译器工程师的芯片课（十）：编译器×芯片协同设计与性能建模"
-date: 2026-08-23 18:30:00 +0800
+date: 2026-08-23 17:30:00 +0800
 categories:
   - 芯片架构
 tags: [ai-compiler, chip-architecture, roofline-model, cost-model, ncu-profiling, triton-backend, hardware-codesign]
