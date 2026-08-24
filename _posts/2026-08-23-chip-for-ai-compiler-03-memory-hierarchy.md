@@ -228,7 +228,7 @@ $$\text{在飞字节数 } N = BW \times Latency$$
 
 ### 7.1 两堵墙夹出的性能上界
 
-定义算子的**算术强度(arithmetic intensity， AI)** = 总浮点运算数 ÷ 总访存字节数(FLOPs/byte)，则可达算力受两堵墙限制：
+定义算子的**算术强度(arithmetic intensity, AI)** = 总浮点运算数 ÷ 总访存字节数(FLOPs/byte)，则可达算力受两堵墙限制：
 
 $$P_{achieved} = \min\big(P_{peak}, \ AI \times BW\big)$$
 
@@ -253,7 +253,7 @@ $$AI^*_{A100, FP32} = \frac{19.5}{2.04} \approx 9.6, \quad AI^*_{A100, FP16TC} =
 |:---|:---|:---|:---:|:---:|:---|
 | saxpy(y=ax+y，FP32，n 元素) | 2n | 12n | 1/6 | 远低于 | 内存受限，方向=减搬运 |
 | naive softmax(FP32，4 趟扫描) | ~5n | ~20n | ~1/4 | 远低于 | 内存受限，融合省一半以上流量 |
-| GEMM(n=4096，FP16) | $2n^3$ | $6n^2$ | $n/3 \approx 1365$ | 远高于 | 计算受限，方向=tensorize/降精度 |
+| GEMM(n=4096, FP16) | $2n^3$ | $6n^2$ | $n/3 \approx 1365$ | 远高于 | 计算受限，方向=tensorize/降精度 |
 
 GEMM 那行的 AI 是**算法下限**(compulsory traffic：每个输入字节至少读一次，假设复用完美)。真实 kernel 的实测 AI 总是更低，差额来自容量缺失、冲突缺失和冗余搬运。**编译器的工作就是把实测 AI 推向算法下限**(fusion 消中间张量、tiling 消容量缺失、layout 消 bank/sector 浪费)，再看推完之后落在拐点哪一侧：
 
