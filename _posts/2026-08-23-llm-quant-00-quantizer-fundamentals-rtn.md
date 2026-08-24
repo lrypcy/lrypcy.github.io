@@ -12,7 +12,7 @@ mathjax: true
 >
 > * **核心结论**：所有后训练量化（PTQ）算法其实都在解同一个损失函数 $\min_{\hat{W}} \mathbb{E}_x\lVert Wx-\hat{W}x\rVert^2$。本篇把这个损失的最简情形——固定均匀网格、就近取整（RTN）、启发式 scale——的数学彻底拆开：**scale 决定格距有多细，粒度决定 scale 有多少个，clipping 决定 scale 和分布尾部怎么折衷**。这三个自由度就是后面十几篇算法各自发力的地方。
 > * **反直觉发现**：① 教科书里"$6.02b$ dB"是满幅均匀信号的**天花板而不是承诺**——高斯型权重在 4-bit 下用最常见的 max-scale 实测只有 **14.35 dB**，离天花板差 11.4 dB；② 主动裁掉分布尾部（最优裁剪比例 $\alpha^*\approx 0.5$）反而比"一个都不裁"白捡约 **5 dB**；③ 样本最大值随数据量按 $\sqrt{2\ln n}$ 漂移——校准集从一万条扩到一百万条，max-scale 会自己变大，这就是"换个校准集、精度就变了"的数学根源。
-> * **系列定位**：这是「大模型量化算法」系列的地基篇（系列规划见同目录 ROADMAP）。后续每一篇算法都可以看作对本篇 RTN 基线的一个自由度做改造：GPTQ 改舍入策略、AWQ/SmoothQuant 改等效变换下的 scale、QuIP#/QuaRot 改权重分布本身。把对照组立稳，每一步改进才有的放矢。配套实验全部真实可跑（纯 numpy，几秒出图）：quantizer_granularity。
+> * **系列定位**：这是「大模型量化算法」系列的地基篇（规划见 [ROADMAP](https://github.com/lrypcy/blogs/blob/main/technology/quantization/llm_quant_series/ROADMAP.md)）。后续每一篇算法都可以看作对本篇 RTN 基线的一个自由度做改造：GPTQ 改舍入策略、AWQ/SmoothQuant 改等效变换下的 scale、QuIP#/QuaRot 改权重分布本身。把对照组立稳，每一步改进才有的放矢。配套实验全部真实可跑（纯 numpy，几秒出图）：[quantizer_granularity](https://github.com/lrypcy/blogs/tree/main/technology/quantization/llm_quant_series/experiments/quantizer_granularity)。
 
 ---
 
@@ -441,5 +441,5 @@ $g=128$ 的元数据税只有 3%，换来的是 §7.3 里 9 dB 量级的精度�
 
 ---
 
-我是 peicy1，专注于 AI Infra 和大模型部署。本系列配套实验均为纯 numpy 实现、开箱即跑，欢迎交流指正。
+我是 peicy1，专注于 AI Infra 和大模型部署。实验代码与系列规划都在 GitHub 仓库 [lrypcy/blogs](https://github.com/lrypcy/blogs) 里，欢迎交流指正。
 
