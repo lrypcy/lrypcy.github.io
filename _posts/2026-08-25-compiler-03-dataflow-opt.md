@@ -1,5 +1,5 @@
 ---
-title: "编译器知识体系深度解析（3）：数据流分析与中端优化：把"优化为什么正确"说清楚"
+title: "编译器知识体系深度解析（3）：数据流分析与中端优化：把 \"优化为什么正确\" 说清楚"
 date: 2026-08-25 20:15:00 +0800
 categories:
   - 编译器技术
@@ -90,6 +90,7 @@ graph TD
 
 gen/kill 的机械推导规则：块内按顺序扫描，同变量的多个定值只有最后一个进入 gen；kill 为该变量在**全程序**的其余定值。完整实现：
 
+{% raw %}
 ```python
 DEF_VAR = {"d1": "i", "d2": "s", "d3": "t", "d4": "s", "d5": "i"}
 BLOCK_INSTRS = {
@@ -145,6 +146,7 @@ reaching_s = sorted(d for d in IN["B3"] if DEF_VAR[d] == "s")
 print(f"到达出口 print(s) 的 s 定值: {reaching_s} "
       f"-> 循环携带依赖使初始值 d2 与循环内更新 d4 同时可达")
 ```
+{% endraw %}
 
 **真实运行输出**：
 
@@ -186,6 +188,7 @@ meet(c, c) = c;  meet(c1, c2) = ⊥ (c1≠c2);  meet(x, ⊥) = ⊥
 
 φ 函数就是操作数格值的 meet——这一条让"两臂同值"的分支自动坍缩：
 
+{% raw %}
 ```python
 OVER = ("over", None)
 
@@ -249,6 +252,7 @@ zv = latB["z1"]
 assert zv == ("const", 6)
 print(f"结论: phi({{'const',3}}, {{'const',3}}) 折叠成功, z1 = {zv[1]} -> 分支删除与死代码级联成为可能")
 ```
+{% endraw %}
 
 **真实运行输出**：
 

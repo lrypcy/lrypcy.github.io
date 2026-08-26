@@ -285,6 +285,7 @@ NFA 状态数(Thompson): 14   DFA 状态数(子集构造): 5   接受子集: [4]
 
 ### 2.4 实验 B：手写 lexer 吞吐量
 
+{% raw %}
 ```python
 KEYWORDS = {"if", "else", "while", "return", "int", "float"}
 PUNCT2 = {"==", "!=", "<=", ">=", "&&", "||"}
@@ -337,6 +338,7 @@ t6 = time.perf_counter()
 print(f"输入规模: {size_mb:.2f} MB, {src.count(chr(10))+1} 行")
 print(f"token 数: {len(toks):,}   耗时: {(t6-t5)*1000:.1f} ms   吞吐: {size_mb/(t6-t5):.1f} MB/s")
 ```
+{% endraw %}
 
 **真实运行输出**：
 

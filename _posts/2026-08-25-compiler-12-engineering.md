@@ -137,6 +137,7 @@ FileCheck 结论: 全部匹配
 
 生成器纪律（每条都对应一类已知陷阱）：
 
+{% raw %}
 ```python
 def gen_program(rng):
     """生成有界循环 + 小常量的确定性程序。
@@ -180,6 +181,7 @@ def gen_program(rng):
     lines.append("}")
     return "\n".join(lines)
 ```
+{% endraw %}
 
 **刻意保留的一个反例**——溢出演示（差分测试最经典的价值场景）：
 
