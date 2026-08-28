@@ -713,6 +713,3 @@ RTN 的 scale/zero 由 min/max 决定，被极值绑架；HQQ 通过半二次分
 ---
 
 *本文为 LLM PTQ 量化算法全景系列第 4 篇。下一篇：[QuIP#/AQLM：码本量化与不相干旋转](/2026/08/24/ptq-05-quip-aqlm/)。*
-
-我是 peicy1，专注于 AI Infra 和大模型部署。
-

@@ -738,8 +738,3 @@ if __name__ == "__main__":
 ---
 
 **系列导航**：第 0 篇（本文，全景与统一数学框架）→[第 1 篇 RTN/LLM.int8](/2026/08/24/ptq-01-rtn-llmint8/)→[第 2 篇 GPTQ](/2026/08/24/ptq-02-gptq/)→[第 3 篇 AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/)→[第 4 篇 SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/)→[第 5 篇 QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/)→[第 6 篇 SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/)→[第 7 篇 QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/)→[第 8 篇 GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)→[第 9 篇 SqueezeLLM/VPTQ/CLAQ](/2026/08/24/ptq-09-squeezellm-vptq-claq/)→[第 10 篇 Outlier Suppression](/2026/08/24/ptq-10-outlier-suppression/)→[第 11 篇 RPTQ/QUIK/ATOM](/2026/08/24/ptq-11-rptq-quik-atom/)→[第 12 篇 OliVe](/2026/08/24/ptq-12-olive-abfloat/)→[第 13 篇 QoQ/QServe 与 QQQ](/2026/08/24/ptq-13-qserve-qqq/)。
-
----
-
-> 我是 peicy1，专注于 AI Infra 和大模型部署。本系列试图把量化从"调参玄学"变成"可推导的工程设计"——欢迎在评论区指出推导或数字的疏漏。
-

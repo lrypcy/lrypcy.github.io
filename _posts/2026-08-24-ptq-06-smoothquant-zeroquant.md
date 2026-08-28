@@ -788,8 +788,7 @@ W8A8 有可测的退化（困惑度看不出，pass@k 看得出）。这催生�
 
 ---
 
-> 我是 peicy1，专注于 AI Infra 和大模型部署。本文是 LLM 量化系列的第 6 篇，
+> 本文是 LLM 量化系列的第 6 篇，
 > 前五篇覆盖 RTN/LLM.int8、GPTQ、AWQ/OmniQuant、SpQR/OWQ/HQQ 与 QuIP#/AQLM，
 > 下一篇（第 7 篇）将拆解 QuaRot/SpinQuant——看旋转正交变换如何把 SmoothQuant
 > 的"逐通道搬运"升级为"全局打散"。欢迎在评论区交流 W8A8 部署中的实战细节。
-

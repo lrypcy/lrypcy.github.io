@@ -615,7 +615,3 @@ LLM.int8() 的部署形态虽然退场，但它验证并普及了 **int8 硬件�
 3. Frantar, Ashkboos, Hoefler, Alistarh. **GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers**. arXiv:2210.17323. （系列第 2 篇素材：二阶 Hessian 权重补偿）
 4. Nagel, Amjad, van Baalen, Louizos, Blankevoort. **A White Paper on Neural Network Quantization**. arXiv:2106.08295. （RTN 误差上界、MSE 最优 scale、均匀量化理论的经典总结）
 5. Dettmers et al. **bitsandbytes** 库与 HuggingFace Transformers 的 `load_in_8bit` 实现（LLM.int8() 的开源落地形态）。
-
----
-
-> **关于作者**：我是 **peicy1**，专注于 AI Infra 和大模型部署。本文是《PTQ 深度系列》第 1 篇，代码与实验均为 numpy 合成数据复现，可在任何装有 numpy 的环境直接运行。欢迎在评论区讨论 outlier 处理的替代方案（SmoothQuant 的迁移 vs GPTQ 的补偿，你站哪边？）。
