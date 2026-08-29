@@ -100,10 +100,10 @@ Search-R1 基于 veRL，训练架构分三层：
 
 | 数学符号 | 环境/奖励变量 | Shape / 类型 | 含义 |
 |---|---|---|---|
-| $a_t$: `<search>q</search>` | `action`（`env.step` 输入） | str | 搜索动作空间 |
-| $O_t$（检索观测） | `observation` 拼接进轨迹 | str | top-k 文档注入 |
-| $R = \mathrm{EM/F1} - \alpha\cdot\mathbb{1}[格式违规]$ | `compute_score(ans, gold, fmt_ok)` | 标量 | 结果 + 格式惩罚 |
-| $\hat{A}_i$ | `advantages` | `(K,)` | 组内标准化优势 |
+| \(a_t\): `<search>q</search>` | `action`（`env.step` 输入） | str | 搜索动作空间 |
+| \(O_t\)（检索观测） | `observation` 拼接进轨迹 | str | top-k 文档注入 |
+| \(R = \mathrm{EM/F1} - \alpha\cdot\mathbb{1}[格式违规]\) | `compute_score(ans, gold, fmt_ok)` | 标量 | 结果 + 格式惩罚 |
+| \(\hat{A}_i\) | `advantages` | `(K,)` | 组内标准化优势 |
 
 `rewards/r` 为规则奖励标量、`advantages` 为组内标准化后的优势、`ratio/logp/old_logp`
 为 token 级重要性比率三件套、`format_score/correctness` 类为分项奖励。若与具体框架
@@ -227,7 +227,7 @@ GRPO 的更新与普通推理 RL 完全一致——组内相对优势 + 裁剪 +
 
 $$\mathcal{L}_{\mathrm{GRPO}}(\theta)=-\mathbb{E}\!\left[\frac{1}{G}\sum_{i=1}^{G}\min\!\left(\rho_i A_i,\ \operatorname{clip}(\rho_i,1-\epsilon,1+\epsilon)\,A_i\right)-\beta\,D_{\mathrm{KL}}(\pi_\theta\|\pi_{\mathrm{ref}})\right]$$
 
-其中 $\rho_i=\pi_\theta(o_i\mid q)/\pi_{\theta_{\mathrm{old}}}(o_i\mid q)$，$A_i=(r_i-\mathrm{mean}(\mathbf{r}))/\mathrm{std}(\mathbf{r})$ 是组内相对优势。**注意：搜索查询、检索观测全部包含在轨迹 $o_i$ 里参与概率计算**——这正是「搜索策略可学习」的机制：模型提高/降低的不仅是答案的概率，还有搜索查询、甚至「是否搜索」这个决策的概率。
+其中 \(\rho_i=\pi_\theta(o_i\mid q)/\pi_{\theta_{\mathrm{old}}}(o_i\mid q)\)，\(A_i=(r_i-\mathrm{mean}(\mathbf{r}))/\mathrm{std}(\mathbf{r})\) 是组内相对优势。**注意：搜索查询、检索观测全部包含在轨迹 \(o_i\) 里参与概率计算**——这正是「搜索策略可学习」的机制：模型提高/降低的不仅是答案的概率，还有搜索查询、甚至「是否搜索」这个决策的概率。
 
 ## 7. 调优清单与陷阱
 

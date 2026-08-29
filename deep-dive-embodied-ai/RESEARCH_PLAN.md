@@ -51,7 +51,7 @@ _posts/
 
 ### 01 数学与控制地基
 - 运动学：DH 参数、正逆解、雅可比、微分逆运动学（含 2-link 数值例）
-- 动力学：拉格朗日方程推导 $M(q)\ddot q + C\dot q + g = \tau$
+- 动力学：拉格朗日方程推导 \(M(q)\ddot q + C\dot q + g = \tau\)
 - PID/LQR/MPC 三部曲：Riccati 方程推导 + 凸 MPC（MIT Cheetah）
 - 阻抗/导纳控制与力控（接触密集任务的命门）
 - 全身控制 WBC 任务优先级 QP；人形机器人的质心动力学

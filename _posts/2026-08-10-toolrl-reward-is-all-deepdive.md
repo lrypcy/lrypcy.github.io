@@ -169,10 +169,10 @@ ToolRL 的奖励实现在 `verl/utils/reward_score/rlla.py`，核心逻辑（示
 
 | 数学符号 | 插件/框架变量 | Shape / 类型 | 含义 |
 |---|---|---|---|
-| $r_{format}$ | `format_score` | 标量 | 格式合规分项 |
-| $r_{correct}$ | `correctness` | 标量 | 工具执行正确性分项 |
-| $R_i$ | `reward = w_f·format + w_c·correct − len_pen` | 标量 | 第 $i$ 条样本加权总奖励 |
-| $\hat{A}_i=\frac{R_i-\mathrm{mean}}{\mathrm{std}+\epsilon}$ | `advantages` | `(K,)` | GRPO 组相对优势 |
+| \(r_{format}\) | `format_score` | 标量 | 格式合规分项 |
+| \(r_{correct}\) | `correctness` | 标量 | 工具执行正确性分项 |
+| \(R_i\) | `reward = w_f·format + w_c·correct − len_pen` | 标量 | 第 \(i\) 条样本加权总奖励 |
+| \(\hat{A}_i=\frac{R_i-\mathrm{mean}}{\mathrm{std}+\epsilon}\) | `advantages` | `(K,)` | GRPO 组相对优势 |
 
 `rewards/r` 为规则奖励标量、`advantages` 为组内标准化后的优势、`ratio/logp/old_logp`
 为 token 级重要性比率三件套、`format_score/correctness` 类为分项奖励。若与具体框架

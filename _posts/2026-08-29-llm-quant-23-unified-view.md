@@ -16,7 +16,7 @@ mathjax: true
 
 > **TL;DR**
 >
-> * **核心结论**：所有 LLM PTQ 算法都在解同一个问题——$\min_{\hat{W}}\ \mathrm{tr}\big(\Delta W\,C\,\Delta W^\top\big)$，其中 $\Delta W = W - \hat{W}$、$C=\mathbb{E}[xx^\top]$。它们之所以看起来千差万别，是因为这个问题的**设计空间有八个自由度**，而每个算法选择在其中一两个上发力。把这八个自由度摊开，GPTQ / AWQ / SmoothQuant / QuaRot / SpQR / AQLM 之间的区别就不再是"又一个新方法"，而是**同一张表上的不同格子**。
+> * **核心结论**：所有 LLM PTQ 算法都在解同一个问题——\(\min_{\hat{W}}\ \mathrm{tr}\big(\Delta W\,C\,\Delta W^\top\big)\)，其中 \(\Delta W = W - \hat{W}\)、\(C=\mathbb{E}[xx^\top]\)。它们之所以看起来千差万别，是因为这个问题的**设计空间有八个自由度**，而每个算法选择在其中一两个上发力。把这八个自由度摊开，GPTQ / AWQ / SmoothQuant / QuaRot / SpQR / AQLM 之间的区别就不再是"又一个新方法"，而是**同一张表上的不同格子**。
 > * **反直觉发现**：① **绝大多数算法并没有改变被量化的函数**——SmoothQuant、AWQ、QuaRot、OS+ 施加的都是数学上严格恒等的变换，它们改的是"这个函数长什么样"而不是"这个函数是什么"；真正改变函数的只有 QAT 一类。② **"改答案"类方法（GPTQ/AdaRound）和"改问题"类方法（SmoothQuant/AWQ）可以叠加，而且工业界的 SOTA 基本都是叠加的结果**——把它们当成互斥选项去比较，是选型时最常见的错误。③ **bit 数不是算法的核心属性**：同样是 W4A16，per-tensor + RTN 与 per-group + GPTQ + AWQ 缩放是两种完全不同的精度水平，把它们都叫"4-bit"会让选型失去意义。
 > * **系列定位**：本篇不引入任何新算法，而是给前 22 篇做一次**横向收束**。如果说 [00 篇](/2026/08/24/ptq-00-overview/)给的是"地图"，本篇给的是"地质学"——解释这片地形为什么长成这样。读完它，你应该能对一个从没见过的新量化论文，在五分钟内定位它动的是哪个自由度、预期收益上限在哪。
 
@@ -54,11 +54,11 @@ RTN → LLM.int8() → GPTQ → AWQ → OmniQuant → SpQR → HQQ
 
 先立目标。整个系列反复出现的那个层损失，在这里正式成为主角。
 
-对单个线性层，量化权重 $\hat{W}$ 的合理目标不是"让 $\hat{W}$ 接近 $W$"，而是"让 $\hat{W}$ 的**输出**接近 $W$ 的输出"：
+对单个线性层，量化权重 \(\hat{W}\) 的合理目标不是"让 \(\hat{W}\) 接近 \(W\)"，而是"让 \(\hat{W}\) 的**输出**接近 \(W\) 的输出"：
 
 $$\min_{\hat{W}}\ \mathcal{L}(\hat{W}) = \mathbb{E}_x\Big[\ \lVert Wx - \hat{W}x \rVert_2^2\ \Big]$$
 
-把 $\Delta W \triangleq W - \hat{W}$ 代进去，利用 $\mathbb{E}[\cdot]$ 的线性与迹的循环性：
+把 \(\Delta W \triangleq W - \hat{W}\) 代进去，利用 \(\mathbb{E}[\cdot]\) 的线性与迹的循环性：
 
 $$\mathcal{L} = \mathbb{E}_x\Big[\ x^\top \Delta W^\top \Delta W\, x\ \Big] = \mathbb{E}_x\Big[\ \mathrm{tr}\big(\Delta W^\top \Delta W\, x x^\top\big)\ \Big] = \mathrm{tr}\big(\Delta W\, C\, \Delta W^\top\big)$$
 
@@ -66,17 +66,17 @@ $$\mathcal{L} = \mathbb{E}_x\Big[\ x^\top \Delta W^\top \Delta W\, x\ \Big] = \m
 
 $$C \triangleq \mathbb{E}_x\big[\,x x^\top\,\big] \ \in \mathbb{R}^{d_{\text{in}} \times d_{\text{in}}}$$
 
-就是**[01 篇](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) §6.2** 反复出现的激活二阶矩矩阵（GPTQ 里叫 Hessian，$H = 2XX^\top$，差一个常数因子 2）。
+就是**[01 篇](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) §6.2** 反复出现的激活二阶矩矩阵（GPTQ 里叫 Hessian，\(H = 2XX^\top\)，差一个常数因子 2）。
 
 这一行推导是整个系列的枢纽，值得停下来看清楚它说了三件事：
 
-1. **误差是被 $C$ 加权的，不是等权的**。$C$ 的大特征方向上的权重误差，代价远高于小特征方向。这是 AWQ "问激活而不是问权重" 的全部依据。
-2. **$\hat{W}$ 的取值被约束在一个离散集合里**（量化网格），所以这不是普通的二次优化，而是**离散约束下的二次优化**——本质上难。
+1. **误差是被 \(C\) 加权的，不是等权的**。\(C\) 的大特征方向上的权重误差，代价远高于小特征方向。这是 AWQ "问激活而不是问权重" 的全部依据。
+2. **\(\hat{W}\) 的取值被约束在一个离散集合里**（量化网格），所以这不是普通的二次优化，而是**离散约束下的二次优化**——本质上难。
 3. **这个目标只覆盖一层**。真实网络是层的复合，层间误差会累积、会被 LayerNorm 重新归一化、会在 attention 里被 softmax 非线性放大。所以层最优不等于网络最优——这是所有 layer-wise PTQ 方法的共同软肋（后面 §6 会回到这一点）。
 
 好，现在关键的一步：
 
-> **前面那 22 篇文章里的所有算法，都可以看作是在回答"如何在一个巨大的离散约束下，让 $\mathrm{tr}(\Delta W C \Delta W^\top)$ 尽量小"。**
+> **前面那 22 篇文章里的所有算法，都可以看作是在回答"如何在一个巨大的离散约束下，让 \(\mathrm{tr}(\Delta W C \Delta W^\top)\) 尽量小"。**
 
 它们之所以长得不一样，是因为这个问题的**设计空间是八维的**。下面把八维摊开。
 
@@ -84,18 +84,18 @@ $$C \triangleq \mathbb{E}_x\big[\,x x^\top\,\big] \ \in \mathbb{R}^{d_{\text{in}
 
 ## 3. 八个自由度：一张完整的算法设计空间表
 
-给定层权重 $W$、校准激活统计量 $C$、目标比特 $b$，要把 $W$ 变成 $\hat{W}$，你其实要做八个决定：
+给定层权重 \(W\)、校准激活统计量 \(C\)、目标比特 \(b\)，要把 \(W\) 变成 \(\hat{W}\)，你其实要做八个决定：
 
 | # | 自由度 | 你在决定什么 | 常见取值 |
 |---|---|---|---|
-| **F1** | **网格类型**（grid） | 允许 $\hat{W}$ 取哪些值 | 均匀 / 非均匀(NF4、k-means) / 向量码本 / 浮点(FP8、MXFP4) |
+| **F1** | **网格类型**（grid） | 允许 \(\hat{W}\) 取哪些值 | 均匀 / 非均匀(NF4、k-means) / 向量码本 / 浮点(FP8、MXFP4) |
 | **F2** | **网格位置与间距**（scale & zero-point） | 网格放在数轴哪里、多密 | min-max / percentile / MSE 最优 / 解析(HQQ) / 学习(LSQ) |
 | **F3** | **粒度**（granularity） | 有多少个独立网格 | per-tensor / per-channel / per-group / per-token |
-| **F4** | **落点规则**（rounding） | 每个 $w$ 落到网格哪个点 | 就近(RTN) / 二阶补偿(GPTQ) / 优化(AdaRound) / 码本搜索 |
-| **F5** | **等效变换**（reparameterization） | 能否先恒等变换 $W,x$ 再量化 | 对角缩放(SmoothQuant/AWQ) / 正交旋转(QuaRot) / $\gamma$ 迁移(OS+) |
+| **F4** | **落点规则**（rounding） | 每个 \(w\) 落到网格哪个点 | 就近(RTN) / 二阶补偿(GPTQ) / 优化(AdaRound) / 码本搜索 |
+| **F5** | **等效变换**（reparameterization） | 能否先恒等变换 \(W,x\) 再量化 | 对角缩放(SmoothQuant/AWQ) / 正交旋转(QuaRot) / \(\gamma\) 迁移(OS+) |
 | **F6** | **事后补偿**（compensation） | 量化完还能不能再补 | Hessian 补偿 / 低秩补偿(LoRC) / bias correction |
 | **F7** | **混合精度**（outlier handling） | 是否给一部分元素特殊待遇 | 均匀 / 通道级混合(OWQ) / 元素级稀疏(SpQR) / 配对编码(OliVe) |
-| **F8** | **模型适应**（adaptation） | 是否允许改 $W$ 本身 | 不动(PTQ) / 局部重构(BRECQ) / 全局微调(QAT) |
+| **F8** | **模型适应**（adaptation） | 是否允许改 \(W\) 本身 | 不动(PTQ) / 局部重构(BRECQ) / 全局微调(QAT) |
 
 这八个自由度构成了完整的算法坐标。任何一个量化算法，都可以在这张表上标出一个坐标。
 
@@ -103,13 +103,13 @@ $$C \triangleq \mathbb{E}_x\big[\,x x^\top\,\big] \ \in \mathbb{R}^{d_{\text{in}
 
 ---
 
-### F1 · 网格类型：允许 $\hat{W}$ 取哪些值
+### F1 · 网格类型：允许 \(\hat{W}\) 取哪些值
 
-最朴素的假设是**均匀网格**：$\hat{w} \in \{s(q - z) \mid q \in \{0,\dots,2^b-1\}\}$。它便宜（整数 GEMM 直接吃），但对高斯型权重是浪费——权重大概率集中在 0 附近，均匀网格把宝贵的码字匀给了很少出现的尾部。
+最朴素的假设是**均匀网格**：\(\hat{w} \in \{s(q - z) \mid q \in \{0,\dots,2^b-1\}\}\)。它便宜（整数 GEMM 直接吃），但对高斯型权重是浪费——权重大概率集中在 0 附近，均匀网格把宝贵的码字匀给了很少出现的尾部。
 
 三条逃逸路线：
 
-- **非均匀标量网格**：让网格点本身按分布密度排布。QLoRA 的 NF4 是典型——按标准正态的分位数取 $2^4$ 个码字，实现"信息论最优的分位量化"，代价是查表而非整数运算。GGUF 的 k-quants 则是"分组 + 变步长"的位布局工程化（[15 篇](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)）。
+- **非均匀标量网格**：让网格点本身按分布密度排布。QLoRA 的 NF4 是典型——按标准正态的分位数取 \(2^4\) 个码字，实现"信息论最优的分位量化"，代价是查表而非整数运算。GGUF 的 k-quants 则是"分组 + 变步长"的位布局工程化（[15 篇](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)）。
 - **浮点网格**：FP8 (E4M3/E5M2)、MXFP4 用指数位换取动态范围，让网格在对数尺度上近似均匀。硬件原生支持时，它比整数网格更贴合重尾分布。
 - **向量量化**：不再给每个标量单独选点，而让**一批**权重共享一个码本、用索引代替数值。QuIP# 用 E8 格做免训练码本，AQLM 用多个小码本相加（[07 篇](/2026/08/24/ptq-05-quip-aqlm/)）。这是 2-bit 及以下能保住精度的几乎唯一路线。
 
@@ -122,22 +122,22 @@ $$C \triangleq \mathbb{E}_x\big[\,x x^\top\,\big] \ \in \mathbb{R}^{d_{\text{in}
 
 给定网格类型，还要决定它放在数轴何处、间距多大。这个决定比很多人以为的重要得多。
 
-[01 篇 §4](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 已经推导过：教科书公式 $s = \max|w| / 2^{b-1}$ 在高斯型权重上**远非最优**，因为它让极少数极端值决定全局格距。主动裁掉一部分尾部（引入裁剪误差）反而能降低总误差：
+[01 篇 §4](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 已经推导过：教科书公式 \(s = \max|w| / 2^{b-1}\) 在高斯型权重上**远非最优**，因为它让极少数极端值决定全局格距。主动裁掉一部分尾部（引入裁剪误差）反而能降低总误差：
 
 $$\min_{s}\ \mathbb{E}\Big[\big(w - \hat{w}(s)\big)^2\Big] \quad\text{s.t.}\quad \hat{w} = s\cdot\mathrm{clip}\!\left(\big\lfloor w/s \rceil,\ q_{\min},\ q_{\max}\right)$$
 
-因为总误差 = 舍入误差 + 裁剪误差，而两者随 $s$ 此消彼长。
+因为总误差 = 舍入误差 + 裁剪误差，而两者随 \(s\) 此消彼长。
 
 工程上的选择谱系：
 
 | 方法 | 怎么用 | 代价 |
 |---|---|---|
 | min-max | 直接用极值 | 对 outlier 极敏感 |
-| percentile / 分位数 | 截掉 $p\%$ 尾部 | $p$ 需调，且分布依赖 |
-| MSE 最优 | 网格搜索或闭式解 | 需遍历候选 $s$ |
+| percentile / 分位数 | 截掉 \(p\%\) 尾部 | \(p\) 需调，且分布依赖 |
+| MSE 最优 | 网格搜索或闭式解 | 需遍历候选 \(s\) |
 | KL 校准 | 最小化量化前后分布 KL | 传统 INT8 推理常用，LLM 上较少 |
-| 解析求解（HQQ） | 稀疏化 + $\ell_p$ 范数闭式 | 免校准集，精度有上限 |
-| 学习（LSQ/PACT） | 把 $s$、clip 界放进计算图 | 需训练（[18 篇](/2026/08/29/llm-quant-18-lsq-pact-dsq/)） |
+| 解析求解（HQQ） | 稀疏化 + \(\ell_p\) 范数闭式 | 免校准集，精度有上限 |
+| 学习（LSQ/PACT） | 把 \(s\)、clip 界放进计算图 | 需训练（[18 篇](/2026/08/29/llm-quant-18-lsq-pact-dsq/)） |
 
 **这一自由度常被低估**。在 4-bit 下，从 min-max 换到 MSE 最优 scale 的收益，往往不比换一个量化算法小。
 
@@ -149,7 +149,7 @@ $$\min_{s}\ \mathbb{E}\Big[\big(w - \hat{w}(s)\big)^2\Big] \quad\text{s.t.}\quad
 
 [01 篇 §7](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 的实测给出了粒度的收益来源：**outlier 的空间局部性**。行间 outlier 用 per-channel 就能隔离；行内散点必须 per-group。
 
-**代价是元数据**：group 越小，scale/zero-point 的存储占比越高。以 FP16 scale + 4-bit 权重、$g=128$ 为例，每个 scale 摊到 128 个权重上，额外开销约 $16/128 = 0.125$ bit/权重，即 ~3%；$g=32$ 时涨到 ~12%。所以**粒度不是越细越好**，它有一条明确的收益递减曲线。
+**代价是元数据**：group 越小，scale/zero-point 的存储占比越高。以 FP16 scale + 4-bit 权重、\(g=128\) 为例，每个 scale 摊到 128 个权重上，额外开销约 \(16/128 = 0.125\) bit/权重，即 ~3%；\(g=32\) 时涨到 ~12%。所以**粒度不是越细越好**，它有一条明确的收益递减曲线。
 
 这里还埋着一个 AWQ 的关键前提：[04 篇](/2026/08/24/llm-quant-03-awq-scale-search/)实测发现，**在逐输入通道粒度下 AWQ 的缩放严格无效**（扫描曲线逐点完全相同），因为每个通道独享 scale 时，放大这个动作被自己的 scale 精确抵消了。AWQ 有效的前提是**组内共享 scale**——这正是一个"自由度之间存在依赖关系"的例子：F5 的收益依赖 F3 的取值。
 
@@ -157,16 +157,16 @@ $$\min_{s}\ \mathbb{E}\Big[\big(w - \hat{w}(s)\big)^2\Big] \quad\text{s.t.}\quad
 
 ### F4 · 落点规则：每个权重往哪落
 
-网格定了、scale 定了，剩下的就是每个 $w$ 落到哪个点。这是最"算法"的一维。
+网格定了、scale 定了，剩下的就是每个 \(w\) 落到哪个点。这是最"算法"的一维。
 
-- **RTN**：逐元素就近。它是在**忽略 $C$ 加权、忽略元素间耦合**前提下的最优解——[01 篇 §6.1](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)证明了它的逐元素最优性，也证明了这个最优性与层最优性之间的鸿沟。
-- **GPTQ**：把"已经量化的那些权重造成的误差"用**未量化权重**补偿掉。用 $H=2XX^\top$ 做二阶近似，Lagrange 乘子法给出闭式更新：
+- **RTN**：逐元素就近。它是在**忽略 \(C\) 加权、忽略元素间耦合**前提下的最优解——[01 篇 §6.1](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)证明了它的逐元素最优性，也证明了这个最优性与层最优性之间的鸿沟。
+- **GPTQ**：把"已经量化的那些权重造成的误差"用**未量化权重**补偿掉。用 \(H=2XX^\top\) 做二阶近似，Lagrange 乘子法给出闭式更新：
   $$\delta = -\frac{w_q - \hat{w}_q}{[H^{-1}]_{qq}} \cdot (H^{-1})_{:,q}$$
   核心洞察是：**量化误差不是白噪声，可以通过调整其他权重主动抵消**（[03 篇](/2026/08/24/ptq-02-gptq/)）。
-- **AdaRound / BRECQ**：更直接——把"向上还是向下"本身当成**待优化变量** $V$，用软松弛 + 局部重构误差去优化它（[19 篇](/2026/08/29/llm-quant-19-adaround-brecq/)）。
+- **AdaRound / BRECQ**：更直接——把"向上还是向下"本身当成**待优化变量** \(V\)，用软松弛 + 局部重构误差去优化它（[19 篇](/2026/08/29/llm-quant-19-adaround-brecq/)）。
 
 **收益来源**：从"每个元素独立最优"升级到"元素之间协同最优"。
-**代价**：需要校准集、需要计算 $H$（及其 Cholesky/逆），且存在顺序依赖与局部最优。
+**代价**：需要校准集、需要计算 \(H\)（及其 Cholesky/逆），且存在顺序依赖与局部最优。
 
 ---
 
@@ -174,20 +174,20 @@ $$\min_{s}\ \mathbb{E}\Big[\big(w - \hat{w}(s)\big)^2\Big] \quad\text{s.t.}\quad
 
 这是整个设计空间里**最优雅、也最容易被误解**的一维。
 
-核心想法：对任意可逆矩阵 $D$，有严格恒等式
+核心想法：对任意可逆矩阵 \(D\)，有严格恒等式
 
 $$XW = \big(X D^{-1}\big)\big(D W\big)$$
 
-函数**分毫未变**，但 $X$ 和 $W$ 的**数值分布**变了，量化的难度也随之改变。这不是近似，是恒等。
+函数**分毫未变**，但 \(X\) 和 \(W\) 的**数值分布**变了，量化的难度也随之改变。这不是近似，是恒等。
 
 沿着这条思路的三个里程碑：
 
 | 方法 | 变换形式 | 干了什么 |
 |---|---|---|
-| **SmoothQuant**（[09 篇](/2026/08/24/llm-quant-02-smoothquant-w8a8/)） | 对角 $\tau_j = a_j^{\beta}/w_j^{1-\beta}$ | 把激活的量化难度**迁移**给权重，实现 W8A8 |
-| **AWQ**（[04 篇](/2026/08/24/llm-quant-03-awq-scale-search/)） | 对角 $\kappa_j = a_j^{\gamma}$ | 在**组内**给显著通道分配更细的格距 |
-| **QuaRot / SpinQuant**（[12 篇](/2026/08/24/ptq-07-quarot-spinquant/)） | 正交旋转 $R$：$XW = (XR)(R^{-1}W)$ | 把 outlier 从少数坐标**摊薄**到所有坐标 |
-| **OS+**（[11 篇](/2026/08/24/ptq-10-outlier-suppression/)） | $\gamma$ 迁移 + shift | 拆掉 LayerNorm 这个"outlier 放大器" |
+| **SmoothQuant**（[09 篇](/2026/08/24/llm-quant-02-smoothquant-w8a8/)） | 对角 \(\tau_j = a_j^{\beta}/w_j^{1-\beta}\) | 把激活的量化难度**迁移**给权重，实现 W8A8 |
+| **AWQ**（[04 篇](/2026/08/24/llm-quant-03-awq-scale-search/)） | 对角 \(\kappa_j = a_j^{\gamma}\) | 在**组内**给显著通道分配更细的格距 |
+| **QuaRot / SpinQuant**（[12 篇](/2026/08/24/ptq-07-quarot-spinquant/)） | 正交旋转 \(R\)：\(XW = (XR)(R^{-1}W)\) | 把 outlier 从少数坐标**摊薄**到所有坐标 |
+| **OS+**（[11 篇](/2026/08/24/ptq-10-outlier-suppression/)） | \(\gamma\) 迁移 + shift | 拆掉 LayerNorm 这个"outlier 放大器" |
 
 **一个必须讲清的区分**：SmoothQuant 和 AWQ 都做对角缩放，但它们**优化的目标不同**——SmoothQuant 追求的是"让激活变得可量化"（迁移难度），AWQ 追求的是"让权重的重要通道得到更细格距"（分配精度）。前者服务于 W8A8，后者服务于 W4A16。把它们当成同一种东西，就会得出"二选一"的错误结论。
 
@@ -197,10 +197,10 @@ $$XW = \big(X D^{-1}\big)\big(D W\big)$$
 
 ### F6 · 事后补偿：量化完还能不能再捞回来
 
-量化做完了，$\Delta W$ 已经产生，还能补救吗？
+量化做完了，\(\Delta W\) 已经产生，还能补救吗？
 
 - **Hessian 补偿**（GPTQ）：见 F4，它其实是边量化边补偿。
-- **低秩补偿（LoRC）**：把残差 $\Delta W$ 做低秩近似 $\Delta W \approx U V^\top$，额外存这两个小矩阵，推理时补上。[16 篇](/2026/08/24/ptq-13-qserve-qqq/)实测指出：**它的收益高度依赖残差谱的集中度**——残差谱越集中收益越大，这解释了为什么 LoRC 在不同论文里时好时坏。
+- **低秩补偿（LoRC）**：把残差 \(\Delta W\) 做低秩近似 \(\Delta W \approx U V^\top\)，额外存这两个小矩阵，推理时补上。[16 篇](/2026/08/24/ptq-13-qserve-qqq/)实测指出：**它的收益高度依赖残差谱的集中度**——残差谱越集中收益越大，这解释了为什么 LoRC 在不同论文里时好时坏。
 - **Bias correction**：量化引入的误差往往有系统性偏置（不是零均值），直接把它补偿到层的 bias 项上。便宜，但只能修一阶矩。
 
 **代价**：都要额外的存储与访存，而且补偿本身也会引入新的量化误差。
@@ -220,9 +220,9 @@ $$XW = \big(X D^{-1}\big)\big(D W\big)$$
 
 ---
 
-### F8 · 模型适应：允许改 $W$ 吗
+### F8 · 模型适应：允许改 \(W\) 吗
 
-前面七个自由度都在"给定 $W$，找最好的 $\hat{W}$"。第八个自由度问的是一个不同的问题：**能不能改 $W$ 本身，让它更容易被量化？**
+前面七个自由度都在"给定 \(W\)，找最好的 \(\hat{W}\)"。第八个自由度问的是一个不同的问题：**能不能改 \(W\) 本身，让它更容易被量化？**
 
 - **不动**（纯 PTQ）：F1–F7 的全部领域。
 - **局部重构**（BRECQ / OmniQuant）：只优化变换参数或舍入变量，不动主权重。
@@ -377,7 +377,7 @@ $$XW = \big(X D^{-1}\big)\big(D W\big)$$
 - Tseng et al., *QuIP#: Even Better LLM Quantization with Hadamard Incoherence and Lattice Codebooks*, [arXiv:2402.04396](https://arxiv.org/abs/2402.04396) —— F1 向量量化
 - Egiazarian et al., *Extreme Compression of Large Language Models via Additive Quantization*, [arXiv:2309.06180](https://arxiv.org/abs/2309.06180) —— AQLM，加性码本
 - Nagel et al., *Up or Down? Adaptive Rounding for Post-Training Quantization*, [arXiv:2004.10568](https://arxiv.org/abs/2004.10568) —— F4 优化派起点
-- Wei et al., *Outlier Suppression+: Accurate quantization of large language models by equivalent and optimal shifting and scaling*, [arXiv:2304.09145](https://arxiv.org/abs/2304.09145) —— F5 的 $\gamma$ 迁移
+- Wei et al., *Outlier Suppression+: Accurate quantization of large language models by equivalent and optimal shifting and scaling*, [arXiv:2304.09145](https://arxiv.org/abs/2304.09145) —— F5 的 \(\gamma\) 迁移
 - Nagel et al., *A White Paper on Neural Network Quantization*, [arXiv:2106.08295](https://arxiv.org/abs/2106.08295) —— 本文设计空间的规范参考
 
 **代码与规范**

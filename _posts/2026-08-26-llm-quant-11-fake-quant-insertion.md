@@ -14,7 +14,7 @@ mathjax: true
 
 > **TL;DR**
 >
-> * **核心结论**：量化感知训练（QAT）的全部技巧建立在一个算子之上——伪量化（Fake-Quantize）。它的前向就是01 篇的 RTN round-trip：$\hat{x}=s\,\mathrm{clip}(\mathrm{round}(x/s),\,q_{\min},q_{\max})$；反向用直通估计器（STE）让梯度假装量化不存在。本篇把这个算子的数学、插入位置、框架实现、反传断裂问题一次性讲透：**伪量化把 PTQ 的离线评估与 QAT 的在线训练统一到同一张计算图里——同一个算子，PTQ 用来量后验证，QAT 用来训中模拟**。
+> * **核心结论**：量化感知训练（QAT）的全部技巧建立在一个算子之上——伪量化（Fake-Quantize）。它的前向就是01 篇的 RTN round-trip：\(\hat{x}=s\,\mathrm{clip}(\mathrm{round}(x/s),\,q_{\min},q_{\max})\)；反向用直通估计器（STE）让梯度假装量化不存在。本篇把这个算子的数学、插入位置、框架实现、反传断裂问题一次性讲透：**伪量化把 PTQ 的离线评估与 QAT 的在线训练统一到同一张计算图里——同一个算子，PTQ 用来量后验证，QAT 用来训中模拟**。
 > * **反直觉发现**：① 4-bit per-tensor 伪量化的 SNR 低至3.02 dB，而 per-group(128) 恢复到14.10 dB——粒度从 per-tensor 到 per-group 在同一算子上白捡11 dB；② STE 在有效范围内梯度均值为1.0（完美直通），但软量化真实梯度只有0.5——**STE 系统性高估梯度约一倍**，偏差来自 round 的平台效应；③ 权重伪量化只需一次插入（离线），激活伪量化必须逐前向动态计算 scale——两者的工程复杂度差一个数量级。
 > * **系列定位**：这是「大模型量化算法」第二部分（QAT）的开篇。PTQ 部分（00–16 篇）的共同假设是"训练结束、只调权重"；QAT 部分从本篇开始打破这个假设——把量化搬进计算图，让模型在量化约束下继续学习。伪量化算子是 QAT 的全部地基，后续 LSQ（18 篇）学 scale、PACT 学 clamp 上界、AdaRound/BRECQ（19 篇）做 PTQ-QAT 之间的桥，全都从这个算子出发。配套实验真实可跑（纯 numpy，几秒出图）：fake_quant_ste_check。
 
@@ -77,35 +77,35 @@ flowchart TD
 
 ## 2. 符号字典增量表
 
-全系列沿用01 篇的符号约定：$x$ 为激活、$W$ 为权重、$s$ 为步长、$z_p$ 为零点、$q$ 为整数码、$\hat{x}$ 为反量化值、$b$ 为位宽、$q_{\min}=-2^{b-1}$、$q_{\max}=2^{b-1}-1$。本篇只新增以下行：
+全系列沿用01 篇的符号约定：\(x\) 为激活、\(W\) 为权重、\(s\) 为步长、\(z_p\) 为零点、\(q\) 为整数码、\(\hat{x}\) 为反量化值、\(b\) 为位宽、\(q_{\min}=-2^{b-1}\)、\(q_{\max}=2^{b-1}-1\)。本篇只新增以下行：
 
 | 符号 | 含义 | 易混淆提示 |
 |---|---|---|
-| $\mathrm{FQ}(\cdot)$ | 伪量化算子（Fake-Quantize），前向 round-trip、反向 STE | 不同于量化器 $Q(\cdot)$——FQ 输出浮点，$Q$ 输出整数 |
-| $\mathrm{DQ}(\cdot)$ | 反量化算子（DequantizeLinear），$\mathrm{DQ}(q)=s(q-z_p)$ | ONNX 图中 QuantizeLinear / DequantizeLinear 分开表示 |
-| $\mathrm{QDQ}$ | QuantizeLinear → DequantizeLinear 对的缩写 | ONNX / TensorRT 术语，插入时成对出现 |
-| $s_w$ | 权重的量化步长（per-channel 或 per-group） | 下标 $w$ 区分于激活步长 $s_a$ |
-| $s_a$ | 激活的量化步长（per-token 或 per-tensor） | 动态计算：每个前向 pass 重新统计 |
-| $\mathcal{G}$ | 量化网格点集合，$\mathcal{G}=\{s(q-z_p)\mid q\in[q_{\min},q_{\max}]\}$ | round-trip 后所有值被吸附到 $\mathcal{G}$ 上 |
-| $\delta_{\mathrm{STE}}$ | STE 的隐式梯度算子，$\partial\hat{x}/\partial x\approx\mathbf{1}_{[\mathrm{in\;range}]}$ | 这是一个算子近似，不是精确导数 |
-| $T$ | 软量化的温度参数（仅 §6.2 使用） | $T\to 0$ 时软量化趋近硬量化 |
+| \(\mathrm{FQ}(\cdot)\) | 伪量化算子（Fake-Quantize），前向 round-trip、反向 STE | 不同于量化器 \(Q(\cdot)\)——FQ 输出浮点，\(Q\) 输出整数 |
+| \(\mathrm{DQ}(\cdot)\) | 反量化算子（DequantizeLinear），\(\mathrm{DQ}(q)=s(q-z_p)\) | ONNX 图中 QuantizeLinear / DequantizeLinear 分开表示 |
+| \(\mathrm{QDQ}\) | QuantizeLinear → DequantizeLinear 对的缩写 | ONNX / TensorRT 术语，插入时成对出现 |
+| \(s_w\) | 权重的量化步长（per-channel 或 per-group） | 下标 \(w\) 区分于激活步长 \(s_a\) |
+| \(s_a\) | 激活的量化步长（per-token 或 per-tensor） | 动态计算：每个前向 pass 重新统计 |
+| \(\mathcal{G}\) | 量化网格点集合，\(\mathcal{G}=\{s(q-z_p)\mid q\in[q_{\min},q_{\max}]\}\) | round-trip 后所有值被吸附到 \(\mathcal{G}\) 上 |
+| \(\delta_{\mathrm{STE}}\) | STE 的隐式梯度算子，\(\partial\hat{x}/\partial x\approx\mathbf{1}_{[\mathrm{in\;range}]}\) | 这是一个算子近似，不是精确导数 |
+| \(T\) | 软量化的温度参数（仅 §6.2 使用） | \(T\to 0\) 时软量化趋近硬量化 |
 
 ### 变量映射表
 
 | 数学符号 | 代码变量 | Shape | 说明 |
 |---|---|---|---|
-| $x$ | `x` | `(n,)` 或 `(B, T, n)` | 激活张量（浮点） |
-| $W$ | `W` | `(m, n)` | 权重矩阵 |
-| $s$ / $s_w$ / $s_a$ | `s` / `s_w` / `s_a` | 标量或广播数组 | 量化步长 |
-| $z_p$ | `zp` | 标量或广播整数 | 整数零点 |
-| $\hat{x}$ | `x_hat` | 同 `x` | 伪量化输出（浮点） |
-| $q$ | （中间量） | int64 | 量化整数码 |
-| $b$ | `b` | int | 位宽 |
-| $q_{\min}$, $q_{\max}$ | `QMIN(b)`, `QMAX(b)` | int | $-2^{b-1}$, $2^{b-1}-1$ |
-| $\mathrm{FQ}(x)$ | `fake_quantize_forward(x, s, b)` | 同 `x` | 前向伪量化 |
-| $\delta_{\mathrm{STE}}$ | `fake_quantize_ste_grad(x, grad, s, b)` | 同 `x` | 反向 STE 梯度 |
-| $T$ | `temperature` | float | 软量化温度（实验用） |
-| $\mathcal{G}$ | `grid_points` | `(2^b,)` | 量化网格点集合 |
+| \(x\) | `x` | `(n,)` 或 `(B, T, n)` | 激活张量（浮点） |
+| \(W\) | `W` | `(m, n)` | 权重矩阵 |
+| \(s\) / \(s_w\) / \(s_a\) | `s` / `s_w` / `s_a` | 标量或广播数组 | 量化步长 |
+| \(z_p\) | `zp` | 标量或广播整数 | 整数零点 |
+| \(\hat{x}\) | `x_hat` | 同 `x` | 伪量化输出（浮点） |
+| \(q\) | （中间量） | int64 | 量化整数码 |
+| \(b\) | `b` | int | 位宽 |
+| \(q_{\min}\), \(q_{\max}\) | `QMIN(b)`, `QMAX(b)` | int | \(-2^{b-1}\), \(2^{b-1}-1\) |
+| \(\mathrm{FQ}(x)\) | `fake_quantize_forward(x, s, b)` | 同 `x` | 前向伪量化 |
+| \(\delta_{\mathrm{STE}}\) | `fake_quantize_ste_grad(x, grad, s, b)` | 同 `x` | 反向 STE 梯度 |
+| \(T\) | `temperature` | float | 软量化温度（实验用） |
+| \(\mathcal{G}\) | `grid_points` | `(2^b,)` | 量化网格点集合 |
 
 ## 3. 伪量化算子的数学
 
@@ -119,41 +119,41 @@ $$
 
 展开来看，round 和 clip 在公式中各司其职：
 
-- **round**：将连续值 $x/s$ 映射到最近整数，产生舍入误差 $\epsilon_r \in [-0.5, 0.5]$（01 篇 §3.2 的 granular error）。
-- **clip**：将超出 $[q_{\min}, q_{\max}]$ 的整数截断到边界，产生裁剪误差 $\epsilon_c$（01 篇 §3.2 的 saturation error）。
+- **round**：将连续值 \(x/s\) 映射到最近整数，产生舍入误差 \(\epsilon_r \in [-0.5, 0.5]\)（01 篇 §3.2 的 granular error）。
+- **clip**：将超出 \([q_{\min}, q_{\max}]\) 的整数截断到边界，产生裁剪误差 \(\epsilon_c\)（01 篇 §3.2 的 saturation error）。
 
-Round-trip 后，数值被"吸附"到量化网格点上：$\hat{x} \in \mathcal{G}$。非网格点的原始值 $x$ 与最近网格点之差，就是伪量化引入的误差 $\epsilon = x - \hat{x}$。
+Round-trip 后，数值被"吸附"到量化网格点上：\(\hat{x} \in \mathcal{G}\)。非网格点的原始值 \(x\) 与最近网格点之差，就是伪量化引入的误差 \(\epsilon = x - \hat{x}\)。
 
 ### 3.2 误差分解与上界
 
-对任意 $x$，误差可分解为：
+对任意 \(x\)，误差可分解为：
 
 $$
 \epsilon = \epsilon_r + \epsilon_c, \qquad |\epsilon_r| \le s/2, \qquad \epsilon_c = \begin{cases} x - s\cdot q_{\max} & x > s\cdot q_{\max} \\ x - s\cdot q_{\min} & x < s\cdot q_{\min} \\ 0 & \text{otherwise} \end{cases}
 $$
 
-在 clip 范围内（$\lvert x\rvert \le s\cdot q_{\max}$），误差上界为 $s/2$。这直接决定了伪量化算子的精度：**步长 $s$ 越小（位宽越高或粒度越细），误差上界越小**。
+在 clip 范围内（\(\lvert x\rvert \le s\cdot q_{\max}\)），误差上界为 \(s/2\)。这直接决定了伪量化算子的精度：**步长 \(s\) 越小（位宽越高或粒度越细），误差上界越小**。
 
-对称量化（$z_p=0$）时，$s = \max\lvert x\rvert/q_{\max}$（min-max scale），网格关于零对称。非对称量化时 $z_p\neq 0$，网格平移以覆盖 $[x_{\min}, x_{\max}]$（01 篇 §3.1 推导）。
+对称量化（\(z_p=0\)）时，\(s = \max\lvert x\rvert/q_{\max}\)（min-max scale），网格关于零对称。非对称量化时 \(z_p\neq 0\)，网格平移以覆盖 \([x_{\min}, x_{\max}]\)（01 篇 §3.1 推导）。
 
 ### 3.3 对称 vs 非对称在算子参数上的表达
 
 | 模式 | 算子参数 | 反量化公式 | 网格覆盖 |
 |---|---|---|---|
-| 对称（$z_p=0$） | $s=\max\lvert x\rvert/q_{\max}$ | $\hat{x}=sq$ | $[-sq_{\max},\;sq_{\max}]$ |
-| 非对称 | $s,\;z_p$ | $\hat{x}=s(q-z_p)$ | $[s(q_{\min}-z_p),\;s(q_{\max}-z_p)]$ |
+| 对称（\(z_p=0\)） | \(s=\max\lvert x\rvert/q_{\max}\) | \(\hat{x}=sq\) | \([-sq_{\max},\;sq_{\max}]\) |
+| 非对称 | \(s,\;z_p\) | \(\hat{x}=s(q-z_p)\) | \([s(q_{\min}-z_p),\;s(q_{\max}-z_p)]\) |
 
 工程经验：**LLM 权重用对称**（分布近似零对称），**激活视情况用非对称**（ReLU/GELU 后单边偏斜）。01 篇 §3.2 已给出数字支撑。
 
 ### 3.4 粒度在算子参数上的表达
 
-粒度决定一组 $(s, z_p)$ 覆盖多少个元素——粒度越细，每组元素越少，$s$ 越小，误差越小。但 scale 元数据本身要存 FP16/INT32，粒度不是免费的（01 篇 §7.2 的有效位宽公式）：
+粒度决定一组 \((s, z_p)\) 覆盖多少个元素——粒度越细，每组元素越少，\(s\) 越小，误差越小。但 scale 元数据本身要存 FP16/INT32，粒度不是免费的（01 篇 §7.2 的有效位宽公式）：
 
-| 粒度 | 参数组数 | $s$ 的 Shape | 典型配置 |
+| 粒度 | 参数组数 | \(s\) 的 Shape | 典型配置 |
 |---|---|---|---|
 | per-tensor | 1 | 标量 | 动态激活量化 |
-| per-channel | $m$（输出通道数） | $(m,1)$ | 权重量化默认 |
-| per-group($g$) | $m \times n/g$ | $(m,n/g,1)$ | AWQ/GPTQ, $g=128$ |
+| per-channel | \(m\)（输出通道数） | \((m,1)\) | 权重量化默认 |
+| per-group(\(g\)) | \(m \times n/g\) | \((m,n/g,1)\) | AWQ/GPTQ, \(g=128\) |
 
 ### 3.5 网格吸附效应：实验验证
 
@@ -189,10 +189,10 @@ $$
 
 | 策略 | 伪量化对象 | 训练目标 | 工程复杂度 | 代表场景 |
 |---|---|---|---|---|
-| 权重 only | $W$ | 让模型适应权重量化误差 | 低（scale 静态） | W4A16（llama.cpp, GPTQ 后微调） |
-| 权重 + 激活 | $W$ 和 $X$ | 同时适应两侧量化误差 | 高（$s_a$ 动态） | W8A8（TensorRT, ONNX Runtime） |
+| 权重 only | \(W\) | 让模型适应权重量化误差 | 低（scale 静态） | W4A16（llama.cpp, GPTQ 后微调） |
+| 权重 + 激活 | \(W\) 和 \(X\) | 同时适应两侧量化误差 | 高（\(s_a\) 动态） | W8A8（TensorRT, ONNX Runtime） |
 
-**权重伪量化**的 scale 在训练前由校准集确定，训练过程中固定不变——它的伪量化算子就是"把 $W$ 走一遍 round-trip"，让优化器看到量化后的 $W$ 而非浮点 $W$。
+**权重伪量化**的 scale 在训练前由校准集确定，训练过程中固定不变——它的伪量化算子就是"把 \(W\) 走一遍 round-trip"，让优化器看到量化后的 \(W\) 而非浮点 \(W\)。
 
 **激活伪量化**的 scale 必须在每次前向传播时动态计算（因为激活值随输入变化）。这就是为什么激活量化的工程复杂度远高于权重量化——scale 的统计本身就是一个算子，需要挂在计算图中。
 
@@ -205,7 +205,7 @@ $$
 | Conv / Linear | 权重参数上（训练前离线） | 算子输出（Activation 后） | 权重是静态参数可离线量化；激活在输出端量化可覆盖 bias 修正 |
 | MatMul (Attention) | 两个输入 K, V | 同上 | Q/K/V 投影后分别量化；Attention score 通常不量化（Softmax 敏感） |
 | LayerNorm | 无权重（gamma/beta 量化收益低） | 算子输入或输出 | LN 是归一化算子，输入分布已接近标准正态，量化误差被放大 |
-| Softmax | 无 | 输出 | Softmax 输出在 $[0,1]$ 之间，动态范围小，量化友好；但输入（logits）通常不量化 |
+| Softmax | 无 | 输出 | Softmax 输出在 \([0,1]\) 之间，动态范围小，量化友好；但输入（logits）通常不量化 |
 | 残差加法 | 无 | 两个操作数 | 残差连接的两个分支都需要量化到同一网格，否则加法语义不一致 |
 | GELU / ReLU | 无 | 输出 | 激活函数输出是下一层的输入，量化点在输出端 |
 
@@ -215,9 +215,9 @@ $$
 
 权重的分布相对稳定（训练完成后变化很小），但激活的分布随输入剧烈变化。如果只模拟 round 而不模拟 clip，QAT 就无法让模型学会"避开量化范围之外的值"——这恰恰是 QAT 相比 PTQ 的核心优势。
 
-以 ReLU 后的激活为例：大部分值在 $[0, M]$ 之间（$M=s\cdot q_{\max}$），但偶有大值超出范围。如果不模拟 clip，优化器会认为这些大值可以自由存在；部署时它们被截断，误差无法预测。伪量化算子的 clip 正是在告诉优化器：**"超过 $M$ 的值会被截断到 $M$，请学会控制它们"**。
+以 ReLU 后的激活为例：大部分值在 \([0, M]\) 之间（\(M=s\cdot q_{\max}\)），但偶有大值超出范围。如果不模拟 clip，优化器会认为这些大值可以自由存在；部署时它们被截断，误差无法预测。伪量化算子的 clip 正是在告诉优化器：**"超过 \(M\) 的值会被截断到 \(M\)，请学会控制它们"**。
 
-这就是 PACT（Parameterized Clipping Activation，arXiv:1805.06085）的核心思想：把 clip 的上界 $M$ 也变成可学习参数，让模型自己决定"在哪里截断最好"——18 篇展开。
+这就是 PACT（Parameterized Clipping Activation，arXiv:1805.06085）的核心思想：把 clip 的上界 \(M\) 也变成可学习参数，让模型自己决定"在哪里截断最好"——18 篇展开。
 
 ### 4.4 BN folding 与伪量化的配合
 
@@ -227,7 +227,7 @@ $$
 W' = \gamma \odot W / \sqrt{\sigma^2+\epsilon}, \qquad b' = \gamma \odot (b - \mu)/\sqrt{\sigma^2+\epsilon} + \beta
 $$
 
-在 QAT 中，BN folding 必须在伪量化插入**之前**完成。原因是：如果先插伪量化再折叠 BN，BN 的缩放因子 $\gamma/\sqrt{\sigma^2+\epsilon}$ 会作用在量化后的值上，改变 scale 的有效范围——部署时 BN 已被折叠、不存在这个缩放，导致训练–部署不一致。
+在 QAT 中，BN folding 必须在伪量化插入**之前**完成。原因是：如果先插伪量化再折叠 BN，BN 的缩放因子 \(\gamma/\sqrt{\sigma^2+\epsilon}\) 会作用在量化后的值上，改变 scale 的有效范围——部署时 BN 已被折叠、不存在这个缩放，导致训练–部署不一致。
 
 正确的流水线：**先 fold BN → 再插入伪量化**。这也是 PyTorch torch.ao 的 eager mode 默认流程。
 
@@ -237,7 +237,7 @@ $$
 
 | 变换规则 | 说明 | 效果 |
 |---|---|---|
-| QDQ 抵消 | $\mathrm{DQ}(\mathrm{Q}(x))=x$（无量化误差时） | 相邻 QDQ 对可消除（训练时无实际量化，仅占位） |
+| QDQ 抵消 | \(\mathrm{DQ}(\mathrm{Q}(x))=x\)（无量化误差时） | 相邻 QDQ 对可消除（训练时无实际量化，仅占位） |
 | 常量折叠 | QDQ 作用于常量权重 → 立即量化存储 | 减少运行时计算量 |
 | QDQ 前推 | 将 QDQ 从算子输出移到下一个算子输入 | 改变量化点但数学等价 |
 | QDQ 合并 | 多个 QDQ 合并为一个 | 减少冗余计算 |
@@ -367,15 +367,15 @@ relay.qnn.simulated_quantize(
 
 伪量化算子的反向传播面临一个根本问题：**round 和 clip 的导数几乎处处为零**。
 
-对 $q = \mathrm{round}(x/s)$：
-- 在任意两个网格点之间，$q$ 是常数，$\partial q/\partial x = 0$
-- 在网格点上，$q$ 跳变，导数不存在（Dirac delta）
+对 \(q = \mathrm{round}(x/s)\)：
+- 在任意两个网格点之间，\(q\) 是常数，\(\partial q/\partial x = 0\)
+- 在网格点上，\(q\) 跳变，导数不存在（Dirac delta）
 
-对 $q = \mathrm{clip}(q', q_{\min}, q_{\max})$：
-- 在 $q_{\min} < q' < q_{\max}$ 时，$\partial q/\partial q' = 1$（恒等）
-- 在 $q' \le q_{\min}$ 或 $q' \ge q_{\max}$ 时，$\partial q/\partial q' = 0$（饱和区）
+对 \(q = \mathrm{clip}(q', q_{\min}, q_{\max})\)：
+- 在 \(q_{\min} < q' < q_{\max}\) 时，\(\partial q/\partial q' = 1\)（恒等）
+- 在 \(q' \le q_{\min}\) 或 \(q' \ge q_{\max}\) 时，\(\partial q/\partial q' = 0\)（饱和区）
 
-组合起来，$\partial\hat{x}/\partial x$ 在几乎所有点上为零——梯度无法穿过伪量化算子传回权重，训练完全停滞。
+组合起来，\(\partial\hat{x}/\partial x\) 在几乎所有点上为零——梯度无法穿过伪量化算子传回权重，训练完全停滞。
 
 ### 6.2 STE：直通估计器
 
@@ -401,9 +401,9 @@ $$
 
 STE 是一个有偏的梯度估计。本篇用一个思想实验说明偏差来源：
 
-考虑一个标量 $x$ 在网格区间 $[ks, (k+1)s]$ 内。前向 round 后 $\hat{x}=ks$（或 $(k+1)s$），输出在该区间内是**常数**——所以真实梯度为0。但 STE 给出梯度1（直通），系统性地高估了这个区间的梯度。
+考虑一个标量 \(x\) 在网格区间 \([ks, (k+1)s]\) 内。前向 round 后 \(\hat{x}=ks\)（或 \((k+1)s\)），输出在该区间内是**常数**——所以真实梯度为0。但 STE 给出梯度1（直通），系统性地高估了这个区间的梯度。
 
-偏差的定量分析。设 $x$ 在网格区间内均匀分布，$\hat{x}=\mathrm{round}(x/s)\cdot s$。STE 梯度为1，真实梯度为0（区间内常数函数）。方差：
+偏差的定量分析。设 \(x\) 在网格区间内均匀分布，\(\hat{x}=\mathrm{round}(x/s)\cdot s\)。STE 梯度为1，真实梯度为0（区间内常数函数）。方差：
 
 $$
 \mathrm{Var}[\delta_{\mathrm{STE}}] = \mathbb{E}[(\delta_{\mathrm{STE}}-\nabla_x\hat{x})^2] = \mathbb{E}[\delta_{\mathrm{STE}}^2] = 1
@@ -413,7 +413,7 @@ $$
 
 但实际训练中 STE 仍然有效，原因有二：
 1. **方向正确**：STE 梯度的方向与 loss 下降方向大体一致（§7 实验证明方向一致性 > 95%）
-2. **全局抵消**：在大批量训练中，不同样本的 $x$ 落在不同网格区间，STE 的正偏差被多样化的样本"平均掉"
+2. **全局抵消**：在大批量训练中，不同样本的 \(x\) 落在不同网格区间，STE 的正偏差被多样化的样本"平均掉"
 
 ### 6.4 实验验证：STE 梯度 vs 软量化梯度
 
@@ -423,28 +423,28 @@ $$
 \mathrm{round}_{\mathrm{soft}}(z; T) = \sum_{k=q_{\min}}^{q_{\max}} k \cdot \sigma\big((z-k)/T\big)
 $$
 
-温度 $T\to 0$ 时趋近硬 round。数值差分计算其梯度，与 STE 对比（配套实验 Demo B）：
+温度 \(T\to 0\) 时趋近硬 round。数值差分计算其梯度，与 STE 对比（配套实验 Demo B）：
 
 ![STE 梯度 vs 软量化数值梯度：上图 STE=1（红色直线）vs 软量化 T=0.05（橙色，在网格点附近有尖峰）；中图不同温度下软量化梯度趋近阶梯；下图逐点偏差显示 STE 系统性高估约0.5](/assets/img/quant/ste_vs_numerical_grad.png)
 
 **这张图回答三个问题**：
 
-1. **STE 确实高估梯度**：在有效范围内，STE 均值为1.0，软量化（$T=0.05$）均值为0.4995——偏差约 +0.50。原因是 STE 把 round 的平台效应完全忽略，而真实梯度在远离网格点处趋近于0。
+1. **STE 确实高估梯度**：在有效范围内，STE 均值为1.0，软量化（\(T=0.05\)）均值为0.4995——偏差约 +0.50。原因是 STE 把 round 的平台效应完全忽略，而真实梯度在远离网格点处趋近于0。
 2. **方向大体正确**：两者同号比例 > 95%。STE 在所有有效区间给出正梯度，软量化也给出正梯度（只是幅值更小）。这解释了为什么 STE 虽然有偏，训练仍然能收敛。
-3. **边界行为一致**：在 clip 范围外（$\lvert x\rvert > s\cdot q_{\max}$），STE 和软量化都将梯度抑制到接近零——这正是 QAT 所需要的"让模型学会避开量化范围外的值"。
+3. **边界行为一致**：在 clip 范围外（\(\lvert x\rvert > s\cdot q_{\max}\)），STE 和软量化都将梯度抑制到接近零——这正是 QAT 所需要的"让模型学会避开量化范围外的值"。
 
 ### 6.5 为下一篇埋钩子
 
 STE 的有偏性启发了两类改进方向：
 
-1. **学习 scale**：如果 $s$ 不再是固定常数而是可学习参数，梯度可以直接流过 $s$（不需要 STE），而 round 的不可导问题仍然存在——这就是 LSQ（Learned Step Size Quantization，arXiv:1902.08153）的核心思想，18 篇展开。
-2. **学习 clamp 上界**：STE 在饱和区的梯度为零，导致模型无法学习"最优截断点"——PACT（arXiv:1805.06085）把 clip 上界变成可学习参数，让梯度通过 $M$ 流回网络，18 篇一起讲。
+1. **学习 scale**：如果 \(s\) 不再是固定常数而是可学习参数，梯度可以直接流过 \(s\)（不需要 STE），而 round 的不可导问题仍然存在——这就是 LSQ（Learned Step Size Quantization，arXiv:1902.08153）的核心思想，18 篇展开。
+2. **学习 clamp 上界**：STE 在饱和区的梯度为零，导致模型无法学习"最优截断点"——PACT（arXiv:1805.06085）把 clip 上界变成可学习参数，让梯度通过 \(M\) 流回网络，18 篇一起讲。
 
 ## 7. 实验
 
 ### 7.1 实验环境与代码
 
-两个 Demo 均在纯 numpy 下实现（`experiments/fake_quant_ste_check/run.py`），无需 GPU，几秒出图。合成权重矩阵 $W\in\mathbb{R}^{256\times1024}$：基底 $N(0,0.02^2)$，注入8个整体×10的 outlier 通道和0.1%的×30极端权重。
+两个 Demo 均在纯 numpy 下实现（`experiments/fake_quant_ste_check/run.py`），无需 GPU，几秒出图。合成权重矩阵 \(W\in\mathbb{R}^{256\times1024}\)：基底 \(N(0,0.02^2)\)，注入8个整体×10的 outlier 通道和0.1%的×30极端权重。
 
 ### 7.2 Demo A：伪量化误差特性
 
@@ -456,13 +456,13 @@ STE 的有偏性启发了两类改进方向：
 
 （§6.4 已嵌入数据和图，此处补充定量总结。）
 
-| 温度 $T$ | 软量化梯度均值 | STE 梯度均值 | 偏差 |
+| 温度 \(T\) | 软量化梯度均值 | STE 梯度均值 | 偏差 |
 |---|---|---|---|
 | 0.50 | 0.4733 | 1.0000 | +0.5267 |
 | 0.20 | 0.4947 | 1.0000 | +0.5053 |
 | 0.05 | 0.4995 | 1.0000 | +0.5005 |
 
-随着温度降低，软量化梯度收敛到0.5——这正是 round 函数在一个网格区间内的平均梯度（一半区间 $\partial\hat{x}/\partial x=1$，另一半为0，均值0.5）。STE 给出1.0，系统性高估一倍。
+随着温度降低，软量化梯度收敛到0.5——这正是 round 函数在一个网格区间内的平均梯度（一半区间 \(\partial\hat{x}/\partial x=1\)，另一半为0，均值0.5）。STE 给出1.0，系统性高估一倍。
 
 ## 8. 批判与展望
 
@@ -477,7 +477,7 @@ STE 的有偏性启发了两类改进方向：
 
 ### 8.2 致命局限
 
-STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学到的"适应量化"策略是次优的。更关键的是，伪量化算子的 scale（$s_w$, $s_a$）在默认实现中是固定常数，模型无法通过梯度去优化 scale 本身——这就像给模型戴上了"只能调权重、不能调量化器"的镣铐。打破这个镣铐，就是18 篇 LSQ/PACT 的主题。
+STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学到的"适应量化"策略是次优的。更关键的是，伪量化算子的 scale（\(s_w\), \(s_a\)）在默认实现中是固定常数，模型无法通过梯度去优化 scale 本身——这就像给模型戴上了"只能调权重、不能调量化器"的镣铐。打破这个镣铐，就是18 篇 LSQ/PACT 的主题。
 
 此外，本篇的插入位置规则是"手动指定"的——每个算子该在哪里插、用什么粒度，都靠工程师经验决定。自动化插入（如 ONNX Runtime 的 dynamo quantization、TVM 的 annotate pass）是工程侧的开放问题。
 
@@ -487,7 +487,7 @@ STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学�
 >
 > **致命局限**：STE 有偏 + scale 固定 = QAT 的天花板。模型只能在给定的量化网格内优化权重，无法优化网格本身。
 >
-> **如何引出下一篇**：LSQ（arXiv:1902.08153）证明 scale 的梯度可以用 STE 的变体推导出来——$\partial\mathcal{L}/\partial s \approx -q\cdot\partial\mathcal{L}/\partial\hat{x}$——让模型自己学习"每层该用多细的网格"。PACT（arXiv:1805.06085）则把 clip 上界 $M$ 变成可学习参数。两者的共同点是：**在伪量化算子的基础上，把更多的"量化决策"变成可微的、可学习的**。
+> **如何引出下一篇**：LSQ（arXiv:1902.08153）证明 scale 的梯度可以用 STE 的变体推导出来——\(\partial\mathcal{L}/\partial s \approx -q\cdot\partial\mathcal{L}/\partial\hat{x}\)——让模型自己学习"每层该用多细的网格"。PACT（arXiv:1805.06085）则把 clip 上界 \(M\) 变成可学习参数。两者的共同点是：**在伪量化算子的基础上，把更多的"量化决策"变成可微的、可学习的**。
 
 ## 参考清单
 
@@ -523,4 +523,4 @@ STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学�
 
 > **Lab 练习（动手）**：
 > 1. 在 `run.py` 中将 Demo A 的 outlier 通道数从8改为64，观察 per-channel 相对 per-tensor 的优势如何变化——预期优势缩水，因为 per-channel 无法隔离行内 outlier。
-> 2. 在 Demo B 中将温度 $T$ 从0.05降到0.001，观察软量化梯度是否收敛到0.5——验证"round 的平均梯度为0.5"这一理论预测。
+> 2. 在 Demo B 中将温度 \(T\) 从0.05降到0.001，观察软量化梯度是否收敛到0.5——验证"round 的平均梯度为0.5"这一理论预测。

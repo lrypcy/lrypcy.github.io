@@ -12,7 +12,7 @@ mathjax: true
 >
 > * **OPD 回答了 post-training 的成本问题**：Agentic RL 贵在「多轮 rollout × 环境交互 × 奖励模型」三件套。On-Policy Distillation 把探索外包给老师——**学生自己走前缀（on-policy 状态分布），老师在前缀上补全并提供逐 token 监督**。学生学到的是「在我自己会遇到的状态下，老师会怎么做」，而不是「老师在它的状态分布里怎么做」——这是它与传统蒸馏的本质区别。
 > * **两个反直觉发现**（清华 OPD，[arXiv:2604.13016](https://arxiv.org/abs/2604.13016)）：① 弱到强反向蒸馏实验显示，同家族的 1.5B 和 7B 老师，从学生视角看**分布上不可区分**——「更聪明的老师」未必是更好的蒸馏源；② 成功的 OPD 本质是**高概率 token 的渐进对齐**，一个小的共享 token 集合集中了 97%-99% 的概率质量——OPD 的"免费午餐"（dense token 级奖励）有隐性代价，能否扩展到长视野蒸馏存疑。
-> * **Agent 场景的落地**（ReOPD，[arXiv:2607.04763](https://arxiv.org/abs/2607.04763)）：多轮 OPD 有「前缀陷阱」——让历史更贴近学生，会让学生在老师**目标不可靠**的位置上查询老师。ReOPD 用预收集的教师轨迹做 **prefix replay**（采样位置 $p_t \propto \kappa^t$，$\kappa=0.6$），实现**零环境交互、4-9× 更快的 rollout**，准确率不降反升。与 ToolRL（工具奖励）、Search RL（搜索动作）一起，构成 2025-2026 Agentic RL 训练的第三条技术路线。
+> * **Agent 场景的落地**（ReOPD，[arXiv:2607.04763](https://arxiv.org/abs/2607.04763)）：多轮 OPD 有「前缀陷阱」——让历史更贴近学生，会让学生在老师**目标不可靠**的位置上查询老师。ReOPD 用预收集的教师轨迹做 **prefix replay**（采样位置 \(p_t \propto \kappa^t\)，\(\kappa=0.6\)），实现**零环境交互、4-9× 更快的 rollout**，准确率不降反升。与 ToolRL（工具奖励）、Search RL（搜索动作）一起，构成 2025-2026 Agentic RL 训练的第三条技术路线。
 
 ```mermaid
 flowchart LR
@@ -77,7 +77,7 @@ OPD 的损失函数就是标准的 teacher-forcing 交叉熵（或 KL）：
 
 $$\mathcal{L}_{\mathrm{OPD}}(\theta) = -\mathbb{E}_{x\sim\mathcal{D}}\left[\sum_{t=1}^{T}\log \pi_{\theta}\left(y_t \mid x \oplus \underbrace{\pi_{\theta_{\mathrm{old}}}(x)}_{\text{学生前缀}} \oplus y_{<t}\right)\right]$$
 
-其中 $y$ 是老师在学生前缀上补全的内容。**注意监督的分布是 $\pi_{\theta_{\mathrm{old}}}(x)$（学生刚采样的前缀），而概率是在新参数 $\theta$ 下计算的**——和 RL 的 on-policy 更新是同构的：旧策略采样、新策略更新。
+其中 \(y\) 是老师在学生前缀上补全的内容。**注意监督的分布是 \(\pi_{\theta_{\mathrm{old}}}(x)\)（学生刚采样的前缀），而概率是在新参数 \(\theta\) 下计算的**——和 RL 的 on-policy 更新是同构的：旧策略采样、新策略更新。
 
 ### 2.3 与 RL 的关系：免费的稠密奖励？
 
@@ -99,24 +99,24 @@ OPD 常被描述为「把 RL 的探索替换成老师监督」。两者对比如
 - **DAgger 流**（THUNLP / ReOPD，即 §2.2 的 CE 公式）：学生只生成前缀，老师**补全**剩余内容，学生 teacher-forcing 学习老师补全的 token。监督是"学生状态 + 老师 token"——**状态 on-policy、目标 off-policy**，落在"前缀来源 × KL 方向"四象限的"学生前缀 × forward KL"格（详见姊妹篇《在线蒸馏方法全景》§5.2）。优点是更新稳定（每个 token 都是监督式拟合）、老师主动帮助学生探索；缺点是老师补全的内容与学生会自己生成的内容可能有风格差——这正是 THUNLP 说的"思考模式兼容性"问题（§3 条件一）。
 - **REINFORCE 流**（MiniLLM / GKD / TML / veRL）：学生采样**完整轨迹**，老师不补全，只对这些 token 给 logprob 当稠密奖励，用反向 KL 的策略梯度更新。这才是"序列级反向 KL 的无偏估计"（四象限的"学生前缀 × reverse KL"格）。优点是目标语义与"学生学老师"完全一致；缺点是方差高——MiniLLM 为此上了三件套稳定技巧，GKD 则干脆不通过采样过程回传梯度。
 
-下面推导 REINFORCE 流的数学。令学生 $\pi_\theta$、老师 $\pi_T$，学生自回归采样 $y \sim \pi_\theta(\cdot \mid x)$。目标写成序列级**反向 KL**（学生 $\to$ 老师）：
+下面推导 REINFORCE 流的数学。令学生 \(\pi_\theta\)、老师 \(\pi_T\)，学生自回归采样 \(y \sim \pi_\theta(\cdot \mid x)\)。目标写成序列级**反向 KL**（学生 \(\to\) 老师）：
 
 $$\mathcal{L}_{\mathrm{OPD}}(\theta) = D_{\mathrm{KL}}\big(\pi_\theta(\cdot \mid x) \;\|\; \pi_T(\cdot \mid x)\big) = \mathbb{E}_{y \sim \pi_\theta(\cdot \mid x)}\left[\log\frac{\pi_\theta(y \mid x)}{\pi_T(y \mid x)}\right]$$
 
-注意期望内层是 $y \sim \pi_\theta$——这是"on-policy"三个字在数学上的位置：**目标函数自己依赖采样分布，而采样分布随 $\theta$ 移动**。所以不能直接对目标做普通梯度下降（$\theta$ 既出现在 $\pi_\theta(y)$ 里、又出现在取期望的分布里），必须走策略梯度。用 score function 技巧：
+注意期望内层是 \(y \sim \pi_\theta\)——这是"on-policy"三个字在数学上的位置：**目标函数自己依赖采样分布，而采样分布随 \(\theta\) 移动**。所以不能直接对目标做普通梯度下降（\(\theta\) 既出现在 \(\pi_\theta(y)\) 里、又出现在取期望的分布里），必须走策略梯度。用 score function 技巧：
 
 $$\nabla_\theta \mathcal{L}_{\mathrm{OPD}} = \mathbb{E}_{y \sim \pi_\theta}\left[\underbrace{\log\frac{\pi_\theta(y \mid x)}{\pi_T(y \mid x)}}_{\text{序列级 log-ratio，当作奖励}}\;\nabla_\theta \log \pi_\theta(y \mid x)\right]$$
 
-推导只有两步：乘积法则把 $\nabla_\theta \pi_\theta(y)$ 拆成 $\pi_\theta(y)\nabla_\theta \log \pi_\theta(y)$；另一项 $\mathbb{E}_{y\sim\pi_\theta}[\nabla_\theta \log \pi_T(y)] = 0$——老师与 $\theta$ 无关，且 $\sum_y \nabla_\theta \pi_\theta(y) = \nabla_\theta \sum_y \pi_\theta(y) = \nabla_\theta 1 = 0$。**结果和 REINFORCE 一模一样：log-ratio 是"奖励"，$\nabla_\theta \log \pi_\theta$ 是策略梯度**——OPD 与 RL 在数学上没有本质区别，只是把 reward 换成了师生 log-ratio。
+推导只有两步：乘积法则把 \(\nabla_\theta \pi_\theta(y)\) 拆成 \(\pi_\theta(y)\nabla_\theta \log \pi_\theta(y)\)；另一项 \(\mathbb{E}_{y\sim\pi_\theta}[\nabla_\theta \log \pi_T(y)] = 0\)——老师与 \(\theta\) 无关，且 \(\sum_y \nabla_\theta \pi_\theta(y) = \nabla_\theta \sum_y \pi_\theta(y) = \nabla_\theta 1 = 0\)。**结果和 REINFORCE 一模一样：log-ratio 是"奖励"，\(\nabla_\theta \log \pi_\theta\) 是策略梯度**——OPD 与 RL 在数学上没有本质区别，只是把 reward 换成了师生 log-ratio。
 
-自回归分解后，序列级 log-ratio 拆成逐 token 求和，每个 token 有即时奖励 $r_t$ 和 reward-to-go $R_t$：
+自回归分解后，序列级 log-ratio 拆成逐 token 求和，每个 token 有即时奖励 \(r_t\) 和 reward-to-go \(R_t\)：
 
 $$r_t = \log\frac{\pi_\theta(y_t \mid x, y_{<t})}{\pi_T(y_t \mid x, y_{<t})}, \qquad R_t = \sum_{t'=t}^{T} r_{t'}, \qquad \nabla_\theta \mathcal{L}_{\mathrm{OPD}} = \mathbb{E}_{y\sim\pi_\theta}\Big[\sum_{t=1}^{T} R_t\, \nabla_\theta \log \pi_\theta(y_t \mid x, y_{<t})\Big]$$
 
-（最后一步是策略梯度定理：动作 $y_t$ 不影响它之前的 reward，所以未来奖励可以归到当前 token。）从这里产生两个**工程上最关键的决定**：
+（最后一步是策略梯度定理：动作 \(y_t\) 不影响它之前的 reward，所以未来奖励可以归到当前 token。）从这里产生两个**工程上最关键的决定**：
 
-1. **log-ratio 必须 stop-gradient**。展开的梯度里 $\log\frac{\pi_\theta}{\pi_T}$ 中的 $\pi_\theta$ 也是 $\theta$ 的函数，但标准 REINFORCE 把它当常数奖励处理：期望层面 $\nabla r$ 的贡献合计为 0（上面第二项消零是同一回事），逐样本保留反而增大方差。实现时对 log-ratio 做 `.detach()`，只留 $\nabla_\theta \log \pi_\theta$ 一条回传路径。
-2. **discount = 0（只看当前 token）**。$R_t$ 里装着未来所有 token 的 log-ratio——这是 MiniLLM 高方差、需要三件套稳定技巧的根源。Thinking Machines 的复现直接取 **discount = 0**：$R_t \approx r_t$，每个 token 只用自己的 log-ratio 当奖励。数学上是"只保留梯度展开的对角项"，方差显著更低；配合 sampled-token 估计，单 token 梯度项为：
+1. **log-ratio 必须 stop-gradient**。展开的梯度里 \(\log\frac{\pi_\theta}{\pi_T}\) 中的 \(\pi_\theta\) 也是 \(\theta\) 的函数，但标准 REINFORCE 把它当常数奖励处理：期望层面 \(\nabla r\) 的贡献合计为 0（上面第二项消零是同一回事），逐样本保留反而增大方差。实现时对 log-ratio 做 `.detach()`，只留 \(\nabla_\theta \log \pi_\theta\) 一条回传路径。
+2. **discount = 0（只看当前 token）**。\(R_t\) 里装着未来所有 token 的 log-ratio——这是 MiniLLM 高方差、需要三件套稳定技巧的根源。Thinking Machines 的复现直接取 **discount = 0**：\(R_t \approx r_t\)，每个 token 只用自己的 log-ratio 当奖励。数学上是"只保留梯度展开的对角项"，方差显著更低；配合 sampled-token 估计，单 token 梯度项为：
 
 $$\nabla_\theta \mathcal{L}_{\mathrm{OPD}}^{(t)} \approx \mathbb{E}_{y_t \sim \pi_\theta}\Big[\big(\log\pi_\theta(y_t \mid \cdot) - \log\pi_T(y_t \mid \cdot)\big)\,\nabla_\theta \log \pi_\theta(y_t \mid \cdot)\Big]$$
 
@@ -124,19 +124,19 @@ $$\nabla_\theta \mathcal{L}_{\mathrm{OPD}}^{(t)} \approx \mathbb{E}_{y_t \sim \p
 
 ### 2.5 对照：off-policy SFT 蒸馏在数学上是什么
 
-把同样的推导套到传统蒸馏，差距一目了然。off-policy SFT 的目标是**正向 KL**（老师 $\to$ 学生）在固定老师数据上的期望：
+把同样的推导套到传统蒸馏，差距一目了然。off-policy SFT 的目标是**正向 KL**（老师 \(\to\) 学生）在固定老师数据上的期望：
 
 $$\mathcal{L}_{\mathrm{SFT}}(\theta) = D_{\mathrm{KL}}\big(\pi_T(\cdot \mid x) \;\|\; \pi_\theta(\cdot \mid x)\big) = \mathbb{E}_{y\sim\pi_T(\cdot \mid x)}\left[\log\frac{\pi_T(y \mid x)}{\pi_\theta(y \mid x)}\right]$$
 
-关键区别：**期望内层是 $y \sim \pi_T$，与 $\theta$ 无关**——没有策略梯度问题，直接求导：
+关键区别：**期望内层是 \(y \sim \pi_T\)，与 \(\theta\) 无关**——没有策略梯度问题，直接求导：
 
 $$\nabla_\theta \mathcal{L}_{\mathrm{SFT}} = \mathbb{E}_{y\sim\pi_T(\cdot \mid x)}\big[-\nabla_\theta \log \pi_\theta(y \mid x)\big] = -\mathbb{E}_{y\sim\pi_T}\Big[\sum_{t=1}^{T} \nabla_\theta \log \pi_\theta(y_t \mid x, y_{<t})\Big]$$
 
 这正是"在老师生成的轨迹上做 teacher-forcing 最大似然"的梯度。**off-policy 蒸馏 = 老师分布下的 MLE，仅此而已**——梯度在老师的分布上取期望，学到的是"老师在它的世界里怎么做"；而 OPD 的梯度在学生分布上取期望、且每个 token 多一个 log-ratio 权重，学的才是"在我（学生）会遇到的状态下老师会怎么做"。两者只差"期望放在哪个分布上"，但这一差就是 exposure bias 的全部来源：训练分布（老师前缀）与推理分布（学生前缀）不一致。
 
-**mode-seeking vs mode-covering 的机制也藏在梯度里**。反向 KL 的权重 $\log\frac{\pi_\theta}{\pi_T}$ 在 $\pi_\theta > \pi_T$（学生自信区）为正、在 $\pi_\theta < \pi_T$（学生低估区）为负——**学生已经擅长的 token 被强化，学生回避的区域被压制**，质量向"师生共识的高概率模式"集中（mode-seeking / zero-avoiding）。正向 KL 的梯度没有权重，老师分布里每个高概率 token 都被推着学，学生容量不足时只能把质量"摊开"覆盖（mode-covering / zero-forcing），甚至会把质量放到老师认为几乎不可能的区域。直观例子：老师分布有两个峰、学生只装得下一个峰——正向 KL 的最优解是摊在两峰之间（两边都不像），反向 KL 的最优解是干脆挑一个峰集中（至少有一个模式是对的）。GKD 的实验指向同一结论：temperature sampling 评估下，mode-seeking 的散度（reverse KL 或 JSD(0.9)）普遍优于 forward KL。
+**mode-seeking vs mode-covering 的机制也藏在梯度里**。反向 KL 的权重 \(\log\frac{\pi_\theta}{\pi_T}\) 在 \(\pi_\theta > \pi_T\)（学生自信区）为正、在 \(\pi_\theta < \pi_T\)（学生低估区）为负——**学生已经擅长的 token 被强化，学生回避的区域被压制**，质量向"师生共识的高概率模式"集中（mode-seeking / zero-avoiding）。正向 KL 的梯度没有权重，老师分布里每个高概率 token 都被推着学，学生容量不足时只能把质量"摊开"覆盖（mode-covering / zero-forcing），甚至会把质量放到老师认为几乎不可能的区域。直观例子：老师分布有两个峰、学生只装得下一个峰——正向 KL 的最优解是摊在两峰之间（两边都不像），反向 KL 的最优解是干脆挑一个峰集中（至少有一个模式是对的）。GKD 的实验指向同一结论：temperature sampling 评估下，mode-seeking 的散度（reverse KL 或 JSD(0.9)）普遍优于 forward KL。
 
-**温度缩放**再补一刀。Hinton 2015 蒸馏中老师分布除以温度软化：$\pi_T^{(T)}(y_t) = \frac{\exp(z_{y_t}/T)}{\sum_v \exp(z_v/T)}$。$T\to 0$ 退化为 one-hot（hard label），$T>1$ 把"次优 token 的相对排序"也传给学生。forward KL 蒸馏里 $T$ 是核心旋钮（分类任务常用 2-4），因为学生要模仿老师的全部模式；**OPD 里 $T=1.0$ 是默认**——反向 KL 本来只需要老师的高概率模式，softening 边际收益小，而 TML/veRL 的实现里老师直接给 logprob（一次前向，不用采样）。
+**温度缩放**再补一刀。Hinton 2015 蒸馏中老师分布除以温度软化：\(\pi_T^{(T)}(y_t) = \frac{\exp(z_{y_t}/T)}{\sum_v \exp(z_v/T)}\)。\(T\to 0\) 退化为 one-hot（hard label），\(T>1\) 把"次优 token 的相对排序"也传给学生。forward KL 蒸馏里 \(T\) 是核心旋钮（分类任务常用 2-4），因为学生要模仿老师的全部模式；**OPD 里 \(T=1.0\) 是默认**——反向 KL 本来只需要老师的高概率模式，softening 边际收益小，而 TML/veRL 的实现里老师直接给 logprob（一次前向，不用采样）。
 
 ## 3. 机制拆解：OPD 什么时候成功、什么时候失败（清华 OPD，[arXiv:2604.13016](https://arxiv.org/abs/2604.13016)）
 
@@ -191,7 +191,7 @@ ReOPD 的改动非常工程化：
 
 1. **离线 prefix 池**：用领域老师（如 ReTool 训练的数学 agent、搜索 agent）在 RL 过程中**顺手收集**轨迹，切成「前缀 + 监督目标」存进池子——收集几乎零成本（老师 RL 本来就要 rollout）；
 2. **学生只做"受监督的一步"**：从池子里采样前缀，学生在前缀上续写，老师的目标作为 dense 监督，**全程零环境调用**；
-3. **位置加权采样**：多轮轨迹越靠后的位置偏移越大（学生的轨迹漂移随轮次累积），所以按 $p_t \propto \kappa^{t}$（$\kappa=0.6$）采样，**偏向早期、低偏移的前缀**——损失的公式不变，只是数据采样概率变了。
+3. **位置加权采样**：多轮轨迹越靠后的位置偏移越大（学生的轨迹漂移随轮次累积），所以按 \(p_t \propto \kappa^{t}\)（\(\kappa=0.6\)）采样，**偏向早期、低偏移的前缀**——损失的公式不变，只是数据采样概率变了。
 
 效果（论文报告）：**零工具调用、4-9× 更快的 rollout，准确率匹配甚至超过 online OPD**。另一个附带好处：离线池把**环境与训练解耦**——不同环境（数学、搜索、网页）的轨迹由各自的领域老师收集，合并进一个池子，单个学生可以联合蒸馏，不需要把所有环境同时在线。
 
@@ -217,8 +217,8 @@ ReOPD 的改动非常工程化：
 
 | 数学符号 | 代码变量 | Shape / 类型 | 含义 |
 |---|---|---|---|
-| $r_t=\log\pi_\theta(y_t\mid\cdot)-\log\pi_T(y_t\mid\cdot)$ | `student_logp - teacher_logp.detach()` | `(T,)` | token 级稠密奖励 |
-| $L=-\mathbb{E}\sum_t r_t\log\pi_\theta(y_t\mid\cdot)$ | `loss = -(r_t * student_logp).sum()` | 标量 | 策略梯度式蒸馏损失 |
+| \(r_t=\log\pi_\theta(y_t\mid\cdot)-\log\pi_T(y_t\mid\cdot)\) | `student_logp - teacher_logp.detach()` | `(T,)` | token 级稠密奖励 |
+| \(L=-\mathbb{E}\sum_t r_t\log\pi_\theta(y_t\mid\cdot)\) | `loss = -(r_t * student_logp).sum()` | 标量 | 策略梯度式蒸馏损失 |
 | replay 条目 `{prefix, targets}` | 经验池样本 | dict | DAgger 式前缀回放 |
 
 `rewards/r` 为规则奖励标量、`advantages` 为组内标准化后的优势、`ratio/logp/old_logp`
@@ -280,8 +280,8 @@ def opd_train_loop(student, teacher, prompts, steps, args):
 
 **REINFORCE 流三个容易错的地方**：
 
-1. **`r_t` 必须 `.detach()`**——它是"奖励"不是"目标"。回传后 log-ratio 里的 $\pi_\theta$ 若参与梯度，等价于把 mode-seeking 变成了未知目标，方差爆炸；
-2. **loss 不加负号**。$r_t = \log\pi_\theta - \log\pi_T$ 自带符号：学生比老师更可能的 token（$r_t>0$）被正向强化，学生低估老师高概率的 token（$r_t<0$）被压低——这就是 mode-seeking 梯度（§2.5）；再加负号会反转成"学老师低概率区域"，直接崩；
+1. **`r_t` 必须 `.detach()`**——它是"奖励"不是"目标"。回传后 log-ratio 里的 \(\pi_\theta\) 若参与梯度，等价于把 mode-seeking 变成了未知目标，方差爆炸；
+2. **loss 不加负号**。\(r_t = \log\pi_\theta - \log\pi_T\) 自带符号：学生比老师更可能的 token（\(r_t>0\)）被正向强化，学生低估老师高概率的 token（\(r_t<0\)）被压低——这就是 mode-seeking 梯度（§2.5）；再加负号会反转成"学老师低概率区域"，直接崩；
 3. **老师输入必须是学生的轨迹**（prompt + student-completed response），不能是老师自己采样的轨迹。第 2 步和第 3 步的条件必须完全相同，否则 log-ratio 在错误的状态上计算。
 
 如果要更精确（也更贵），把第 3-4 步换成 full-vocabulary 反向 KL——每步需要师生全词表 logits：
@@ -339,7 +339,7 @@ veRL 的 OPD 支持（v0.7.0+）：rollout 用学生权重采样 prefix，teache
 
 1. **先验思考模式兼容性**：OPD 前先做短实验看师生 top-k 重叠率（overlap_ratio）。如果 <30%，大概率思考模式不兼容，先 off-policy cold start 或用同家族老师；
 2. **别迷信"更大的老师"**：弱到强反向蒸馏说明，老师的有效信息 = 能力 ∩ 学生会访问的状态。学生太小/太弱时，换 70B 老师不如换一个**思考风格更贴近**的老师；
-3. **监控 prefix 漂移**：多轮场景每轮学生轨迹都会漂移（prefix trap 的早期信号），ReOPD 的 $\kappa$ 就是漂移速度的旋钮——$\kappa$ 太小浪费数据（只用早期），太大踩进不可靠区；
+3. **监控 prefix 漂移**：多轮场景每轮学生轨迹都会漂移（prefix trap 的早期信号），ReOPD 的 \(\kappa\) 就是漂移速度的旋钮——\(\kappa\) 太小浪费数据（只用早期），太大踩进不可靠区；
 4. **OPD 不是 RL 的免费替代**：OPD 学不到老师没见过的东西。需要**超越老师**时用 G-OPD 式奖励外推，或回到 RL 本体；
 5. **长视野衰减**：清华论文的开放问题——OPD 的 dense token 监督在长轨迹上会稀释（后面的 token 学不动），long-horizon OPD 是当前没有定论的边界；
 6. **日志监控**：除了 loss，记录师生重叠率、prefix 长度分布、学生独立 rollout 的准确率（防止"蒸馏过头"——学生只会模仿不会自己决策）。

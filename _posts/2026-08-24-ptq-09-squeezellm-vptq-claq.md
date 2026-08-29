@@ -63,7 +63,7 @@ mathjax: true
 
 ### 2.1 从损失函数到单权重敏感度:一阶泰勒展开
 
-设量化扰动 $\Delta w_j$ 加在第 $j$ 个权重上,损失变化的一阶近似:
+设量化扰动 \(\Delta w_j\) 加在第 \(j\) 个权重上,损失变化的一阶近似:
 
 $$
 \Delta L \approx \frac{\partial L}{\partial w_j}\Delta w_j
@@ -75,11 +75,11 @@ $$
 \Delta L \approx g_j \Delta w_j + \tfrac{1}{2} h_{jj} (\Delta w_j)^2
 $$
 
-其中 $g_j = \partial L/\partial w_j$ 是梯度,$h_{jj}$ 是 Hessian 对角元。这正是 OBD(Optimal Brain Damage, LeCun 1990)的出发点,也是第 03 篇 GPTQ 家谱(OBD→OBS→OBQ→GPTQ)的起点。问题在于 $h_{jj}$ 的精确计算需要对整个损失的二次反向传播,代价高得不可接受。
+其中 \(g_j = \partial L/\partial w_j\) 是梯度,\(h_{jj}\) 是 Hessian 对角元。这正是 OBD(Optimal Brain Damage, LeCun 1990)的出发点,也是第 03 篇 GPTQ 家谱(OBD→OBS→OBQ→GPTQ)的起点。问题在于 \(h_{jj}\) 的精确计算需要对整个损失的二次反向传播,代价高得不可接受。
 
 ### 2.2 对角 Fisher 信息的梯度平方近似
 
-统计学里,参数 $w_j$ 携带的样本信息量由 **Fisher 信息**刻画:
+统计学里,参数 \(w_j\) 携带的样本信息量由 **Fisher 信息**刻画:
 
 $$
 F_{jj} = \mathbb{E}\left[\left(\frac{\partial}{\partial w_j}\log p(y\mid x; w)\right)^2\right] = -\mathbb{E}\left[\frac{\partial^2}{\partial w_j^2}\log p(y\mid x; w)\right]
@@ -97,24 +97,24 @@ $$
 \widehat{F}_{jj} = \frac{1}{N}\sum_{n=1}^{N}\left(\frac{\partial \ell_n}{\partial w_j}\right)^2
 $$
 
-并把 $\widehat F_{jj}$ 当作权重 $w_j$ 的敏感度。直觉:如果某个权重的梯度长期很大,说明损失对这个权重的局部曲率大,动它一下代价就高。
+并把 \(\widehat F_{jj}\) 当作权重 \(w_j\) 的敏感度。直觉:如果某个权重的梯度长期很大,说明损失对这个权重的局部曲率大,动它一下代价就高。
 
 **变量映射表**:
 
 | 数学符号 | 代码变量 | Shape | 说明 |
 |:---|:---|:---:|:---|
-| $w_j$ | `W.flatten()[j]` | 标量 | 展平后的单个权重 |
-| $g_j^{(n)}$ | `grad[j]` | 同 W | 第 $n$ 条校准样本的反传梯度 |
-| $\widehat F_{jj}$ | `sens` | 同 W | 平方均值,即对角 Fisher 近似 |
-| $c_k$ | `codebook[k]` | $(K,)$ | 非均匀量化电平(码本) |
-| $a_j$ | `assign` | 同 W | 每个权重归属的电平索引 |
+| \(w_j\) | `W.flatten()[j]` | 标量 | 展平后的单个权重 |
+| \(g_j^{(n)}\) | `grad[j]` | 同 W | 第 \(n\) 条校准样本的反传梯度 |
+| \(\widehat F_{jj}\) | `sens` | 同 W | 平方均值,即对角 Fisher 近似 |
+| \(c_k\) | `codebook[k]` | \((K,)\) | 非均匀量化电平(码本) |
+| \(a_j\) | `assign` | 同 W | 每个权重归属的电平索引 |
 
 ### 2.3 四种度量的成本与信息量对比
 
 | 度量 | 代表算法 | 计算成本 | 信息粒度 | 盲区 |
 |:---|:---|:---|:---|:---|
 | 激活幅度统计 | AWQ / LLM.int8() | 仅前向 | 通道级 | 只反映输入侧,忽略输出侧 |
-| Hessian 对角(层内重构) | OWQ / GPTQ | 一次前向收集 $\sum \mathbf{x}\mathbf{x}^\top$ | 列级/元素级 | 层间耦合不可见 |
+| Hessian 对角(层内重构) | OWQ / GPTQ | 一次前向收集 \(\sum \mathbf{x}\mathbf{x}^\top\) | 列级/元素级 | 层间耦合不可见 |
 | OBC 二阶量(含行列结构) | SpQR | 同上 + 结构分析 | 元素级 + 结构 | 同上 |
 | 对角 Fisher(全模型反传) | SqueezeLLM | 每校准样本一次完整反向 | 元素级 | 一阶近似的方差较大 |
 | Attention 输出重构 | APTQ | 块级前向 + 反传 | 块内跨矩阵 | 计算比单层贵 |
@@ -127,7 +127,7 @@ SqueezeLLM(arXiv:2306.07629,UC Berkeley)的两个组件各自独立成章:敏感
 
 ### 3.1 加权 Lloyd 迭代:非均匀码本的闭式更新
 
-给定 $K = 2^b$ 个电平的码本 $\mathcal{C} = \{c_1,\dots,c_K\}$ 与逐权重敏感度 $s_j$,量化目标不再是普通的 MSE,而是 Fisher 加权的重构误差:
+给定 \(K = 2^b\) 个电平的码本 \(\mathcal{C} = \{c_1,\dots,c_K\}\) 与逐权重敏感度 \(s_j\),量化目标不再是普通的 MSE,而是 Fisher 加权的重构误差:
 
 $$
 \min_{\mathcal{C},\,a}\ \sum_{j=1}^{M} s_j\left(w_j - c_{a_j}\right)^2
@@ -135,8 +135,8 @@ $$
 
 这是经典的加权 k-means 目标,用 **Lloyd 迭代**交替求解,两步都有闭式解:
 
-* **固定码本,最优分配**:$a_j = \arg\min_k\ (w_j - c_k)^2$--每个权重挑最近的电平;
-* **固定分配,最优码本**:对 $c_k$ 求导置零,
+* **固定码本,最优分配**:\(a_j = \arg\min_k\ (w_j - c_k)^2\)--每个权重挑最近的电平;
+* **固定分配,最优码本**:对 \(c_k\) 求导置零,
 
 $$
 \frac{\partial}{\partial c_k}\sum_{j:\,a_j=k} s_j (w_j-c_k)^2 = -2\sum_{j:\,a_j=k} s_j (w_j-c_k) = 0
@@ -146,7 +146,7 @@ $$
 
 即**新电平 = 组内权重的敏感度加权均值**。对比普通 k-means(权重系数全为 1),敏感度大的权重对电平位置的"话语权"更大,电平会向它们偏移--重尾分布 + 敏感度集中在少数大权重上时,这个偏移恰好把电平推向了最需要精度的区域。
 
-初始化用敏感度加权的 k-means++ 或分位数初始化,迭代至收敛。**注意码本是每层甚至每组一份**,需要随权重一起存储:$K$ 个 fp16 电平相对 $M$ 个 3-bit 索引的开销可以忽略($K=8$ 时仅 $16K$ 字节 vs 每 100 万权重约 $375$KB 索引)。
+初始化用敏感度加权的 k-means++ 或分位数初始化,迭代至收敛。**注意码本是每层甚至每组一份**,需要随权重一起存储:\(K\) 个 fp16 电平相对 \(M\) 个 3-bit 索引的开销可以忽略(\(K=8\) 时仅 \(16K\) 字节 vs 每 100 万权重约 \(375\)KB 索引)。
 
 ### 3.2 dense-and-sparse 分解与 LUT 反量化
 
@@ -156,7 +156,7 @@ $$
 W \;\approx\; \underbrace{Q_{nu}(W_{\text{dense}})}_{\text{非均匀低比特,稠密}} \;+\; \underbrace{W_{\text{sparse}}}_{\text{fp16 离群值,CSR 稀疏}}
 $$
 
-* **稠密部分**:$b$-bit 索引矩阵 + 每组一份码本,反量化就是一次 **gather**(`codebook[idx]`),对 GPU 友好;
+* **稠密部分**:\(b\)-bit 索引矩阵 + 每组一份码本,反量化就是一次 **gather**(`codebook[idx]`),对 GPU 友好;
 * **稀疏部分**:敏感度超阈值或量化残差超阈值的元素以 fp16 进 CSR,配合专门的双路径 GEMV kernel(稠密分支走 int4 LUT,稀疏分支走 fp16 gather-add)。
 
 与 SpQR 的区别在"抠谁":SpQR 按 OBC 二阶结构抠出成行成列的敏感组;SqueezeLLM 按 Fisher 标量阈值逐元素抠,且抠出来的部分不做低比特压缩、直接 fp16。
@@ -169,7 +169,7 @@ $$
 
 APTQ(Attention-aware Post-Training Quantization,arXiv 编号 2408.11793,未验证,以标题检索为准)的出发点是一个此前所有 Hessian 类方法共有的盲区:
 
-> GPTQ 及其变体在量化第 $i$ 个线性层时,最小化的是**该层输出**的重构误差 $\|Wx - \hat W x\|^2$。但 Transformer 的 attention 块里有四个投影($W_Q, W_K, W_V, W_O$),它们的误差会在 softmax 与乘加中**交叉放大**--单独最优不等于联合最优。
+> GPTQ 及其变体在量化第 \(i\) 个线性层时,最小化的是**该层输出**的重构误差 \(\|Wx - \hat W x\|^2\)。但 Transformer 的 attention 块里有四个投影(\(W_Q, W_K, W_V, W_O\)),它们的误差会在 softmax 与乘加中**交叉放大**--单独最优不等于联合最优。
 
 APTQ 的做法:
 
@@ -188,17 +188,17 @@ $$
 
 ### 5.1 30 秒向量量子课程
 
-标量量化把每个数映射到一个电平;**向量量化(VQ)把一组数(比如权重的 $d$ 个连续元素拼成的向量)整体映射到码本里的一个向量(codeword)**:
+标量量化把每个数映射到一个电平;**向量量化(VQ)把一组数(比如权重的 \(d\) 个连续元素拼成的向量)整体映射到码本里的一个向量(codeword)**:
 
 $$
 \text{存储:索引 } i \in \{1,\dots,K\},\quad \text{重建:}\ \hat{\mathbf{w}} = \mathbf{c}_i,\quad \text{码本 } \mathcal{C}=\{\mathbf{c}_1,\dots,\mathbf{c}_K\}
 $$
 
-位宽账很好算:$K = 2^B$ 个码字、每组 $d$ 个元素,则**平均位宽 $B/d$ bit/权重**。$K=65536, d=8$ 时仅 2 bit/权重--这就是码本路线在 2-bit 领域碾压标量均匀量化的算术基础。代价是码本搜索(离线)与查表(在线)。
+位宽账很好算:\(K = 2^B\) 个码字、每组 \(d\) 个元素,则**平均位宽 \(B/d\) bit/权重**。\(K=65536, d=8\) 时仅 2 bit/权重--这就是码本路线在 2-bit 领域碾压标量均匀量化的算术基础。代价是码本搜索(离线)与查表(在线)。
 
 ### 5.2 GPTQ 框架下的 VQ 形式化
 
-回忆第 03 篇 GPTQ 的层目标($\mathbf{H}=2XX^\top$ 为 Hessian):
+回忆第 03 篇 GPTQ 的层目标(\(\mathbf{H}=2XX^\top\) 为 Hessian):
 
 $$
 \min_{\hat W}\ \mathrm{tr}\big((W-\hat W)^\top X X^\top (W-\hat W)\big)
@@ -218,7 +218,7 @@ $$
 \min_{i}\ \big(\mathbf{w}_{col} - \mathbf{c}_i\big)^\top \mathbf{H}_{col}\ \big(\mathbf{w}_{col} - \mathbf{c}_i\big)
 $$
 
-其中 $\mathbf{H}_{col}$ 是该列对应的 Hessian 子块--**分配不再看欧氏距离,而是看马氏距离**,误差大的方向被自动避开。这是"二阶优化指导 VQ"的核心含义。
+其中 \(\mathbf{H}_{col}\) 是该列对应的 Hessian 子块--**分配不再看欧氏距离,而是看马氏距离**,误差大的方向被自动避开。这是"二阶优化指导 VQ"的核心含义。
 
 ### 5.3 多级残差码本与初始化
 
@@ -392,13 +392,13 @@ print("  VQ-GPTQ :", round(float(np.linalg.norm(X @ vq.T  - ref) / np.linalg.nor
 ## 10. 常见问题 FAQ
 
 **Q1:Fisher 加权 k-means 和普通 k-means 差别真的那么大吗?**
-取决于敏感度与幅值的相关性。若敏感度与 $|w|$ 强相关(常见),加权会把电平拉向尾部大权重,等效于"自动学习裁剪范围";若敏感度接近均匀,两者退化相同。建议在自己的模型上先画 $s_j$-$|w_j|$ 散点图再决定要不要付这个复杂度。
+取决于敏感度与幅值的相关性。若敏感度与 \(|w|\) 强相关(常见),加权会把电平拉向尾部大权重,等效于"自动学习裁剪范围";若敏感度接近均匀,两者退化相同。建议在自己的模型上先画 \(s_j\)-\(|w_j|\) 散点图再决定要不要付这个复杂度。
 
 **Q2:VPTQ 与 AQLM 怎么选?**
 有训练资源、追求极限精度 → AQLM(端到端学码本 + 下游微调);零训练、快速出活 → VPTQ。推理侧两者都是查表,kernel 成本相近。
 
 **Q3:这些方法和 NF4 什么关系?**
-NF4(第 15 篇 QLoRA 用的 4-bit 格式)可以看作"对高斯分布预计算好的静态非均匀码本"--分位数电平,不含逐层敏感度。SqueezeLLM 是它的"逐层自适应版"。理解了本篇再看 NF4,它就是 $s_j\equiv 1$、码本全局共享的特例。
+NF4(第 15 篇 QLoRA 用的 4-bit 格式)可以看作"对高斯分布预计算好的静态非均匀码本"--分位数电平,不含逐层敏感度。SqueezeLLM 是它的"逐层自适应版"。理解了本篇再看 NF4,它就是 \(s_j\equiv 1\)、码本全局共享的特例。
 
 **Q4:为什么本篇方法都没进 vLLM/TensorRT-LLM?**
 三个字:kernel 难。LUT gather、变长位宽、稀疏分支都会打断 Tensor Core 的整齐流水线;而 AWQ/GPTQ 的"sScale + 均匀 int4"恰好完美贴合 dequant-matmul 融合范式。精度领先 5%、速度落后 30% 的方案不会赢。

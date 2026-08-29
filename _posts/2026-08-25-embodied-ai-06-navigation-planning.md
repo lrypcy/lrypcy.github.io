@@ -14,7 +14,7 @@ mathjax: true
 
 > **TL;DR 1｜规划的分层本质**：任务规划（做什么，离散符号）→ 运动规划（怎么走，连续几何）→ 轨迹优化（走多顺，动力学）。LLM 没有取代任何一层，它接管的是最顶上那层"把人话翻译成子目标序列"，并且干得意外地好——前提是有人帮它"验货"。
 
-> **TL;DR 2｜SayCan 的核心洞察**：LLM 只知道"什么话合理"，不知道"此刻什么事可行"。SayCan 用价值函数 $P(\text{skill}_i\mid\text{成功})$ 给每个候选技能打分，与 LLM 的语义得分 $P(\text{skill}_i\mid\text{指令})$ 相乘接地（grounding）[1](https://arxiv.org/abs/2204.01691)。"可行性 × 有用性"这个乘法结构值得背下来。
+> **TL;DR 2｜SayCan 的核心洞察**：LLM 只知道"什么话合理"，不知道"此刻什么事可行"。SayCan 用价值函数 \(P(\text{skill}_i\mid\text{成功})\) 给每个候选技能打分，与 LLM 的语义得分 \(P(\text{skill}_i\mid\text{指令})\) 相乘接地（grounding）[1](https://arxiv.org/abs/2204.01691)。"可行性 × 有用性"这个乘法结构值得背下来。
 
 > **TL;DR 3｜视觉导航正在基础模型化**：GNM → ViNT → NoMaD 三部曲用扩散策略统一了"导航到图像目标/语言目标/自由探索"三种模式[2](https://arxiv.org/abs/2310.07896)[3](https://arxiv.org/abs/2306.14846)，思路与 VLA 完全同构。
 
@@ -22,7 +22,7 @@ mathjax: true
 
 ### 1.1 图搜索：A* 与最优性
 
-在占据栅格图上，A* 维护开放集并按 $f(n) = g(n) + h(n)$ 扩展节点（$g$：起点到 $n$ 的实际代价；$h$：$n$ 到终点的启发式估计）。当 $h$ 不高估真实代价（admissible，如欧氏距离），A* 保证找到最优路径。伪代码骨架：
+在占据栅格图上，A* 维护开放集并按 \(f(n) = g(n) + h(n)\) 扩展节点（\(g\)：起点到 \(n\) 的实际代价；\(h\)：\(n\) 到终点的启发式估计）。当 \(h\) 不高估真实代价（admissible，如欧氏距离），A* 保证找到最优路径。伪代码骨架：
 
 ```python
 import heapq
@@ -46,7 +46,7 @@ def a_star(grid, start, goal):
 
 ### 1.2 采样规划：RRT* 与概率完备
 
-高维构型空间（7-DoF 臂）栅格化会维度爆炸，改用随机树探索。RRT* 在 RRT 基础上加两步：为新节点**重新选父**（choose parent）+ 对邻域**重布线**（rewire），使树渐近收敛到最优解；代价是 $O(\log n)$ 的渐近速率[4](https://arxiv.org/abs/1105.1186)。工程组合拳常为：全局 RRT* 出粗路径 → 局部 DWA/TEB 或 MPC 跟踪并动态避障。
+高维构型空间（7-DoF 臂）栅格化会维度爆炸，改用随机树探索。RRT* 在 RRT 基础上加两步：为新节点**重新选父**（choose parent）+ 对邻域**重布线**（rewire），使树渐近收敛到最优解；代价是 \(O(\log n)\) 的渐近速率[4](https://arxiv.org/abs/1105.1186)。工程组合拳常为：全局 RRT* 出粗路径 → 局部 DWA/TEB 或 MPC 跟踪并动态避障。
 
 | 规划器 | 完备性 | 最优性 | 适用场景 |
 |--------|--------|--------|---------|
@@ -57,7 +57,7 @@ def a_star(grid, start, goal):
 
 ## 2. 学习式导航：NoMaD 统一框架
 
-传统导航栈（定位→建图→全局规划→局部规划）模块间误差层层传递。学习派直接学 $\pi(a|o, \text{goal})$：
+传统导航栈（定位→建图→全局规划→局部规划）模块间误差层层传递。学习派直接学 \(\pi(a|o, \text{goal})\)：
 
 - **GNM**（2020）：跨 12 种机器人的导航模仿基础模型雏形（项目页 general-navigation-models.github.io，未本地验证可达性）；
 - **ViNT**（2023）：Transformer 骨干 + 目标图像条件化，19 个数据集训练后 zero-shot 迁移到新平台[3](https://arxiv.org/abs/2306.14846)；
@@ -79,7 +79,7 @@ $$
 \text{score}(i) = \underbrace{P_{LLM}(\text{skill}_i \mid \text{历史})}_{\text{有用性: LLM 说该干嘛}} \times \underbrace{P_{value}(\text{skill}_i\ \text{能成功})}_{\text{可行性: 价值函数验货}}
 $$
 
-其中 $P_{value}$ 来自 RL 训练的技能价值函数（affordance grounding）。贪心解码出技能序列后逐个执行[1](https://arxiv.org/abs/2204.01691)。局限也明显：技能库固定、无环境反馈重规划。
+其中 \(P_{value}\) 来自 RL 训练的技能价值函数（affordance grounding）。贪心解码出技能序列后逐个执行[1](https://arxiv.org/abs/2204.01691)。局限也明显：技能库固定、无环境反馈重规划。
 
 ### 3.2 Inner Monologue：把反馈写回提示词
 
@@ -116,12 +116,12 @@ graph TD
     W -->|"接触事件"| VLA
 ```
 
-**误差复合分析**（为什么分层必须配监控）：设每层成功率 $p_i$，串联 $k$ 个技能的长时程任务成功率为 $\prod p_i$——0.95 的五个环节连乘只剩 77%。这就是为什么 Inner Monologue 式的失败检测与重规划不是锦上添花而是必需品，也是第 08 篇"可靠性工程"话题的伏笔。
+**误差复合分析**（为什么分层必须配监控）：设每层成功率 \(p_i\)，串联 \(k\) 个技能的长时程任务成功率为 \(\prod p_i\)——0.95 的五个环节连乘只剩 77%。这就是为什么 Inner Monologue 式的失败检测与重规划不是锦上添花而是必需品，也是第 08 篇"可靠性工程"话题的伏笔。
 
 ## Lab Exercises
 
-1. **A* 手搓与启发式实验**：实现上面的 `a_star`，在同一张 100×100 随机障碍图上分别用曼哈顿距离和欧氏距离做启发式，统计扩展节点数差异；然后故意把 $h$ 放大 3 倍（破坏 admissible），观察路径不再最优但速度更快——亲手体会"速度换最优性"。
-2. **SayCan 复刻玩具版**：定义 5 个仿真技能（goto/pick/place/open/close），手写每个技能的成功率函数，用任意开源 LLM API 计算 $P_{LLM}$，跑通 20 条厨房指令的分解与执行（可用 robosuite 的 Kitchen 场景，GitHub: `ARISE-Initiative/robosuite`，未本地验证），记录纯 LLM 分解 vs 加可行性乘法的失败率对比。
+1. **A* 手搓与启发式实验**：实现上面的 `a_star`，在同一张 100×100 随机障碍图上分别用曼哈顿距离和欧氏距离做启发式，统计扩展节点数差异；然后故意把 \(h\) 放大 3 倍（破坏 admissible），观察路径不再最优但速度更快——亲手体会"速度换最优性"。
+2. **SayCan 复刻玩具版**：定义 5 个仿真技能（goto/pick/place/open/close），手写每个技能的成功率函数，用任意开源 LLM API 计算 \(P_{LLM}\)，跑通 20 条厨房指令的分解与执行（可用 robosuite 的 Kitchen 场景，GitHub: `ARISE-Initiative/robosuite`，未本地验证），记录纯 LLM 分解 vs 加可行性乘法的失败率对比。
 3. **VoxPoser 上手**：官方提供 Colab（项目页 voxposer.github.io，未本地验证），跑通"把抽屉打开再关上"示例，阅读其生成的代码，找出吸引场/排斥场的 API 调用位置并修改排斥强度观察轨迹变化。
 
 ## 参考文献与延伸阅读

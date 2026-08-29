@@ -41,7 +41,7 @@ permalink: /quantization-roadmap/
 **00 篇**是系列入口，给坐标系：量化器（scale / zero-point）× 粒度（per-tensor / per-channel / per-group）×
 误差度量（MSE / KL / ppl / Hessian）三维设计空间、数值格式全景表、七大算法路线族谱、按场景决策树、
 以及工程陷阱清单。**01 篇**把量化器的数学彻底拆开——仿射量化器定义、对称与非对称、
-从 min-max 到 MSE 最优裁剪的闭式推导、$6.02b$ dB 的三个陷阱、RTN 作为一切算法的对照组、粒度阶梯。
+从 min-max 到 MSE 最优裁剪的闭式推导、\(6.02b\) dB 的三个陷阱、RTN 作为一切算法的对照组、粒度阶梯。
 
 > **关于「校准」与「粒度」**：这两块没有单独成篇，因为它们是**贯穿全系列的地基变量**，
 > 已分别覆盖于 **00 篇 §3（粒度）/ §4（校准方法论）** 与 **01 篇 §4（最优裁剪）/ §7（粒度阶梯）**。
@@ -64,7 +64,7 @@ permalink: /quantization-roadmap/
 | **08** | [SqueezeLLM / VPTQ / CLAQ：敏感度度量与非均匀量化](/2026/08/24/ptq-09-squeezellm-vptq-claq/) | ✅ |
 
 **逻辑链**：02 篇提出「outlier 让 INT8 崩」这个病，并给出第一代解法「绕开」（FP16 小路）。
-03–05 篇是**权重侧**的三种药：GPTQ 用 $H=2XX^\top$ 做二阶误差补偿（事后补救）、
+03–05 篇是**权重侧**的三种药：GPTQ 用 \(H=2XX^\top\) 做二阶误差补偿（事后补救）、
 AWQ 用激活幅度决定「精度分给谁」（事前保护）、OmniQuant 把缩放与裁剪变成可学习参数。
 06–07 篇推向极低位宽：SpQR/OWQ 挑出敏感权重单独保精度，HQQ 免校准；
 QuIP#/AQLM 在 2-bit 换赛道，用码本做向量量化。08 篇回到「敏感度到底怎么度量」这个问题本身，
@@ -85,9 +85,9 @@ QuIP#/AQLM 在 2-bit 换赛道，用码本做向量量化。08 篇回到「敏�
 | **13** | [RPTQ / QUIK / ATOM：W4A4 三块基石](/2026/08/24/ptq-11-rptq-quik-atom/) | ✅ |
 | **14** | [OliVe：离群值-受害者配对与 abfloat](/2026/08/24/ptq-12-olive-abfloat/) | ✅ |
 
-**逻辑链**：09 篇给出第二代解法「搬走」——用严格恒等式 $XW=(X\,\mathrm{diag}(\tau)^{-1})(\mathrm{diag}(\tau)W)$
+**逻辑链**：09 篇给出第二代解法「搬走」——用严格恒等式 \(XW=(X\,\mathrm{diag}(\tau)^{-1})(\mathrm{diag}(\tau)W)\)
 把量化难度从激活搬到权重，实测「难度守恒」到机器精度。11 篇问了个更根本的问题：outlier 是**谁制造**的？
-答案是 LayerNorm 的 $\gamma$，拆掉放大器（Gamma Migration）分布自然变乖。
+答案是 LayerNorm 的 \(\gamma\)，拆掉放大器（Gamma Migration）分布自然变乖。
 12 篇把逐通道缩放升级为**正交旋转**（Hadamard / 可学习旋转），把 outlier 摊薄到所有坐标，
 首次让 W4A4 在 7B/70B 上逼近 FP16。13 篇处理 W4A4 的组合爆炸：通道聚类重排、双路混合精度、融合 GEMM。
 14 篇把「给 outlier 特殊待遇」从软件技巧下沉成**数据格式与指令集**（OVP 配对 + abfloat）。
@@ -145,7 +145,7 @@ PTQ 初始化、蒸馏与训练域匹配成为低比特 QAT 成败的关键。
 | **25** | Mixed-Precision：自动决定每层比特数 | 🚧 |
 
 - **23 篇（统一视角）**：把 RTN/GPTQ/AWQ/SmoothQuant/OmniQuant/QuaRot/SpQR/AQLM/QAT
-  统一到 $\min_Q \mathcal{L}(W, Q(W))$ 一个目标下，逐一指明每个算法改造的是哪个自由度。
+  统一到 \(\min_Q \mathcal{L}(W, Q(W))\) 一个目标下，逐一指明每个算法改造的是哪个自由度。
   **这是全系列最该读的一篇**——读完你会有判断新算法的能力，而不只是记住算法名字。
 - **24 篇（KV Cache）**：LLM 量化早已不是只有权重量化。长上下文下 KV cache 才是显存与带宽的主角。
   覆盖 KIVI、KVQuant、WKVQuant、per-channel vs per-token KV、RoPE 与 KV 量化的相互作用、

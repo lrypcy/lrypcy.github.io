@@ -10,7 +10,7 @@ mathjax: true
 
 > **TL;DR**
 >
-> * **GRPO 不是新算法，而是本系列三条老暗线的会师**：用"同一道题采 $G$ 条回答、组内减均值除标准差"替代 critic（第二篇的 baseline 战争，$\bar r$ 与动作无关所以期望不变），保留 PPO 的 clip（第四篇），保留对 reference model 的 KL 罚项（第三篇信任域的余晖）。DeepSeekMath 论文里它就叫 "Group Relative Policy Optimization"——**名字里写满了它的出身**。
+> * **GRPO 不是新算法，而是本系列三条老暗线的会师**：用"同一道题采 \(G\) 条回答、组内减均值除标准差"替代 critic（第二篇的 baseline 战争，\(\bar r\) 与动作无关所以期望不变），保留 PPO 的 clip（第四篇），保留对 reference model 的 KL 罚项（第三篇信任域的余晖）。DeepSeekMath 论文里它就叫 "Group Relative Policy Optimization"——**名字里写满了它的出身**。
 > * **它赢在工程账而非理论创新**：LLM 场景下 critic 与 policy 同尺寸，显存直接翻倍；而"答案对不对"这种 outcome reward 天然适合按题分组打分——baseline 免费拿，critic 整个砍掉。这个匹配正是 RLVR（可验证奖励）时代 GRPO 成为事实标准的原因。
 > * **它也有欠条**：std 归一化引入题目难度偏差、token 级平均引入长度偏差（Dr.GRPO 的批评）、clip 高估低概率 token（DAPO 的 clip-higher）、token 级 ratio 噪声（GSPO 的序列级修正）。2025-2026 的 GRPO 变体大战，本质是这些欠条的分期偿还。
 
@@ -44,9 +44,9 @@ flowchart TD
 
 ### 2.1 第一步：把优势换成"组内相对分"
 
-PPO 的目标是 $\min(r_t \hat A_t,\, \mathrm{clip}(r_t, 1\pm\epsilon)\hat A_t)$ 的期望，其中优势靠 critic + GAE 逐 token 估计。GRPO 问：**这个 $\hat A$ 能不能不学？**
+PPO 的目标是 \(\min(r_t \hat A_t,\, \mathrm{clip}(r_t, 1\pm\epsilon)\hat A_t)\) 的期望，其中优势靠 critic + GAE 逐 token 估计。GRPO 问：**这个 \(\hat A\) 能不能不学？**
 
-回忆第二篇的 baseline 定理：任何与动作无关的量都可以从优势里减掉而不改变梯度期望。那么对一个 prompt $q$，采样一组 $G$ 条回答 $\{o_1, \ldots, o_G\}$，各自拿到奖励 $r_1, \ldots, r_G$——**组内均值 $\mathrm{mean}(\mathbf r)$ 就是一个现成的、免训练的 baseline**：它与"某条回答里的某个 token"显然无关。
+回忆第二篇的 baseline 定理：任何与动作无关的量都可以从优势里减掉而不改变梯度期望。那么对一个 prompt \(q\)，采样一组 \(G\) 条回答 \(\{o_1, \ldots, o_G\}\)，各自拿到奖励 \(r_1, \ldots, r_G\)——**组内均值 \(\mathrm{mean}(\mathbf r)\) 就是一个现成的、免训练的 baseline**：它与"某条回答里的某个 token"显然无关。
 
 再顺手做尺度归一化（对应第二篇的回报标准化），得到 GRPO 的优势定义：
 
@@ -55,11 +55,11 @@ $$\hat A_{i,t} \;=\; \tilde r_i \;=\; \frac{r_i - \mathrm{mean}(\mathbf r)}{\mat
 注意两个设计决定：
 
 1. **整条回答共享一个优势**（outcome supervision 版）：句末的一个标量奖励，平摊给这条回答的每个 token。没有 critic 的逐 token 细粒度，但也没有 critic 的冷启动噪声；
-2. **信号完全来自组内对比**：一道题如果 $G$ 条回答全对或全错，$\mathrm{std} = 0$，这组数据梯度为零——GRPO 天然只从"有分歧"的题目里学习。
+2. **信号完全来自组内对比**：一道题如果 \(G\) 条回答全对或全错，\(\mathrm{std} = 0\)，这组数据梯度为零——GRPO 天然只从"有分歧"的题目里学习。
 
 ### 2.2 第二步：套上 PPO 的壳
 
-把 $\hat A_{i,t}$ 代回 clipped surrogate，加上 reference model 的 KL 罚项，就是完整的 GRPO 目标：
+把 \(\hat A_{i,t}\) 代回 clipped surrogate，加上 reference model 的 KL 罚项，就是完整的 GRPO 目标：
 
 $$J_{\mathrm{GRPO}}(\theta) \;=\; \mathbb{E}\left[\; \frac{1}{G} \sum_{i=1}^{G} \frac{1}{\lvert o_i \rvert} \sum_{t=1}^{\lvert o_i \rvert} \Big( \min\big[\, r_{i,t}(\theta)\, \hat A_{i,t},\; \mathrm{clip}\big(r_{i,t}(\theta),\, 1-\epsilon,\, 1+\epsilon\big)\, \hat A_{i,t} \,\big] \;-\; \beta\, D_{\mathrm{KL}}\big[\pi_\theta \,\|\, \pi_{\mathrm{ref}}\big] \Big) \right]$$
 
@@ -67,30 +67,30 @@ $$J_{\mathrm{GRPO}}(\theta) \;=\; \mathbb{E}\left[\; \frac{1}{G} \sum_{i=1}^{G} 
 
 $$r_{i,t}(\theta) \;=\; \frac{\pi_\theta(o_{i,t} \mid q,\, o_{i,<t})}{\pi_{\theta_{\mathrm{old}}}(o_{i,t} \mid q,\, o_{i,<t})}$$
 
-对照检查本系列的三大暗线：**clip 在**（第四篇）、**组内 baseline 在**（第二篇）、**KL 罚项在**（第三篇）。GRPO 的全部新颖性就是那个 $\tilde r_i$——但正如系列一路展示的，找到"哪个部件可以换掉"恰恰需要理解每个部件为什么在那里。
+对照检查本系列的三大暗线：**clip 在**（第四篇）、**组内 baseline 在**（第二篇）、**KL 罚项在**（第三篇）。GRPO 的全部新颖性就是那个 \(\tilde r_i\)——但正如系列一路展示的，找到"哪个部件可以换掉"恰恰需要理解每个部件为什么在那里。
 
 ## 3. KL 项的细节：k3 无偏估计器
 
-GRPO 保留 $\pi_{\mathrm{ref}}$ 有两层用意：一是第三篇说的"别离初始能力太远"（防 reward hacking、防语言能力崩坏），二是实践中它兼任正则项——KL 以逐 token 的方式加进目标，相当于每生成一个 token 都付一点"偏离税"，抑制答案突然变长的投机策略。
+GRPO 保留 \(\pi_{\mathrm{ref}}\) 有两层用意：一是第三篇说的"别离初始能力太远"（防 reward hacking、防语言能力崩坏），二是实践中它兼任正则项——KL 以逐 token 的方式加进目标，相当于每生成一个 token 都付一点"偏离税"，抑制答案突然变长的投机策略。
 
-但两个分布的 KL 没法精确算（需要对整个词表求和），只能蒙特卡洛估计。常用三种估计器（记 $u = \log \frac{\pi_{\mathrm{ref}}}{\pi_\theta}$）：
+但两个分布的 KL 没法精确算（需要对整个词表求和），只能蒙特卡洛估计。常用三种估计器（记 \(u = \log \frac{\pi_{\mathrm{ref}}}{\pi_\theta}\)）：
 
 | 估计器 | 表达式 | 问题 |
 |:---|:---|:---|
-| k1 | $-u$ | 单样本期望等于 KL，但**取值可为负**，做罚项会出现"负税" |
-| k2 | $\frac{1}{2} u^2$ | 恒非负，但期望是 KL 的二阶近似，**系统性低估** |
-| k3（GRPO 采用） | $e^{u} - u - 1$ | **无偏且恒非负**，凸性保证方差性质良好 |
+| k1 | \(-u\) | 单样本期望等于 KL，但**取值可为负**，做罚项会出现"负税" |
+| k2 | \(\frac{1}{2} u^2\) | 恒非负，但期望是 KL 的二阶近似，**系统性低估** |
+| k3（GRPO 采用） | \(e^{u} - u - 1\) | **无偏且恒非负**，凸性保证方差性质良好 |
 
-k3 的验证只要一行泰勒展开：$e^u - u - 1 = \frac{u^2}{2} + \frac{u^3}{6} + \cdots$，而 $\mathbb{E}[u] + \frac{1}{2}\mathbb{E}[u^2] + \cdots$ 恰好重组出 $\mathbb{E}[e^u] - \mathbb{E}[u] - 1 = D_{KL} - 0 - 1 + 1$……严格证明见 Schulman 博客 "Approximating KL Divergence"（2016），结论：**k3 对任意样本非负、期望恰为真 KL**。这是"逐 token 可算 + 数值稳定"的最优折中，后来几乎所有 GRPO 变体都沿用了它。
+k3 的验证只要一行泰勒展开：\(e^u - u - 1 = \frac{u^2}{2} + \frac{u^3}{6} + \cdots\)，而 \(\mathbb{E}[u] + \frac{1}{2}\mathbb{E}[u^2] + \cdots\) 恰好重组出 \(\mathbb{E}[e^u] - \mathbb{E}[u] - 1 = D_{KL} - 0 - 1 + 1\)……严格证明见 Schulman 博客 "Approximating KL Divergence"（2016），结论：**k3 对任意样本非负、期望恰为真 KL**。这是"逐 token 可算 + 数值稳定"的最优折中，后来几乎所有 GRPO 变体都沿用了它。
 
 ## 4. 两种监督粒度：Outcome vs Process
 
-DeepSeekMath 给了两种变体，区别只在 $\hat A$ 怎么填：
+DeepSeekMath 给了两种变体，区别只在 \(\hat A\) 怎么填：
 
 | | Outcome Supervision GRPO | Process Supervision GRPO |
 |:---|:---|:---|
 | 奖励来源 | 结果奖励模型（ORM），每条回答一个分 | 过程奖励模型（PRM），每步一个分 |
-| 优势填充 | 整条回答共享 $\tilde r_i$ | 每步分数减去该步组内均值后归一化 |
+| 优势填充 | 整条回答共享 \(\tilde r_i\) | 每步分数减去该步组内均值后归一化 |
 | 特点 | 简单、稀疏 | 信号密、但 PRM 本身要训，且易被 hack |
 
 实践主流是 outcome 版——尤其当奖励可以由**规则**给出时。
@@ -109,8 +109,8 @@ GRPO 成名之后，2025-2026 出现了一整族修正。挑四个最有代表�
 
 | 变体 | 修的问题 | 核心改动 |
 |:---|:---|:---|
-| **Dr.GRPO** | ① 除以 $\mathrm{std}$ 引入难度偏差：越难的题组内方差越大，优势被系统性压小，模型学会"挑软柿子"；② $\frac{1}{\lvert o_i\rvert}$ 的 token 平均让错误的长回答单 token 惩罚更轻，变相鼓励废话 | 去掉 std 归一化、去掉长度归一化（回到常数除数） |
-| **DAPO** | ① clip 对低概率 token 过狠：好答案里的罕见词一旦概率抬过 $1+\epsilon$ 就断粮，探索枯竭；② 全对/全错组浪费算力 | clip-higher（上界放宽为 $1+\epsilon_{high}$）、动态采样（过滤零方差组）、token 级 loss、超长惩罚塑形 |
+| **Dr.GRPO** | ① 除以 \(\mathrm{std}\) 引入难度偏差：越难的题组内方差越大，优势被系统性压小，模型学会"挑软柿子"；② \(\frac{1}{\lvert o_i\rvert}\) 的 token 平均让错误的长回答单 token 惩罚更轻，变相鼓励废话 | 去掉 std 归一化、去掉长度归一化（回到常数除数） |
+| **DAPO** | ① clip 对低概率 token 过狠：好答案里的罕见词一旦概率抬过 \(1+\epsilon\) 就断粮，探索枯竭；② 全对/全错组浪费算力 | clip-higher（上界放宽为 \(1+\epsilon_{high}\)）、动态采样（过滤零方差组）、token 级 loss、超长惩罚塑形 |
 | **GSPO** | token 级 ratio 逐点噪声大，MoE 上尤甚 | 序列级比率（几何平均），clip 作用在整条回答上 |
 | **RLOO / ReMax** | GRPO 还是太复杂（clip + KL 都可以不要） | 回到第二篇的 REINFORCE with baseline：留一作 baseline，极简复活 |
 
@@ -120,7 +120,7 @@ GRPO 成名之后，2025-2026 出现了一整族修正。挑四个最有代表�
 
 ![GRPO 组归一化实验：左图 GRPO 远快于全局 baseline 与 Dr.GRPO；右图优势信号分布——GRPO 放大到 ±1，全局 baseline 的信号被淹没在 0 附近](/assets/img/rl/grpo_group_normalization.png)
 
-左图：GRPO（组内归一化）在 ~150 轮收敛到近乎满分（末段平均 0.995），全局 baseline 慢且不稳（0.785），Dr.GRPO（去掉 $1/\mathrm{std}$）更慢（0.614）——**在小信号 regime 下，std 归一化的放大器收益大于它的偏置害处**。右图的中间变量对比更直观：GRPO 的优势被放大到 ±1 两端，而全局 baseline 的优势挤在 0 附近——稀有成功信号被淹没了。但请结合上面的 Dr.GRPO 批评一起读：这个 toy 上 std 放大的是「信号」，大模型训练里放大的可能是「噪声与偏置」。**同一个公式，regime 不同，善恶互换**。
+左图：GRPO（组内归一化）在 ~150 轮收敛到近乎满分（末段平均 0.995），全局 baseline 慢且不稳（0.785），Dr.GRPO（去掉 \(1/\mathrm{std}\)）更慢（0.614）——**在小信号 regime 下，std 归一化的放大器收益大于它的偏置害处**。右图的中间变量对比更直观：GRPO 的优势被放大到 ±1 两端，而全局 baseline 的优势挤在 0 附近——稀有成功信号被淹没了。但请结合上面的 Dr.GRPO 批评一起读：这个 toy 上 std 放大的是「信号」，大模型训练里放大的可能是「噪声与偏置」。**同一个公式，regime 不同，善恶互换**。
 
 ## 7. 工程视角：GRPO 系统的真实形态
 
@@ -144,7 +144,7 @@ GRPO 成名之后，2025-2026 出现了一整族修正。挑四个最有代表�
 
 几个决定成败的工程点：
 
-1. **Rollout 引擎就是推理引擎**。vLLM/SGLang 的 continuous batching、prefix caching（同题 $G$ 条回答共享 prompt KV cache）直接决定吞吐——这也是推理部署经验和 RL 训练经验高度互通的地方；
+1. **Rollout 引擎就是推理引擎**。vLLM/SGLang 的 continuous batching、prefix caching（同题 \(G\) 条回答共享 prompt KV cache）直接决定吞吐——这也是推理部署经验和 RL 训练经验高度互通的地方；
 2. **权重同步是隐藏大头**。训练侧（FSDP/Megatron 分片）与推理侧（vLLM worker）的参数布局完全不同，每一步都要 reshard + 广播；同步策略（同步/异步、部分滚动更新）是 veRL、AReal 这类框架的核心卖点；
 3. **异步化是趋势**：严格 on-policy 要求"采完这一批再更新"，但训练等解码、解码等权重的串行气泡极大；允许轻微 off-policy 的异步 rollout 用第四篇的知识就能分析——ratio 偏离被 clip 兜住，代价可控；
 4. **监控面板**：reward 均值/方差、response 长度分布、熵、组内通过率分布、KL——其中"组内全对/全错比例"直接告诉你有多少算力在做无用功（DAPO 动态采样针对的就是它）。
@@ -169,8 +169,8 @@ $$\text{GRPO} \;=\; \underbrace{\text{REINFORCE with baseline}}_{\text{第二篇
 
 ## 9. Takeaway
 
-1. **GRPO 的本质**：$\hat A_{i,t} = \frac{r_i - \mathrm{mean}(\mathbf r)}{\mathrm{std}(\mathbf r)}$ 替代 critic + GAE。合法性来自第二篇 baseline 定理（均值与动作无关），经济性来自"outcome reward 天然按题分组"。
-2. **KL 罚项用 k3 估计器**（$e^u - u - 1$，无偏恒正），reference model 同时扮演信任域锚点和逐 token 正则。
+1. **GRPO 的本质**：\(\hat A_{i,t} = \frac{r_i - \mathrm{mean}(\mathbf r)}{\mathrm{std}(\mathbf r)}\) 替代 critic + GAE。合法性来自第二篇 baseline 定理（均值与动作无关），经济性来自"outcome reward 天然按题分组"。
+2. **KL 罚项用 k3 估计器**（\(e^u - u - 1\)，无偏恒正），reference model 同时扮演信任域锚点和逐 token 正则。
 3. **RLVR 是 GRPO 的最佳拍档**：可验证奖励天然产出组内分数，R1-Zero 证明了纯规则奖励能涌现反思行为——但奖励缝隙必被钻空。
 4. **变体大战的读法**：Dr.GRPO 修归一化偏差、DAPO 修探索与算力浪费、GSPO 修 ratio 噪声——每一篇都在偿还"统计替代学习"欠下的债。判断新变体的标准不是论文曲线，而是它明确指认并修复了哪条欠条。
 
@@ -203,11 +203,11 @@ k3_loss = (delta.exp() - delta - 1).mean()           # k3 无偏 KL 估计器
 
 | 数学符号 | 代码变量 | Shape / 类型 | 含义 |
 |---|---|---|---|
-| $q,\ o_i \sim \pi_\theta(\cdot\mid q)$ | rollout 输出 | `(K, T)` | 同一 prompt 组内 K 条采样 |
-| $r_i$ | `rewards` | `(K,)` | 规则奖励（组内） |
-| $\hat{A}_i=\frac{r_i-\mathrm{mean}}{\mathrm{std}+\epsilon}$ | `advantages` | `(K,)` → 广播 | 组相对优势 |
-| $\rho_t(\theta)$ | `ratio` | `(K, T)` | token 级重要性比率 |
-| $\mathbb{D}_{KL}^{k3}$ | `delta.exp() - delta - 1` | `(K, T)` | 无偏 KL 估计器 |
+| \(q,\ o_i \sim \pi_\theta(\cdot\mid q)\) | rollout 输出 | `(K, T)` | 同一 prompt 组内 K 条采样 |
+| \(r_i\) | `rewards` | `(K,)` | 规则奖励（组内） |
+| \(\hat{A}_i=\frac{r_i-\mathrm{mean}}{\mathrm{std}+\epsilon}\) | `advantages` | `(K,)` → 广播 | 组相对优势 |
+| \(\rho_t(\theta)\) | `ratio` | `(K, T)` | token 级重要性比率 |
+| \(\mathbb{D}_{KL}^{k3}\) | `delta.exp() - delta - 1` | `(K, T)` | 无偏 KL 估计器 |
 
 
 > 🧪 **动手练习**：① 固定采样预算，对比组大小 K ∈ {4, 8, 16} 的优势估计噪声与最终成绩；② 把 std 归一化改成 Dr.GRPO 式常数除法，复现本文 toy 实验中"小信号 regime 反而更慢"的现象，并写出你的 regime 解释。

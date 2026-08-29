@@ -26,15 +26,15 @@ mathjax: true
 
 | 数学符号 | 含义 | 代码变量 | 典型形状 |
 |---|---|---|---|
-| $w$ | 待量化的浮点权重 | `w` | `(K, N)` |
-| $\bar{w}$ | 量化后重建值 | `w_q` | `(K, N)` |
-| $s$ | 量化 step size（scale） | `scale` | 标量或 `(N,)` |
-| $z$ | 零点（affine 量化） | `zero_point` | 整数 |
-| $u = w/s$ | 缩放后的实值坐标 | `u` | 同 `w` |
-| $Q(u)$ | 线性量化算子（含 clamp+round） | `quantize(u)` | 同 `w` |
-| $\alpha$ | PACT 的 clamp 上界 / 裁剪系数 | `clip_alpha` | 标量 |
-| $v \in (0,1)$ | AdaRound 的连续舍入变量 | `rnd_soft` | `(K, N)` |
-| $h$ | 蒸馏的温度/软标签分布 | `soft_targets` | `(T, V)` |
+| \(w\) | 待量化的浮点权重 | `w` | `(K, N)` |
+| \(\bar{w}\) | 量化后重建值 | `w_q` | `(K, N)` |
+| \(s\) | 量化 step size（scale） | `scale` | 标量或 `(N,)` |
+| \(z\) | 零点（affine 量化） | `zero_point` | 整数 |
+| \(u = w/s\) | 缩放后的实值坐标 | `u` | 同 `w` |
+| \(Q(u)\) | 线性量化算子（含 clamp+round） | `quantize(u)` | 同 `w` |
+| \(\alpha\) | PACT 的 clamp 上界 / 裁剪系数 | `clip_alpha` | 标量 |
+| \(v \in (0,1)\) | AdaRound 的连续舍入变量 | `rnd_soft` | `(K, N)` |
+| \(h\) | 蒸馏的温度/软标签分布 | `soft_targets` | `(T, V)` |
 
 ## 1. PTQ 的能力边界：为什么还需要 QAT
 
@@ -92,20 +92,20 @@ class FakeQuant(torch.autograd.Function):
 
 ### 3.1 LSQ：step size 的精确梯度
 
-LSQ（Learned Step Size Quantization，[arXiv:1902.08153](https://arxiv.org/abs/1902.08153)）的关键观察：与其每步从数据重估 scale，不如**把 scale 当作普通可学习参数**。设 $v_i$ 是权重经线性变换后的实值激活，$u_i = v_i / s$，则：
+LSQ（Learned Step Size Quantization，[arXiv:1902.08153](https://arxiv.org/abs/1902.08153)）的关键观察：与其每步从数据重估 scale，不如**把 scale 当作普通可学习参数**。设 \(v_i\) 是权重经线性变换后的实值激活，\(u_i = v_i / s\)，则：
 
 $$\frac{\partial u_i}{\partial s} = \begin{cases} -v_i / s^2 & |u_i| \le q_{max} \\ 0 & \text{otherwise} \end{cases}$$
 
-再配合 round 的 STE（$\partial\,\mathrm{round}/\partial u \approx 1$）与 clamp 的指示函数，得到完整的尺度梯度。这个看似简单的改动带来两个质变：其一，scale 从"被动统计量"变成"主动权衡者"——它会自动收缩以换取更小的整体重建误差；其二，训练后期可以给 scale 加上逐通道自由度，等效于学出一组最优粒度。
+再配合 round 的 STE（\(\partial\,\mathrm{round}/\partial u \approx 1\)）与 clamp 的指示函数，得到完整的尺度梯度。这个看似简单的改动带来两个质变：其一，scale 从"被动统计量"变成"主动权衡者"——它会自动收缩以换取更小的整体重建误差；其二，训练后期可以给 scale 加上逐通道自由度，等效于学出一组最优粒度。
 
 ### 3.2 PACT：把截断上界交给训练
 
-PACT（Parameterized Clipping Activation，[arXiv:1805.06085](https://arxiv.org/abs/1805.06085)）解决的是另一半问题：激活值的动态范围。它把激活的 clamp 上界参数化为 $\alpha$，前向 $y = \min(x, \alpha)$，反向梯度为 $\mathbb{1}[x > \alpha]$。随着训练推进，$\alpha$ 单调收紧，激活分布被"修剪"进窄区间，使得低比特量化不再被尾部拖累。
+PACT（Parameterized Clipping Activation，[arXiv:1805.06085](https://arxiv.org/abs/1805.06085)）解决的是另一半问题：激活值的动态范围。它把激活的 clamp 上界参数化为 \(\alpha\)，前向 \(y = \min(x, \alpha)\)，反向梯度为 \(\mathbb{1}[x > \alpha]\)。随着训练推进，\(\alpha\) 单调收紧，激活分布被"修剪"进窄区间，使得低比特量化不再被尾部拖累。
 
 | | LSQ | PACT |
 |---|---|---|
-| 可学对象 | step size $s$ | 激活 clamp 上界 $\alpha$ |
-| 梯度来源 | $u=w/s$ 对 $s$ 求导 + STE | 指示函数 $\mathbb{1}[x>\alpha]$ |
+| 可学对象 | step size \(s\) | 激活 clamp 上界 \(\alpha\) |
+| 梯度来源 | \(u=w/s\) 对 \(s\) 求导 + STE | 指示函数 \(\mathbb{1}[x>\alpha]\) |
 | 解决的问题 | 权重侧网格间距 | 激活侧动态范围 |
 | 与 PTQ 的对应物 | MSE 最优裁剪（[量化00](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)） | OmniQuant 的可学习 clip（[OmniQuant](/2026/08/24/ptq-03-awq-omniq/)） |
 | 典型用法 | 权重/激活统一量化训练 | 激活量化、与 LSQ 组合 |
@@ -116,11 +116,11 @@ PACT（Parameterized Clipping Activation，[arXiv:1805.06085](https://arxiv.org/
 
 ### 4.1 AdaRound：舍入方向本身是优化变量
 
-RTN 的舍入是最小化逐元素误差的贪心，但[量化全景](/2026/08/24/ptq-00-overview/)里我们推导过：正确的目标应是最小化**层输出误差** $\|\Delta W x\|^2$，其中每个权重的舍入方向（向上 or 向下）通过 Hessian 相互耦合。AdaRound（[arXiv:2004.10568](https://arxiv.org/abs/2004.10568)）把这个组合问题连续松弛：为每个权重引入软变量
+RTN 的舍入是最小化逐元素误差的贪心，但[量化全景](/2026/08/24/ptq-00-overview/)里我们推导过：正确的目标应是最小化**层输出误差** \(\|\Delta W x\|^2\)，其中每个权重的舍入方向（向上 or 向下）通过 Hessian 相互耦合。AdaRound（[arXiv:2004.10568](https://arxiv.org/abs/2004.10568)）把这个组合问题连续松弛：为每个权重引入软变量
 
 $$v_i \in (0,1), \quad \tilde{\Delta}_i = h(v_i), \quad h(v)=\mathrm{clip}(v+\tfrac{1}{2}, 0, 1)$$
 
-训练目标 = 层输出重构损失 + 正则项 $-\lambda \sum_i \log^2(2v_i - |2v_i-1|)$，后者在训练中自动把 $v_i$ 推向 0 或 1（硬舍入），推理时零开销。**它不需要标签、不需要端到端反传，几百个样本即可**——所以 AdaRound 本质是 PTQ 方法，却用了 QAT 的优化语法，是两界之间的桥。
+训练目标 = 层输出重构损失 + 正则项 \(-\lambda \sum_i \log^2(2v_i - |2v_i-1|)\)，后者在训练中自动把 \(v_i\) 推向 0 或 1（硬舍入），推理时零开销。**它不需要标签、不需要端到端反传，几百个样本即可**——所以 AdaRound 本质是 PTQ 方法，却用了 QAT 的优化语法，是两界之间的桥。
 
 ### 4.2 BRECQ：把重构单元升到 block 级
 
