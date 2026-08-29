@@ -666,6 +666,14 @@ a { color: var(--primary); }
 .sidebar-tag:hover { background: var(--primary); color: #fff; }
 .sidebar-site-name { font-size: 18px; font-weight: 700; color: var(--primary); margin-bottom: 6px; }
 .sidebar-subtitle { font-size: 13px; color: var(--text-light); line-height: 1.7; }
+.sidebar-desc {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.8;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
 
 /* ========== 文章详情页统一样式 ========== */
 .page-post-detail .post-block {

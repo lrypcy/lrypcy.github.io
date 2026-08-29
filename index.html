@@ -64,13 +64,13 @@ title: 首页
     {% assign goods = goods | concat: item_arr %}
   {% endfor %}
   {% assign goods = goods | sort | reverse %}
-  {% assign colors = "#3b82f6,#2563eb,#60a5fa,#1d4ed8,#93c5fd,#1e40af" | split: "," %}
+  {% assign colors = "#3b82f6,#6366f1,#8b5cf6,#a855f7,#ec4899,#e11d48,#ea580c,#d97706,#16a34a,#0d9488,#0891b2,#1d4ed8" | split: "," %}
   <div class="tag-cloud">
     {% for item in goods limit: 24 %}
       {% assign parts = item | split: ':' %}
       {% assign tag_name = parts[1] %}
       {% assign tag_count = parts[0] | plus: 0 %}
-      {% assign color_idx = forloop.index0 | modulo: 6 %}
+      {% assign color_idx = forloop.index0 | modulo: 12 %}
       {% assign color = colors[color_idx] %}
       {% if tag_count > 9 %}{% assign font_pct = 150 %}{% elsif tag_count > 5 %}{% assign font_pct = 128 %}{% elsif tag_count > 2 %}{% assign font_pct = 112 %}{% else %}{% assign font_pct = 100 %}{% endif %}
       <a class="tag-item" href="/tags/#{{ tag_name | url_encode }}" style="font-size: {{ font_pct }}%; color: {{ color }};" title="{{ tag_count }} 篇文章">{{ tag_name }}</a>

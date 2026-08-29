@@ -13,7 +13,7 @@ title: 标签
     {% if sz > tag_max %}{% assign tag_max = sz %}{% endif %}
     {% if sz < tag_min %}{% assign tag_min = sz %}{% endif %}
   {% endfor %}
-  {% assign colors = "#3b82f6,#2563eb,#60a5fa,#1d4ed8,#93c5fd,#1e40af" | split: "," %}
+  {% assign colors = "#3b82f6,#6366f1,#8b5cf6,#a855f7,#ec4899,#e11d48,#ea580c,#d97706,#16a34a,#0d9488,#0891b2,#1d4ed8" | split: "," %}
   <div class="tag-cloud">
     {% for tag in site.tags %}
       {% assign tag_size = tag[1] | size %}
@@ -24,7 +24,7 @@ title: 标签
         {% assign ratio = 50 %}
       {% endif %}
       {% assign font_pct = ratio | plus: 100 %}
-      {% assign color_idx = forloop.index0 | modulo: 6 %}
+      {% assign color_idx = forloop.index0 | modulo: 12 %}
       {% assign color = colors[color_idx] %}
       <a class="tag-item" href="#{{ tag[0] | url_encode }}" style="font-size: {{ font_pct }}%; color: {{ color }};" title="{{ tag_size }} 篇文章">{{ tag[0] }}</a>
     {% endfor %}
