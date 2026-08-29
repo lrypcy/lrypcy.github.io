@@ -195,12 +195,14 @@ a { color: var(--primary); }
   gap: 16px;
 }
 .category-card {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 22px 18px;
-  text-align: center;
+  padding: 14px 16px;
   text-decoration: none;
   transition: var(--transition);
   box-shadow: var(--shadow);
@@ -211,12 +213,12 @@ a { color: var(--primary); }
   border-color: rgba(59, 130, 246, 0.3);
   background: linear-gradient(180deg, #fff, var(--primary-soft));
 }
-.category-card-icon { font-size: 28px; margin-bottom: 10px; display: block; }
+.category-card-icon { font-size: 22px; display: block; }
 .category-card-name {
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
-  margin: 0 0 8px;
+  margin: 0;
 }
 .category-card:hover .category-card-name { color: var(--primary); }
 .category-card-count {
@@ -225,12 +227,31 @@ a { color: var(--primary); }
   background: var(--bg);
   padding: 2px 10px;
   border-radius: 20px;
-  display: inline-block;
+  flex-shrink: 0;
 }
 .category-card:hover .category-card-count {
   background: var(--primary-soft);
   color: var(--primary);
 }
+.category-card.is-active {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.10);
+  box-shadow: var(--shadow-hover);
+}
+.category-card.is-active .category-card-name,
+.category-card.is-active .category-card-count {
+  color: var(--primary);
+}
+.category-show-all {
+  display: block;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--text-light);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.category-show-all[hidden] { display: none; }
+.category-show-all:hover { color: var(--primary); }
 
 /* ========== 标签云 ========== */
 .tag-cloud {

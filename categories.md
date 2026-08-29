@@ -5,20 +5,22 @@ title: 分类
 <div class="post-block page">
   <h1 class="post-title">分类</h1>
 
-  <!-- 分类卡片导航 -->
-  <div class="category-grid">
+  <!-- 分类卡片导航（点击过滤该分类文章） -->
+  <div class="category-grid" id="category-nav">
     {% for category in site.categories %}
-    <a class="category-card" href="#{{ category[0] | url_encode }}">
-      <div class="category-card-icon">📁</div>
+    <a class="category-card" data-cat="{{ category[0] }}" href="#{{ category[0] | url_encode }}">
+      <span class="category-card-icon">📁</span>
       <h3 class="category-card-name">{{ category[0] }}</h3>
       <span class="category-card-count">{{ category[1] | size }} 篇</span>
     </a>
     {% endfor %}
   </div>
+  <div id="category-show-all" class="category-show-all" hidden>← 显示全部分类</div>
 
   <!-- 按分类分组 -->
+  <div id="category-list">
   {% for category in site.categories %}
-  <div class="category-group">
+  <div class="category-group" data-cat="{{ category[0] }}">
     <h3 id="{{ category[0] | url_encode }}">{{ category[0] }} <small>({{ category[1] | size }} 篇)</small></h3>
     <ul>
       {% for post in category[1] %}
@@ -27,4 +29,67 @@ title: 分类
     </ul>
   </div>
   {% endfor %}
+  </div>
 </div>
+
+<script>
+(function () {
+  var cards = [].slice.call(document.querySelectorAll('#category-nav .category-card'));
+  var groups = [].slice.call(document.querySelectorAll('#category-list .category-group'));
+  var allBtn = document.getElementById('category-show-all');
+  if (!cards.length || !groups.length) { return; }
+
+  function currentCat() {
+    var raw = location.hash.replace(/^#/, '');
+    if (!raw) { return null; }
+    try { return decodeURIComponent(raw.replace(/\+/g, ' ')); } catch (e) { return null; }
+  }
+
+  function applyFilter(cat) {
+    var showAll = !cat;
+    cards.forEach(function (c) {
+      c.classList.toggle('is-active', !showAll && c.getAttribute('data-cat') === cat);
+    });
+    groups.forEach(function (g) {
+      g.style.display = (!showAll && g.getAttribute('data-cat') !== cat) ? 'none' : '';
+    });
+    if (allBtn) { allBtn.hidden = showAll; }
+  }
+
+  function scrollToCat(cat) {
+    var target = null;
+    groups.forEach(function (g) {
+      if (g.getAttribute('data-cat') === cat) { target = g; }
+    });
+    if (target && target.scrollIntoView) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  cards.forEach(function (c) {
+    c.addEventListener('click', function (e) {
+      e.preventDefault();
+      var cat = c.getAttribute('data-cat');
+      applyFilter(cat);
+      if (history.replaceState) {
+        history.replaceState(null, '', '#' + encodeURIComponent(cat));
+      }
+      scrollToCat(cat);
+    });
+  });
+  if (allBtn) {
+    allBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (history.pushState) {
+        history.pushState(null, '', location.pathname + location.search);
+      }
+      applyFilter(null);
+    });
+  }
+  window.addEventListener('hashchange', function () { applyFilter(currentCat()); });
+
+  var initCat = currentCat();
+  applyFilter(initCat);
+  if (initCat) { scrollToCat(initCat); }
+})();
+</script>
