@@ -1,25 +1,26 @@
 ---
-title: "LLM PTQ 深度解析（10）：Outlier Suppression 与 OS+：从保护到抑制离群值"
+title: "大模型量化算法（11）：Outlier Suppression / OS+——从保护到抑制"
 date: 2026-08-24 15:40:00 +0800
 categories:
   - 模型量化
-tags: [quantization, w8a8, outlier-suppression]
+tags: [llm-inference, quantization, outlier-suppression, w8a8, layernorm]
 layout: post
 mathjax: true
 ---
 
-> **系列导航(LLM PTQ 量化算法全景)**
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 2 · Activation PTQ** ｜ 第 11 篇 / 共 26 篇
 >
-> - 第 0 篇 [量化全景](/2026/08/24/ptq-00-overview/) → 第 1 篇 [RTN/LLM.int8](/2026/08/24/ptq-01-rtn-llmint8/) → 第 2 篇 [GPTQ](/2026/08/24/ptq-02-gptq/) → 第 3 篇 [AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/) → 第 4 篇 [SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/) → 第 5 篇 [QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/) → 第 6 篇 [SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) → 第 7 篇 [QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/) → 第 8 篇 [GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/) → 第 9 篇 [SqueezeLLM/VPTQ/CLAQ](/2026/08/24/ptq-09-squeezellm-vptq-claq/)
-> - **第 10 篇 Outlier Suppression / OS+(本文)** -- W8A8 补遗:γ 迁移、token-wise 裁剪与 shift+scale 等效变换。后续姊妹篇:[第 11 篇 RPTQ/QUIK/ATOM](/2026/08/24/ptq-11-rptq-quik-atom/)、[第 12 篇 OliVe](/2026/08/24/ptq-12-olive-abfloat/)、[第 13 篇 QoQ/QServe 与 QQQ](/2026/08/24/ptq-13-qserve-qqq/)
+> [← 10 ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) ｜ [12 QuaRot/SpinQuant →](/2026/08/24/ptq-07-quarot-spinquant/)
+>
+> - **第 11 篇 Outlier Suppression / OS+(本文)** -- W8A8 补遗:γ 迁移、token-wise 裁剪与 shift+scale 等效变换。后续姊妹篇:[第 13 篇 RPTQ/QUIK/ATOM](/2026/08/24/ptq-11-rptq-quik-atom/)、[第 14 篇 OliVe](/2026/08/24/ptq-12-olive-abfloat/)、[第 16 篇 QoQ/QServe 与 QQQ](/2026/08/24/ptq-13-qserve-qqq/)
 
 ---
 
 ## TL;DR
 
-1. **离群值处理有两条路线,本篇走的是第二条**。LLM.int8()(第 1 篇)、SpQR/OWQ(第 4 篇)乃至 OliVe(第 12 篇)都在"保护"离群值--把它们挑出来用高精度算;Outlier Suppression(OS,arXiv:2209.13325)反过来问:**离群值是从哪里被制造出来的?**答案是 LayerNorm 的尺度参数 $\gamma$--它在训练中吸收并放大了特定通道的幅值,是名副其实的"离群值放大器"。把 $\gamma$ 迁移进后续权重(Gamma Migration),放大器被拆除,分布自然变乖。
+1. **离群值处理有两条路线,本篇走的是第二条**。LLM.int8()(第 E1 篇)、SpQR/OWQ(第 06 篇)乃至 OliVe(第 14 篇)都在"保护"离群值--把它们挑出来用高精度算;Outlier Suppression(OS,arXiv:2209.13325)反过来问:**离群值是从哪里被制造出来的?**答案是 LayerNorm 的尺度参数 $\gamma$--它在训练中吸收并放大了特定通道的幅值,是名副其实的"离群值放大器"。把 $\gamma$ 迁移进后续权重(Gamma Migration),放大器被拆除,分布自然变乖。
 2. **OS+(arXiv:2304.09145)补上了另一半拼图:不对称性**。光拆放大器不够--离群通道的分布往往整体偏移(大的正直流分量 + 小幅波动),只做 SmoothQuant 式的缩放救不了它们自己(本文 §5 Demo B 实测:**仅 scale 时离群通道的有效级数与不处理完全相同**,1.9 级 vs 1.9 级)。OS+ 加入 **channel-wise shift**(减去逐通道均值)再 scale,同一实验里离群通道有效级数从 1.9 提到 36,层输出误差相对仅-scale 方案再降一半。
-3. **所有变换都必须能"免费"迁移回权重**,这是这条路线的立身之本。shift 迁入前一跳 LayerNorm 的 $\beta$,scale 迁入后继线性层的输入通道--浮点模型的数学输出分毫不变(等效变换),只有量化器看到的分布变了。这套"变换 + 统一迁移"的模式后来被 OmniQuant(第 3 篇,把变换参数改成可学习)和旋转路线(第 7 篇,变换换成正交矩阵)继承,是理解 2023 之后激活量化工作的通用语法。
+3. **所有变换都必须能"免费"迁移回权重**,这是这条路线的立身之本。shift 迁入前一跳 LayerNorm 的 $\beta$,scale 迁入后继线性层的输入通道--浮点模型的数学输出分毫不变(等效变换),只有量化器看到的分布变了。这套"变换 + 统一迁移"的模式后来被 OmniQuant(第 05 篇,把变换参数改成可学习)和旋转路线(第 12 篇,变换换成正交矩阵)继承,是理解 2023 之后激活量化工作的通用语法。
 
 ---
 
@@ -51,9 +52,9 @@ mathjax: true
 
 | 方案 | 对离群值的姿态 | 代价 |
 |:---|:---|:---|
-| LLM.int8()(第 1 篇) | 挑出来走 fp16 | 分裂 GEMM,kernel 复杂 |
+| LLM.int8()(第 E1 篇) | 挑出来走 fp16 | 分裂 GEMM,kernel 复杂 |
 | SpQR/OWQ/SqueezeLLM(第 4/9 篇) | 挑出来存高精度 | 稀疏格式 + 双路径 kernel |
-| AWQ(第 3 篇) | 缩放保护敏感通道 | 需要 grid search |
+| AWQ(第 05 篇) | 缩放保护敏感通道 | 需要 grid search |
 | ATOM/OliVe(第 11/12 篇) | 混合精度/配对编码 | 定制硬件或复杂编码 |
 
 它们的共同点是**接受离群值的存在**,围绕它做架构文章。Outlier Suppression(OS)的第一作者贡献是换了一个问题:
@@ -67,7 +68,7 @@ mathjax: true
 
 于是 OS 的处方有两味药:**Gamma Migration**(把 $\gamma$ 迁出归一化层,拆除放大器)和 **token-wise clipping**(按 token 自适应裁剪)。一年后的 OS+ 发现光这两招还差一步--离群分布不只是"大",而且"偏"(不对称),于是加入 **channel-wise shift**,并把所有操作统一成一套**可逆迁移**的语法。最终效果(论文口径):W8A8 下多个模型/任务超过 SmoothQuant,且不需要调 $\alpha$ 超参。
 
-一句话定位:**OS 家族 = "分布整形"路线的最小完备集**。读懂它,第 3 篇 OmniQuant 的可学习变换和第 7 篇 QuaRot 的旋转变换都只是"换了更强整形函数"的递归。
+一句话定位:**OS 家族 = "分布整形"路线的最小完备集**。读懂它,第 05 篇 OmniQuant 的可学习变换和第 12 篇 QuaRot 的旋转变换都只是"换了更强整形函数"的递归。
 
 ## 2. 共同的物理源头:LayerNorm 的仿射参数
 
@@ -97,7 +98,7 @@ $$
 
 ### 2.2 γ 为什么是离群值放大器
 
-训练动力学的经验事实(第 1 篇讲过):少数通道存在跨 token 稳定的幅值优势,attention/MLP 依赖这些通道传递"全局信号"。训练会把这份依赖写进 $\gamma$--这些通道对应的 $\gamma_j$ 长到 5~20 倍于其他通道。于是 LN 输出的幅值谱变成:
+训练动力学的经验事实(第 E1 篇讲过):少数通道存在跨 token 稳定的幅值优势,attention/MLP 依赖这些通道传递"全局信号"。训练会把这份依赖写进 $\gamma$--这些通道对应的 $\gamma_j$ 长到 5~20 倍于其他通道。于是 LN 输出的幅值谱变成:
 
 $$
 |y_j| \approx |\gamma_j|\cdot|\hat{x}_j|
@@ -137,7 +138,7 @@ $$
 
 1. **多消费者要同步迁移**。一个 LN 输出通常同时喂给 Q/K/V 三个投影(或 gate/up 两个),每个消费者的 $W$ 都要各自乘 $\mathrm{diag}(\gamma)$,漏一个是静默的数值错误;
 2. **残差流不受影响**。Transformer 的残差连接取的是 LN 的**输入** $x$ 而非输出 $y$,所以迁移不会污染恒等支路--这也是后面 OS+ 能"逐块安全迁移"的结构前提;
-3. **迁移后 $\gamma$ 不消失,只是搬家**。权重的对应列被放大了同样的倍数,权重侧 per-channel 量化(每个输出通道一个 scale)恰好能吃下这种列间悬殊--这正是第 6 篇说过的"权重易量化、激活难量化"不对称性的又一次胜利。
+3. **迁移后 $\gamma$ 不消失,只是搬家**。权重的对应列被放大了同样的倍数,权重侧 per-channel 量化(每个输出通道一个 scale)恰好能吃下这种列间悬殊--这正是第 10 篇说过的"权重易量化、激活难量化"不对称性的又一次胜利。
 
 ### 3.2 token-wise 裁剪
 
@@ -326,7 +327,7 @@ print(f"    shift+scale : {sigmas[k]/step_os:6.1f} 级   (去均值后步长缩�
 
 1. **shift/scale 都是静态的**。$(\delta, s)$ 从校准集估计后冻结,对分布漂移(长文本、多语言、代码等域外输入)没有自适应能力;ZeroQuant 式的动态量化是另一个极端(在线统计、零校准),两者之间没有免费午餐;
 2. **等效变换的层数受限**。迁移依赖"LN 输出只喂同分支线性层"的结构假设,遇到更复杂的拓扑(交叉注意力、共享 LN、MoE 的 router)要逐一重新论证等价性,工程泛化成本被论文轻描淡写;
-3. **增益的天花板**。shift+scale 只能整形一阶统计(位置与幅度),对"通道间相关性"无能为力--这正是旋转路线(第 7 篇 QuaRot/SpinQuant)的出发点:哈达玛变换把离群能量摊到所有通道,处理的是协方差结构。可以说 OS+ 把"仿射整形"做到了头,再往前就必须换工具;
+3. **增益的天花板**。shift+scale 只能整形一阶统计(位置与幅度),对"通道间相关性"无能为力--这正是旋转路线(第 12 篇 QuaRot/SpinQuant)的出发点:哈达玛变换把离群能量摊到所有通道,处理的是协方差结构。可以说 OS+ 把"仿射整形"做到了头,再往前就必须换工具;
 4. **工程影响力不及 SmoothQuant**。原因不在效果而在时机与简单性:SmoothQuant 早半年、名字响、有 torch-int 参考 实现,而部署侧随后又被 FP8 格式截胡--OS+ 的 shift 思想更多是以"被继承"的方式活在后续工作(OmniQuant 的 learnable shift/scale)里的。
 
 **展望**:仿射整形的下一个台阶是把 $(\delta,s)$ 从"校准统计"升级为"优化变量"(OmniQuant 已做),再往上是用数据驱动的正交变换替代固定函数族(Rotation/SpinQuant)。而 OS 家族留下的最持久资产是那条**纪律**:任何分布改造都必须附带一张迁移表,否则就不是免费的。今天所有声称"training-free"的激活量化方案,都还在遵守它。
@@ -340,10 +341,10 @@ print(f"    shift+scale : {sigmas[k]/step_os:6.1f} 级   (去均值后步长缩�
 不丢。$x-\delta$ 丢掉的常数被 $b' = b + \delta W^\top$ 或 $\beta'=\beta-\delta$ 完整接住,浮点输出严格不变。丢的只是量化器的"负担":常数不需要分辨率,波动才需要。
 
 **Q3:为什么不直接对激活做 per-channel 量化,而要绕这么大圈子?**
-per-channel 动态 scale 的 GEMM 要为每个输入通道维护 scale 并在 kernel 内做缩放累加,Tensor Core 的整齐流水线被打断(第 6 篇详述过);而 OS+ 的变换是**离线一次性**重写参数,运行时仍是干净的 per-tensor W8A8 GEMM。绕圈是为了把在线成本降到零。
+per-channel 动态 scale 的 GEMM 要为每个输入通道维护 scale 并在 kernel 内做缩放累加,Tensor Core 的整齐流水线被打断(第 10 篇详述过);而 OS+ 的变换是**离线一次性**重写参数,运行时仍是干净的 per-tensor W8A8 GEMM。绕圈是为了把在线成本降到零。
 
 **Q4:这套方法和 KV cache 量化有什么关系?**
-KV cache 的 per-channel 统计同样呈现"稳定偏移 + 重尾"形态,OS+ 的 shift+scale 可以原样用于 K/V 的量化预处理(QServe 系(第 13 篇)的 KV4 处理里能看到同款思想:非对称 zero-point 本质就是一个内置的 shift)。
+KV cache 的 per-channel 统计同样呈现"稳定偏移 + 重尾"形态,OS+ 的 shift+scale 可以原样用于 K/V 的量化预处理(QServe 系(第 16 篇)的 KV4 处理里能看到同款思想:非对称 zero-point 本质就是一个内置的 shift)。
 
 ## 8. 参考清单
 
@@ -351,9 +352,9 @@ KV cache 的 per-channel 统计同样呈现"稳定偏移 + 重尾"形态,OS+ 的
 |:---|:---|
 | Outlier Suppression: Pushing the Limit of Low-bit Transformer Language Models | [arXiv:2209.13325](https://arxiv.org/abs/2209.13325) · [GitHub](https://github.com/wimh966/outlier_suppression) |
 | Outlier Suppression+: Accurate quantization of large language models by equivalent and optimal shifting and scaling | [arXiv:2304.09145](https://arxiv.org/abs/2304.09145) · [GitHub](https://github.com/ModelTC/Outlier_Suppression_Plus) |
-| SmoothQuant(对比基线,第 6 篇) | [arXiv:2211.10438](https://arxiv.org/abs/2211.10438) |
-| LLM.int8()(离群值现象的开山作,第 1 篇) | [arXiv:2208.07339](https://arxiv.org/abs/2208.07339) |
-| OmniQuant(把 $(\delta,s)$ 变成可学习参数,第 3 篇) | [arXiv:2308.13137](https://arxiv.org/abs/2308.13137) |
+| SmoothQuant(对比基线,第 10 篇) | [arXiv:2211.10438](https://arxiv.org/abs/2211.10438) |
+| LLM.int8()(离群值现象的开山作,第 E1 篇) | [arXiv:2208.07339](https://arxiv.org/abs/2208.07339) |
+| OmniQuant(把 $(\delta,s)$ 变成可学习参数,第 05 篇) | [arXiv:2308.13137](https://arxiv.org/abs/2308.13137) |
 | 本文配套实验 | 配套实验脚本（纯 numpy 实现，种子固定可复现） |
 
 > **下一篇**:[RPTQ/QUIK/ATOM](/2026/08/24/ptq-11-rptq-quik-atom/)--当 scale 和 shift 都压不住离群值,W4A4 时代的三板斧:通道聚类重排、混合精度 GEMM、以及把 reorder 融进 LayerNorm 的工程学。

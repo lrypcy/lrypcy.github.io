@@ -1,14 +1,16 @@
 ---
-title: "大模型 QAT 全景（00）：从 STE 到 QLoRA——量化感知训练的完整地图"
+title: "大模型量化算法（21）：LLM-QAT / QLoRA——大模型时代的 QAT"
 date: 2026-08-25 12:00:00 +0800
 categories:
   - 模型量化
-tags: [quantization, qat, ste, lsq, adaround, qlora]
+tags: [llm-inference, quantization, qat, llm-qat, qlora, ste]
 layout: post
 mathjax: true
 ---
 
-> **系列导航**：本文是《大模型量化》系列的 QAT 篇开篇。PTQ 主线已完结 13 篇（入口见[量化全景](/2026/08/24/ptq-00-overview/)）：从 RTN / LLM.int8() 出发，经 GPTQ 的二阶误差补偿（[GPTQ](/2026/08/24/ptq-02-gptq/)）、AWQ/OmniQuant 的激活感知缩放（[AWQ 与 OmniQuant](/2026/08/24/ptq-03-awq-omniq/)）、旋转系的 QuaRot/SpinQuant（[QuaRot](/2026/08/24/ptq-07-quarot-spinquant/)），一路讲到 W4A8 服务端部署的 QServe（[QServe/QQQ](/2026/08/24/ptq-13-qserve-qqq/)）。PTQ 的所有技巧都在回答同一个问题：**不训练，能压多低**。本篇换一个视角——**如果允许训练（或微调），量化的极限在哪里、代价是什么**。
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 4 · QAT** ｜ 第 21 篇 / 共 26 篇
+>
+> ← 20 蒸馏 + QAT（待写） ｜ 22 Reasoning QAT →（待写）
 
 ## TL;DR
 

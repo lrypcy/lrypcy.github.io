@@ -1,14 +1,18 @@
 ---
-title: "LLM PTQ 深度解析（03）：AWQ 与 OmniQuant：激活感知与可学习缩放"
+title: "大模型量化算法（05）：OmniQuant——可学习缩放与裁剪"
 date: 2026-08-24 11:00:00 +0800
 categories:
   - 模型量化
-tags: [quantization, ptq, awq, omniquant]
+tags: [llm-inference, quantization, omniquant, learnable, w4a4]
 layout: post
 mathjax: true
 ---
 
-> **LLM 量化系列 · 第 3 篇**：从 GPTQ 的"事后补偿"转向"事前预防"——AWQ 用激活统计定位显著通道并做等效缩放，OmniQuant 把缩放与裁剪变成可学习参数。本文覆盖两篇论文的完整数学推导、可复现的 numpy 实现、对比批判与工程生态。
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 1 · Weight-only PTQ** ｜ 第 05 篇 / 共 26 篇
+>
+> [← 04 AWQ](/2026/08/24/llm-quant-03-awq-scale-search/) ｜ [06 SpQR/OWQ/HQQ →](/2026/08/24/ptq-04-spqr-owq-hqq/)
+>
+> **LLM 量化系列 · 第 05 篇**：从 GPTQ 的"事后补偿"转向"事前预防"——AWQ 用激活统计定位显著通道并做等效缩放，OmniQuant 把缩放与裁剪变成可学习参数。本文覆盖两篇论文的完整数学推导、可复现的 numpy 实现、对比批判与工程生态。
 
 ---
 
@@ -38,15 +42,15 @@ OmniQuant 把这一思想彻底参数化：既然 $\alpha$ 是搜出来的、cli
 
 | 篇目 | 主题 | 文件 |
 | --- | --- | --- |
-| 第 0 篇 | 量化全景 | [量化全景](/2026/08/24/ptq-00-overview/) |
-| 第 1 篇 | RTN / LLM.int8 | [RTN 与 LLM.int8()](/2026/08/24/ptq-01-rtn-llmint8/) |
-| 第 2 篇 | GPTQ | [GPTQ](/2026/08/24/ptq-02-gptq/) |
-| **第 3 篇（本文）** | **AWQ / OmniQuant** | **本篇** |
-| 第 4 篇 | SpQR / OWQ / HQQ | [SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/) |
-| 第 5 篇 | QuIP# / AQLM | [QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/) |
-| 第 6 篇 | SmoothQuant / ZeroQuant | [SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) |
-| 第 7 篇 | QuaRot / SpinQuant | [QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/) |
-| 第 8 篇 | GGUF k-quants / FP8 / MXFP4 | [GGUF/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/) |
+| 第 00 篇 | 量化全景 | [量化全景](/2026/08/24/ptq-00-overview/) |
+| 第 E1 篇 | RTN / LLM.int8 | [RTN 与 LLM.int8()](/2026/08/24/ptq-01-rtn-llmint8/) |
+| 第 03 篇 | GPTQ | [GPTQ](/2026/08/24/ptq-02-gptq/) |
+| **第 05 篇（本文）** | **AWQ / OmniQuant** | **本篇** |
+| 第 06 篇 | SpQR / OWQ / HQQ | [SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/) |
+| 第 07 篇 | QuIP# / AQLM | [QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/) |
+| 第 10 篇 | SmoothQuant / ZeroQuant | [SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) |
+| 第 12 篇 | QuaRot / SpinQuant | [QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/) |
+| 第 15 篇 | GGUF k-quants / FP8 / MXFP4 | [GGUF/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/) |
 
 ---
 
@@ -67,8 +71,8 @@ OmniQuant 把这一思想彻底参数化：既然 $\alpha$ 是搜出来的、cli
 
 前两篇我们建立了两个坐标系：
 
-- **第 1 篇（RTN/LLM.int8）**：RTN 是最朴素的 round-to-nearest 量化，实现简单但对激活/权重中的 outlier 极其敏感；LLM.int8 用混合精度分解把 outlier 通道单独拎出来保持 FP16，首次让 175B 模型可部署，但代价是混合精度 kernel 和内存碎片。
-- **第 2 篇（GPTQ）**：把量化看作"逐列决策问题"，用 Hessian（二阶信息）衡量每个权重对输出的敏感度，量化一列后用其余列补偿误差。这是**事后补偿**路线的巅峰：先量化、再修补。
+- **第 E1 篇（RTN/LLM.int8）**：RTN 是最朴素的 round-to-nearest 量化，实现简单但对激活/权重中的 outlier 极其敏感；LLM.int8 用混合精度分解把 outlier 通道单独拎出来保持 FP16，首次让 175B 模型可部署，但代价是混合精度 kernel 和内存碎片。
+- **第 03 篇（GPTQ）**：把量化看作"逐列决策问题"，用 Hessian（二阶信息）衡量每个权重对输出的敏感度，量化一列后用其余列补偿误差。这是**事后补偿**路线的巅峰：先量化、再修补。
 
 到了 4bit 权重量化（W4A16）这个任务上，GPTQ 已经做得相当好，但它有两个隐忧：
 
@@ -241,7 +245,7 @@ $$\min_{s} \; \sum_j \frac{|X_j|}{s_j}, \qquad \text{s.t.} \quad \prod_j s_j = 1
 
 $$\mathcal{L}(s) = \sum_j \frac{c_j}{s_j} + \lambda \sum_j \ln s_j, \qquad c_j = |X_j|$$
 
-$$\frac{\partial \mathcal{L}}{\partial s_j} = -\frac{c_j}{s_j^2} + \frac{\lambda}{s_j} = 0 \;\Longrightarrow\; s_j^* \propto c_j = |X_j|$$
+$$\frac{\partial \mathcal{L}}{\partial s_j} = -\frac{c_j}{s_j^2} + \frac{\lambda}{s_j} = 0 \;\Longrightarrow\; s_j^\ast \propto c_j = |X_j|$$
 
 即**最优缩放正比于激活幅度**。这与直觉一致：激活越大的通道，越值得"保护"。
 
@@ -257,7 +261,7 @@ $$\min_{\alpha} \; \mathbb{E}_{x \sim \mathcal{D}_{\text{cal}}}\Big[ \big\| f(x;
 
 ### 3.4 与 SmoothQuant 的数学联系
 
-SmoothQuant（本系列第 6 篇的主角）与 AWQ 共享同一个数学家族——**激活-权重间的尺度迁移**。两者都做：
+SmoothQuant（本系列第 10 篇的主角）与 AWQ 共享同一个数学家族——**激活-权重间的尺度迁移**。两者都做：
 
 $$X \to X \cdot \operatorname{diag}(s)^{-1}, \qquad W \to W \cdot \operatorname{diag}(s)$$
 
@@ -709,8 +713,8 @@ A：当推理瓶颈是"激活带宽 + 权重带宽"而不是纯权重带宽时�
 | 快速压模型、要现成生态 | AWQ（AutoAWQ + vLLM） | 分钟级校准、Marlin kernel、社区支持最全 |
 | 追求 W4A16 极限精度、模型 ≤ 13B | GPTQ，或 AWQ + 逐层 α | 二阶补偿在小模型上的优势更明显 |
 | 需要 W4A4 / 边缘部署 | OmniQuant | 把 W4A4 做到实用精度的 PTQ 路线，接受训练开销 |
-| 权重 + 激活都要 8bit | SmoothQuant（系列第 6 篇） | W8A8 是它的主场 |
-| 权重 + 激活都要 4bit 且追求理论极致 | QuaRot / SpinQuant（系列第 7 篇） | 旋转消除 outlier 的路线 |
+| 权重 + 激活都要 8bit | SmoothQuant（系列第 10 篇） | W8A8 是它的主场 |
+| 权重 + 激活都要 4bit 且追求理论极致 | QuaRot / SpinQuant（系列第 12 篇） | 旋转消除 outlier 的路线 |
 
 ### 7.6 术语对照表
 
@@ -733,12 +737,12 @@ A：当推理瓶颈是"激活带宽 + 权重带宽"而不是纯权重带宽时�
 
 1. Ji Lin, Jiaming Tang, Haotian Tang, Shang Yang, Wei-Ming Chen, Wei-Chen Wang, Guangxuan Xiao, Xingyu Dang, Chuang Gan, Song Han. **AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration.** arXiv:2306.00978, MLSys 2024.
 2. Wenqi Shao, Mengzhao Chen, Zhaoyang Zhang, Peng Xu, Lirui Zhao, Zhiqian Li, Kaipeng Zhang, Peng Gao, Yu Qiao, Ping Luo. **OmniQuant: Omnidirectionally Calibrated Learning for Large Language Models.** arXiv:2308.13137, ICLR 2024.
-3. Elias Frantar, Saleh Ashkboos, Torsten Hoefler, Dan Alistarh. **GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers.** arXiv:2210.17323, ICLR 2023.（本系列第 2 篇）
-4. Guangxuan Xiao, Ji Lin, Mickael Seznec, Hao Wu, Julien Demouth, Song Han. **SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models.** arXiv:2211.10438, ICML 2023.（本系列第 6 篇）
-5. Tim Dettmers, Mike Lewis, Younes Belkada, Luke Zettlemoyer. **LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale.** arXiv:2208.07339, NeurIPS 2022.（本系列第 1 篇）
+3. Elias Frantar, Saleh Ashkboos, Torsten Hoefler, Dan Alistarh. **GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers.** arXiv:2210.17323, ICLR 2023.（本系列第 03 篇）
+4. Guangxuan Xiao, Ji Lin, Mickael Seznec, Hao Wu, Julien Demouth, Song Han. **SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models.** arXiv:2211.10438, ICML 2023.（本系列第 10 篇）
+5. Tim Dettmers, Mike Lewis, Younes Belkada, Luke Zettlemoyer. **LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale.** arXiv:2208.07339, NeurIPS 2022.（本系列第 E1 篇）
 6. Edward J. Hu, Yelong Shen, Phillip Wallis, et al. **LoRA: Low-Rank Adaptation of Large Language Models.** arXiv:2106.09685, ICLR 2022.
-7. 本系列第 0 篇：[量化全景 ](/2026/08/24/ptq-00-overview/)。
+7. 本系列第 00 篇：[量化全景 ](/2026/08/24/ptq-00-overview/)。
 
 ---
 
-*本文为 LLM 量化系列第 3 篇。上一篇：[GPTQ](/2026/08/24/ptq-02-gptq/)；下一篇：[SpQR / OWQ / HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/)。*
+*本文为 LLM 量化系列第 05 篇。上一篇：[GPTQ](/2026/08/24/ptq-02-gptq/)；下一篇：[SpQR / OWQ / HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/)。*

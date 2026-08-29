@@ -1,23 +1,24 @@
 ---
-title: "LLM PTQ 深度解析（09）：SqueezeLLM、VPTQ 与 CLAQ：敏感度度量与非均匀量化"
+title: "大模型量化算法（08）：SqueezeLLM / VPTQ / CLAQ——敏感度度量与非均匀量化"
 date: 2026-08-24 15:00:00 +0800
 categories:
   - 模型量化
-tags: [quantization, ptq, squeezellm, vptq, claq]
+tags: [llm-inference, quantization, squeezellm, vptq, claq, sensitivity]
 layout: post
 mathjax: true
 ---
 
-> **系列导航(LLM PTQ 量化算法全景)**
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 1 · Weight-only PTQ** ｜ 第 08 篇 / 共 26 篇
 >
-> - 第 0 篇 [量化全景](/2026/08/24/ptq-00-overview/) → 第 1 篇 [RTN/LLM.int8](/2026/08/24/ptq-01-rtn-llmint8/) → 第 2 篇 [GPTQ](/2026/08/24/ptq-02-gptq/) → 第 3 篇 [AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/) → 第 4 篇 [SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/) → 第 5 篇 [QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/) → 第 6 篇 [SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) → 第 7 篇 [QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/) → 第 8 篇 [GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)
-> - **第 9 篇 SqueezeLLM/APTQ/VPTQ/CLAQ(本文)** -- 权重侧低比特的"度量与码本"补遗,后续姊妹篇:[第 10 篇 Outlier Suppression](/2026/08/24/ptq-10-outlier-suppression/)、[第 11 篇 RPTQ/QUIK/ATOM](/2026/08/24/ptq-11-rptq-quik-atom/)、[第 12 篇 OliVe](/2026/08/24/ptq-12-olive-abfloat/)、[第 13 篇 QoQ/QServe 与 QQQ](/2026/08/24/ptq-13-qserve-qqq/)
+> [← 07 QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/) ｜ [09 SmoothQuant →](/2026/08/24/llm-quant-02-smoothquant-w8a8/)
+>
+> - **第 08 篇 SqueezeLLM/APTQ/VPTQ/CLAQ(本文)** -- 权重侧低比特的"度量与码本"补遗,后续姊妹篇:[第 11 篇 Outlier Suppression](/2026/08/24/ptq-10-outlier-suppression/)、[第 13 篇 RPTQ/QUIK/ATOM](/2026/08/24/ptq-11-rptq-quik-atom/)、[第 14 篇 OliVe](/2026/08/24/ptq-12-olive-abfloat/)、[第 16 篇 QoQ/QServe 与 QQQ](/2026/08/24/ptq-13-qserve-qqq/)
 
 ---
 
 ## TL;DR
 
-1. **本篇回答两个遗留问题**。第 4 篇讲 SpQR/OWQ 时留下一个悬念:"敏感度到底该怎么度量?"--激活统计(LLM.int8/AWQ)、Hessian 对角元(OWQ)、OBC 式二阶量(SpQR)之外,SqueezeLLM 给出了第四种答案:**对角 Fisher 信息的梯度平方近似**;而 APTQ 把校准视角从线性层输出搬进了 Attention 内部,用 **attention 输出重构误差**统一校准块内全部四个投影矩阵。
+1. **本篇回答两个遗留问题**。第 06 篇讲 SpQR/OWQ 时留下一个悬念:"敏感度到底该怎么度量?"--激活统计(LLM.int8/AWQ)、Hessian 对角元(OWQ)、OBC 式二阶量(SpQR)之外,SqueezeLLM 给出了第四种答案:**对角 Fisher 信息的梯度平方近似**;而 APTQ 把校准视角从线性层输出搬进了 Attention 内部,用 **attention 输出重构误差**统一校准块内全部四个投影矩阵。
 2. **均匀网格不是低比特的终点**。3-bit 以下,固定间距的电平排布浪费严重;SqueezeLLM 用 **Fisher 加权 k-means** 直接优化非均匀码本,VPTQ 进一步把"逐权重标量量化"升级为"**逐向量量化**"--把 GPTQ 的二阶补偿框架套在向量量化上,在平均 ~2.x bit 下逼近有训练的 AQLM,且解码只是查表。
 3. **自适应比特分配是 2-bit 的生存技能**。CLAQ 证明:与其全网统一 2-bit,不如按列的离群顺序统计把精度和离群保留额度花在刀刃上--列级 AP(自适应精度)与 OR(离群保留)正交可叠加。
 4. **历史判词**:这一族方法的共同代价是"查表/稀疏/变长"带来的 kernel 复杂度。它们没有像 AWQ/GPTQ 那样成为部署默认项,但把两个事实钉进了共识:**(a) 敏感度必须进入量化目标函数;(b) 低比特下电平排布本身就是一个值得优化的对象**。
@@ -51,10 +52,10 @@ mathjax: true
 
 ## 1. 引言:权重侧低比特的两块拼图
 
-第 4 篇结束时我们说过,outlier 拆分路线(SpQR/OWQ)被码本路线(QuIP#/AQLM)和旋转路线(QuaRot/SpinQuant)取代是工程必然,但留下了两个没讲完的故事:
+第 06 篇结束时我们说过,outlier 拆分路线(SpQR/OWQ)被码本路线(QuIP#/AQLM)和旋转路线(QuaRot/SpinQuant)取代是工程必然,但留下了两个没讲完的故事:
 
 * **故事一:敏感度的度量学**。AWQ 用激活幅度找敏感通道,OWQ 用 Hessian 对角元找弱列,SpQR 用 OBC 二阶量找敏感元素--它们各测一面。SqueezeLLM 补上了统计学上最"正统"的一种:**Fisher 信息**,并证明它便宜到可以逐权重计算。APTQ 则指出这些度量全都只盯着线性层输出,Attention 内部的耦合被系统性低估了。
-* **故事二:电平的排布学**。从第 0 篇起我们用的都是均匀网格(scale + zero-point)。但 2~3-bit 时网格只有 4~8 个点,"等距"这个先验毫无道理--分布是重尾的,误差目标又是 Hessian 加权的,为什么不让电平自己站到该站的位置?这就是**非均匀量化**(SqueezeLLM)与它的极端形态**向量量化**(VPTQ/CLAQ,也是第 5 篇 AQLM 的同门)。
+* **故事二:电平的排布学**。从第 00 篇起我们用的都是均匀网格(scale + zero-point)。但 2~3-bit 时网格只有 4~8 个点,"等距"这个先验毫无道理--分布是重尾的,误差目标又是 Hessian 加权的,为什么不让电平自己站到该站的位置?这就是**非均匀量化**(SqueezeLLM)与它的极端形态**向量量化**(VPTQ/CLAQ,也是第 07 篇 AQLM 的同门)。
 
 一句话串联:**本篇四个算法 = 四种敏感度度量 × 三种电平排布方式的组合实验**。理解了这个组合视角,这四篇论文就塌缩成一张二维表(见 §7)。
 
@@ -74,7 +75,7 @@ $$
 \Delta L \approx g_j \Delta w_j + \tfrac{1}{2} h_{jj} (\Delta w_j)^2
 $$
 
-其中 $g_j = \partial L/\partial w_j$ 是梯度,$h_{jj}$ 是 Hessian 对角元。这正是 OBD(Optimal Brain Damage, LeCun 1990)的出发点,也是第 2 篇 GPTQ 家谱(OBD→OBS→OBQ→GPTQ)的起点。问题在于 $h_{jj}$ 的精确计算需要对整个损失的二次反向传播,代价高得不可接受。
+其中 $g_j = \partial L/\partial w_j$ 是梯度,$h_{jj}$ 是 Hessian 对角元。这正是 OBD(Optimal Brain Damage, LeCun 1990)的出发点,也是第 03 篇 GPTQ 家谱(OBD→OBS→OBQ→GPTQ)的起点。问题在于 $h_{jj}$ 的精确计算需要对整个损失的二次反向传播,代价高得不可接受。
 
 ### 2.2 对角 Fisher 信息的梯度平方近似
 
@@ -181,7 +182,7 @@ $$
 2. **敏感度来自 attention 输出对每个权重的梯度/Hessian**:通过一次带扰动的反传即可同时拿到四个矩阵的二阶代理量,天然包含交叉项的影响;
 3. **混合精度分配**:按敏感度排序,敏感权重给 4-bit、其余压到 2-bit(块内混合精度,粒度可到组级),在 W4/W2 混合下整体逼近 W4 均匀量化的精度、显存却接近 W2。
 
-一句话评价:APTQ 没有发明新的量化器,它改的是**校准信号的采样位置**--这与第 3 篇 OmniQuant"学习量化参数"的目标函数选择异曲同工,属于同一类"目标函数工程"。
+一句话评价:APTQ 没有发明新的量化器,它改的是**校准信号的采样位置**--这与第 05 篇 OmniQuant"学习量化参数"的目标函数选择异曲同工,属于同一类"目标函数工程"。
 
 ## 5. VPTQ:向量量化遇上二阶补偿
 
@@ -197,7 +198,7 @@ $$
 
 ### 5.2 GPTQ 框架下的 VQ 形式化
 
-回忆第 2 篇 GPTQ 的层目标($\mathbf{H}=2XX^\top$ 为 Hessian):
+回忆第 03 篇 GPTQ 的层目标($\mathbf{H}=2XX^\top$ 为 Hessian):
 
 $$
 \min_{\hat W}\ \mathrm{tr}\big((W-\hat W)^\top X X^\top (W-\hat W)\big)
@@ -227,7 +228,7 @@ $$
 \hat{\mathbf{w}} = \mathbf{c}^{(1)}_{i_1} + \mathbf{c}^{(2)}_{i_2} + \cdots + \mathbf{c}^{(R)}_{i_R}
 $$
 
-第一级码本抓主方向,第二级量化第一级的残差,依此叠加;总位宽 = 各级索引位宽之和。初始化用**重要性加权 k-means**(权重即 Hessian 对角元),并在量化过程中用 Lloyd 迭代微调码字。与 AQLM(第 5 篇)的区别:AQLM 用梯度下降端到端学码本并微调下游参数,效果更强但要训练;VPTQ 全程免训练、纯 PTQ,平均 ~2.x bit 下拿到接近的成绩,解码只需逐级查表相加。
+第一级码本抓主方向,第二级量化第一级的残差,依此叠加;总位宽 = 各级索引位宽之和。初始化用**重要性加权 k-means**(权重即 Hessian 对角元),并在量化过程中用 Lloyd 迭代微调码字。与 AQLM(第 07 篇)的区别:AQLM 用梯度下降端到端学码本并微调下游参数,效果更强但要训练;VPTQ 全程免训练、纯 PTQ,平均 ~2.x bit 下拿到接近的成绩,解码只需逐级查表相加。
 
 ## 6. CLAQ:列级自适应的两板斧
 
@@ -246,14 +247,14 @@ AP 决定"每列多少 bit",OR 决定"省下的 bit 里哪些值例外",二者�
 ```mermaid
 flowchart TD
     A["权重侧低比特"] --> B{"敏感度怎么测?"}
-    B -->|"激活统计"| C["AWQ 系列<br>第 3 篇"]
+    B -->|"激活统计"| C["AWQ 系列<br>第 05 篇"]
     B -->|"层内 Hessian"| D["GPTQ / OWQ / SpQR<br>第 2/4 篇"]
     B -->|"全模型 Fisher"| E["SqueezeLLM<br>本文"]
     B -->|"attention 输出"| F["APTQ<br>本文"]
     A --> G{"电平怎么摆?"}
     G -->|"均匀网格"| H["RTN / GPTQ<br>第 1/2 篇"]
     G -->|"标量非均匀码本"| I["SqueezeLLM / CLAQ-AP<br>本文"]
-    G -->|"向量码本"| J["AQLM 第 5 篇 / VPTQ / CLAQ<br>本文"]
+    G -->|"向量码本"| J["AQLM 第 07 篇 / VPTQ / CLAQ<br>本文"]
 ```
 
 | 维度 | SqueezeLLM | APTQ | VPTQ | CLAQ |
@@ -384,7 +385,7 @@ print("  VQ-GPTQ :", round(float(np.linalg.norm(X @ vq.T  - ref) / np.linalg.nor
 1. **敏感度的噪声问题**:经验 Fisher 是逐样本梯度平方的平均,方差大、对校准集选择敏感--同一个模型换一套校准数据,SqueezeLLM 的敏感图可能明显不同,论文未系统讨论这一点;
 2. **APTQ 的块内混合精度落地难**:变长位宽意味着 kernel 要么按位宽分组执行(碎片化),要么走 LUT(开销),工程上远不如"全网统一 4-bit + AWQ scale"干净;
 3. **VPTQ/CLAQ 的对比公平性**:码本方法在同等"bit 数"下额外存储了码本与元数据,某些论文按"索引位宽"报告会轻微美化压缩率;
-4. **本篇四个算法都没有大规模生产部署**--它们的价值更多是把"度量"与"排布"两个设计维度推到了极限,为后来的 MXFP4/NF4(第 8 篇)提供了"非均匀性可以吃掉多少误差"的经验数值。
+4. **本篇四个算法都没有大规模生产部署**--它们的价值更多是把"度量"与"排布"两个设计维度推到了极限,为后来的 MXFP4/NF4(第 15 篇)提供了"非均匀性可以吃掉多少误差"的经验数值。
 
 **展望**:敏感度度量正在与旋转/变换路线合流--QuaRot 之后的工作开始"先转再测",让 Hessian 近对角后再做非均匀分配;向量量化则朝着"码本可学习 + 硬件可查表"收敛(AQLM 微调 + LUT kernel 已是雏形)。可以预期下一个分水岭是 **2-bit 以下**:那里标量方法基本出局,竞争只在码本与残差/变换组合之间展开。
 
@@ -397,7 +398,7 @@ print("  VQ-GPTQ :", round(float(np.linalg.norm(X @ vq.T  - ref) / np.linalg.nor
 有训练资源、追求极限精度 → AQLM(端到端学码本 + 下游微调);零训练、快速出活 → VPTQ。推理侧两者都是查表,kernel 成本相近。
 
 **Q3:这些方法和 NF4 什么关系?**
-NF4(第 8 篇 QLoRA 用的 4-bit 格式)可以看作"对高斯分布预计算好的静态非均匀码本"--分位数电平,不含逐层敏感度。SqueezeLLM 是它的"逐层自适应版"。理解了本篇再看 NF4,它就是 $s_j\equiv 1$、码本全局共享的特例。
+NF4(第 15 篇 QLoRA 用的 4-bit 格式)可以看作"对高斯分布预计算好的静态非均匀码本"--分位数电平,不含逐层敏感度。SqueezeLLM 是它的"逐层自适应版"。理解了本篇再看 NF4,它就是 $s_j\equiv 1$、码本全局共享的特例。
 
 **Q4:为什么本篇方法都没进 vLLM/TensorRT-LLM?**
 三个字:kernel 难。LUT gather、变长位宽、稀疏分支都会打断 Tensor Core 的整齐流水线;而 AWQ/GPTQ 的"sScale + 均匀 int4"恰好完美贴合 dequant-matmul 融合范式。精度领先 5%、速度落后 30% 的方案不会赢。
@@ -412,7 +413,7 @@ NF4(第 8 篇 QLoRA 用的 4-bit 格式)可以看作"对高斯分布预计算好
 | CLAQ: Ultra-Low Bit LLM Quantization | [arXiv:2405.17233](https://arxiv.org/abs/2405.17233) |
 | LeCun, OBD: Optimal Brain Damage(敏感度思想的源头,1990) | 可搜标题获取 |
 | 中文社区解读:知乎《大模型量化技术原理》系列(SpQR/SqueezeLLM 各有一篇) | 知乎搜「吃果冻不吐果冻皮 量化」 |
-| 本系列参照文 | 第 2 篇 GPTQ(二阶补偿框架)、第 4 篇 SpQR/OWQ/HQQ(敏感度拆分)、第 5 篇 QuIP#/AQLM(码本路线主线) |
+| 本系列参照文 | 第 03 篇 GPTQ(二阶补偿框架)、第 06 篇 SpQR/OWQ/HQQ(敏感度拆分)、第 07 篇 QuIP#/AQLM(码本路线主线) |
 
 > **下一篇**:[Outlier Suppression 与 OS+](/2026/08/24/ptq-10-outlier-suppression/)--当所有人都在"保护 outlier"时,它选择"抑制 outlier":γ 迁移、token-wise 裁剪、以及比 SmoothQuant 多走一步的 shift+scale 等效变换。
 

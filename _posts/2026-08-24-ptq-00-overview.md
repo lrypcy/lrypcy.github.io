@@ -1,14 +1,18 @@
 ---
-title: "LLM PTQ 深度解析（00）：量化设计空间与算法族谱"
+title: "大模型量化算法（00）：量化全景——设计空间、算法族谱与决策树"
 date: 2026-08-24 09:00:00 +0800
 categories:
   - 模型量化
-tags: [quantization, ptq, llm, survey]
+tags: [llm-inference, quantization, survey, decision-tree]
 layout: post
 mathjax: true
 ---
 
-> **PTQ 系列 · 第 0 篇（总览）** —— 为后续 RTN/LLM.int8、GPTQ、AWQ/OmniQuant、SpQR/OWQ/HQQ、QuIP#/AQLM、SmoothQuant/ZeroQuant、QuaRot/SpinQuant、GGUF k-quants/FP8/MXFP4 八篇深度文章提供统一的数学框架与坐标系。本文所有公式从定义逐步展开、不跳步；附录给出可运行的 numpy 最小量化器，可直接复制验证。
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 0 · 总纲与地基** ｜ 第 00 篇 / 共 26 篇
+>
+> [01 量化器数学地基与 RTN →](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)
+>
+> **总览篇** —— 为后续 25 篇提供统一的数学框架与坐标系：量化器 × 粒度 × 误差度量三维设计空间、数值格式全景、七大算法路线族谱、按场景决策树与工程陷阱清单。本文所有公式从定义逐步展开、不跳步；附录给出可运行的 numpy 最小量化器，可直接复制验证。
 
 **TL;DR**
 * **核心结论**：LLM 后训练量化（PTQ）的全部算法，本质是在 **量化器（scale/zero-point 怎么定）** × **粒度（per-tensor/per-channel/per-group）** × **误差度量（MSE/KL/Perplexity/Hessian）** 三个维度上做设计选择。2022 年后的算法创新（GPTQ/AWQ/QuIP#/QuaRot…）几乎全部发生在"如何让量化误差在**输出空间**而非**权重空间**最小"这一点上——统一视角是 layer-wise 的 Hessian 加权误差 $\mathrm{tr}((\Delta W)^\top H \Delta W)$。
@@ -76,7 +80,7 @@ $$
 
 ### 1.3 从 MSE 最小化推导最优 scale
 
-设目标为最小化量化 MSE：$s^* = \arg\min_s E[(x - \hat{x}(s))^2]$。我们对两种典型分布做完整推导。
+设目标为最小化量化 MSE：$s^\ast = \arg\min_s E[(x - \hat{x}(s))^2]$。我们对两种典型分布做完整推导。
 
 #### 情形 A：均匀分布 $x \sim U(-a, a)$
 
@@ -98,16 +102,16 @@ $$
 $$
 
 $$
-\Rightarrow \frac{t}{2 q_{\max}} = 1 - t \quad\Rightarrow\quad t^* = \frac{2 q_{\max}}{2 q_{\max} + 1} = \frac{2^b - 2}{2^b - 1}
+\Rightarrow \frac{t}{2 q_{\max}} = 1 - t \quad\Rightarrow\quad t^\ast = \frac{2 q_{\max}}{2 q_{\max} + 1} = \frac{2^b - 2}{2^b - 1}
 $$
 
 于是最优步长：
 
 $$
-\boxed{s^* = \frac{a \cdot t^*}{q_{\max}} = \frac{2a}{2^b - 1}}
+\boxed{s^\ast = \frac{a \cdot t^\ast}{q_{\max}} = \frac{2a}{2^b - 1}}
 $$
 
-对比教科书公式：$2a$ 是分布全宽，所以 $s^* = \text{range}/(2^b - 1)$，而 folklore 公式 $s = \max|x|/2^{b-1} = \text{range}/2^b$。**两者在 8-bit 时只差 $256/255 \approx 0.4\%$，在 4-bit 时差 $16/15 \approx 6.7\%$**。注意 folklore 公式并非"完全不裁剪"——它对应的覆盖率 $t = (2^{b-1}-1)/2^{b-1}$ 略小于 1，是"轻微裁剪换舍入精度"的隐式权衡；而均匀分布下真正的闭式最优是 $2a/(2^b-1)$。这就是"$s \approx \max|x|/2^{b-1}$ 对均匀分布近似最优"这句话的精确含义：**近似误差随位宽下降，4-bit 以下开始不可忽略**。
+对比教科书公式：$2a$ 是分布全宽，所以 $s^\ast = \text{range}/(2^b - 1)$，而 folklore 公式 $s = \max|x|/2^{b-1} = \text{range}/2^b$。**两者在 8-bit 时只差 $256/255 \approx 0.4\%$，在 4-bit 时差 $16/15 \approx 6.7\%$**。注意 folklore 公式并非"完全不裁剪"——它对应的覆盖率 $t = (2^{b-1}-1)/2^{b-1}$ 略小于 1，是"轻微裁剪换舍入精度"的隐式权衡；而均匀分布下真正的闭式最优是 $2a/(2^b-1)$。这就是"$s \approx \max|x|/2^{b-1}$ 对均匀分布近似最优"这句话的精确含义：**近似误差随位宽下降，4-bit 以下开始不可忽略**。
 
 #### 情形 B：高斯分布 $x \sim N(0, \sigma^2)$
 
@@ -119,7 +123,7 @@ $$
 
 其中 $\Phi, \varphi$ 为标准正态 CDF/PDF。数值求根（附录 Demo 2 用网格搜索验证）：
 
-| 位宽 $b$ | 最优裁剪点 $u^* = M^*/\sigma$ | 最优步长 $s^* = u^*\sigma/q_{\max}$ | folklore $s = \max|x|/2^{b-1}$（$n=2\times10^5$ 时 $\max|x|\approx 4.5\sigma$） |
+| 位宽 $b$ | 最优裁剪点 $u^\ast = M^\ast/\sigma$ | 最优步长 $s^\ast = u^\ast\sigma/q_{\max}$ | folklore $s = \max|x|/2^{b-1}$（$n=2\times10^5$ 时 $\max|x|\approx 4.5\sigma$） |
 |---|---|---|---|
 | 4 | $\approx 2.5$ | $\approx 0.36\sigma$ | $\approx 0.56\sigma$（**偏大 56%**） |
 | 8 | $\approx 4.0$ | $\approx 0.031\sigma$ | $\approx 0.035\sigma$（偏大 13%） |
@@ -127,7 +131,7 @@ $$
 **结论**：位宽越低，基于经验 $\max|x|$ 的 folklore 公式越差——4-bit 时它把步长放大 56%，对应 SNR 损失约 3 dB（附录 Demo 2 实测）。原因：经验 max 是样本量的函数（$n=10^5$ 时 $\max|x| \approx 4.4\sigma$，$n=10^6$ 时 $\approx 4.75\sigma$），而最优裁剪点只由分布决定。这直接解释了：
 
 - **HQQ（数据免费量化）** 为什么用解析公式而非校准集——它按激活统计量直接解出最优 scale（arXiv:2311.08695）；
-- **AWQ 为什么要做激活感知的裁剪**——对 4-bit 权重，主动把离群通道的裁剪阈值压到 $u^* \approx 2.5$ 附近等价于把 scale 调向最优，同时用缩放因子补偿被裁剪通道的信息（arXiv:2306.00978）；
+- **AWQ 为什么要做激活感知的裁剪**——对 4-bit 权重，主动把离群通道的裁剪阈值压到 $u^\ast \approx 2.5$ 附近等价于把 scale 调向最优，同时用缩放因子补偿被裁剪通道的信息（arXiv:2306.00978）；
 - 8-bit 场景（SmoothQuant 的 W8A8）用简单 max 公式足够，因为 13% 的 scale 偏差只带来约 0.1 dB 损失——**不同位宽下"够用"的 scale 估计器完全不同**。
 
 ### 1.4 量化误差的 SNR 视角
@@ -139,7 +143,7 @@ $$
 | 均匀满幅（$x\in[-V,V]$） | $s = 2V/2^b$ | $6.02b$ dB | 24.1 dB |
 | 正弦满幅（峰值 $V$） | $s = 2V/2^b$ | $6.02b + 1.76$ dB | 25.8 dB |
 | 高斯 + $4\sigma$ 裁剪 | $s = 8\sigma/2^b$ | $6.02b - 7.27$ dB | 16.8 dB |
-| 高斯 + 最优裁剪（§1.3） | $s = u^*\sigma/q_{\max}$ | 数值解（附录实测） | 18.9 dB |
+| 高斯 + 最优裁剪（§1.3） | $s = u^\ast\sigma/q_{\max}$ | 数值解（附录实测） | 18.9 dB |
 
 推导示例（均匀满幅）：$\sigma_x^2 = V^2/3$，$\mathrm{MSE} = s^2/12 = (2V/2^b)^2/12$，故 $\mathrm{SNR} = \dfrac{V^2/3}{(2V/2^b)^2/12} = 2^{2b}$，即 $6.02b$ dB。$+1.76$ dB 来自正弦信号 $\sigma_x^2 = V^2/2$ 相对均匀信号 $V^2/3$ 的 $\log_{10}(3/2)$ 增益——**这个常数常被误抄到高斯场景**，实际高斯模型要减去约 7 dB 甚至更多（$4\sigma$ 裁剪时）。
 
@@ -676,7 +680,7 @@ if __name__ == "__main__":
 ### 9.2 运行结果解读（预期输出要点）
 
 - **Demo 1**：8-bit 下闭式解只比 folklore 好约 1%，4-bit 下好约 20%——印证 §1.3 的"位宽越低，scale 公式越要精确"；
-- **Demo 2**：naive 的 $s = \max|x|/8 \approx 0.55$，最优 $s \approx 0.35$（$k^* \approx 2.5$），SNR 提升约 3 dB——**4-bit 下经验 max 是糟糕的 scale 估计器**，这正是 HQQ/AWQ 裁剪的动机；
+- **Demo 2**：naive 的 $s = \max|x|/8 \approx 0.55$，最优 $s \approx 0.35$（$k^\ast \approx 2.5$），SNR 提升约 3 dB——**4-bit 下经验 max 是糟糕的 scale 估计器**，这正是 HQQ/AWQ 裁剪的动机；
 - **Demo 3 场景A**（输入通道离群）：per-channel（per 输出通道）与 per-tensor 同样糟糕（SNR 2.9 vs 2.4 dB）——每个输出通道都被 8 个离群输入污染，**per-channel 无法隔离输入通道离群**；per-group 沿 K 分组把离群限制在 8/32 个 group 内，g=128 时 SNR 回升到 12.1 dB、g=32 时 17.3 dB——**group 的主业是隔离输入通道离群，不是省存储，且 g 越细效果越好**；
 - **Demo 3 场景B**（输出通道范数差异，半数列 ×10）：per-channel 相对 per-tensor 提升约 3.7 dB（16.1 vs 12.4 dB），是它擅长的场景；注意 group 沿 K 的块尺度同样能吸收列间差异（g=128 时 18.6 dB）——两类粒度的适用性取决于**离群结构沿哪个轴**，这正是工程上要先用直方图/按通道统计定位离群轴的原因；
 - **Demo 4**：非对称（scale+zero 各 FP16）元数据占比 $8/g$：g=32 时 25%，g=128 时 6.2%，g=256 时 3.1%；对称（仅 scale）时减半为 $4/g$——与 §3.2 一致。
@@ -737,4 +741,4 @@ if __name__ == "__main__":
 
 ---
 
-**系列导航**：第 0 篇（本文，全景与统一数学框架）→[第 1 篇 RTN/LLM.int8](/2026/08/24/ptq-01-rtn-llmint8/)→[第 2 篇 GPTQ](/2026/08/24/ptq-02-gptq/)→[第 3 篇 AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/)→[第 4 篇 SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/)→[第 5 篇 QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/)→[第 6 篇 SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/)→[第 7 篇 QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/)→[第 8 篇 GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)→[第 9 篇 SqueezeLLM/VPTQ/CLAQ](/2026/08/24/ptq-09-squeezellm-vptq-claq/)→[第 10 篇 Outlier Suppression](/2026/08/24/ptq-10-outlier-suppression/)→[第 11 篇 RPTQ/QUIK/ATOM](/2026/08/24/ptq-11-rptq-quik-atom/)→[第 12 篇 OliVe](/2026/08/24/ptq-12-olive-abfloat/)→[第 13 篇 QoQ/QServe 与 QQQ](/2026/08/24/ptq-13-qserve-qqq/)。
+**系列导航**：第 00 篇（本文，全景与统一数学框架）→[第 E1 篇 RTN/LLM.int8](/2026/08/24/ptq-01-rtn-llmint8/)→[第 03 篇 GPTQ](/2026/08/24/ptq-02-gptq/)→[第 05 篇 AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/)→[第 06 篇 SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/)→[第 07 篇 QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/)→[第 10 篇 SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/)→[第 12 篇 QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/)→[第 15 篇 GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)→[第 08 篇 SqueezeLLM/VPTQ/CLAQ](/2026/08/24/ptq-09-squeezellm-vptq-claq/)→[第 11 篇 Outlier Suppression](/2026/08/24/ptq-10-outlier-suppression/)→[第 13 篇 RPTQ/QUIK/ATOM](/2026/08/24/ptq-11-rptq-quik-atom/)→[第 14 篇 OliVe](/2026/08/24/ptq-12-olive-abfloat/)→[第 16 篇 QoQ/QServe 与 QQQ](/2026/08/24/ptq-13-qserve-qqq/)。

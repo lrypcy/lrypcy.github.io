@@ -1,19 +1,19 @@
 ---
-title: "LLM PTQ 深度解析（06）：SmoothQuant 与 ZeroQuant：W8A8 的激活平滑"
+title: "大模型量化算法（10）：ZeroQuant 与 W8A8 工程实践"
 date: 2026-08-24 13:00:00 +0800
 categories:
   - 模型量化
-tags: [quantization, w8a8, smoothquant, zeroquant]
+tags: [llm-inference, quantization, zeroquant, w8a8]
 layout: post
 mathjax: true
 ---
 
-> **LLM 量化系列 · 第 6 篇**
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 2 · Activation PTQ** ｜ 第 10 篇 / 共 26 篇
 >
->[第 0 篇 量化全景](/2026/08/24/ptq-00-overview/)→[第 1 篇 RTN/LLM.int8](/2026/08/24/ptq-01-rtn-llmint8/)→[第 2 篇 GPTQ](/2026/08/24/ptq-02-gptq/)→
->[第 3 篇 AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/)→[第 4 篇 SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/)→[第 5 篇 QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/)→
-> **第 6 篇 SmoothQuant/ZeroQuant（本文）** →[第 7 篇 QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/)→
->[第 8 篇 GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)
+> [← 09 SmoothQuant](/2026/08/24/llm-quant-02-smoothquant-w8a8/) ｜ [11 Outlier Suppression →](/2026/08/24/ptq-10-outlier-suppression/)
+>
+> **LLM 量化系列 · 第 10 篇**
+>[第 15 篇 GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)
 
 ---
 
@@ -63,7 +63,7 @@ SmoothQuant 证明了"175B 模型 W8A8 可以无损"，ZeroQuant 证明了"动�
 
 ### 1.1 为什么是 W8A8：W4A16 的两块天花板
 
-前面几篇的主角是 W4A16：GPTQ（第 2 篇）和 AWQ（第 3 篇）都把权重压到 4bit、激活保持
+前面几篇的主角是 W4A16：GPTQ（第 03 篇）和 AWQ（第 05 篇）都把权重压到 4bit、激活保持
 FP16。理由很充分——权重是显存和带宽的大头，量化权重直接砍掉 decode 阶段（逐 token
 生成，memory-bound）的内存读取，这也是 4bit 权重在消费级显卡上跑 70B 模型的底气。
 但 W4A16 有两条绕不过去的天花板：
@@ -89,7 +89,7 @@ SmoothQuant 和 ZeroQuant 就是为攻克这一点而生的。
 
 ### 1.2 LLM.int8() 的启示：绕开不是解决
 
-第 1 篇详细拆解过 LLM.int8()（arXiv:2208.07339），这里只回顾与本文直接相关的两个结论：
+第 E1 篇详细拆解过 LLM.int8()（arXiv:2208.07339），这里只回顾与本文直接相关的两个结论：
 
 1. **outlier 是真实存在的结构现象**：LLM 激活中约 0.1%~1% 的通道幅值远超正常值
    （可达中位数的 20 倍以上），且这些通道是"常驻"的——位置在不同 token 间保持一致，
@@ -386,7 +386,7 @@ $\alpha$ 平滑），KV8 的困惑度仍接近 FP16，但需要更保守的 $\al
 
 后来的 KVQuant、KIVI 等工作把 KV8/KV4 做成了标配（按通道 + 按 token 的双 scale、
 异常通道混合精度等），但把"KV cache 纳入量化版图"的源头，可以追溯到 SmoothQuant
-的 KV8 实验。第 8 篇讲 GGUF/FP8 时还会回到这个话题。
+的 KV8 实验。第 15 篇讲 GGUF/FP8 时还会回到这个话题。
 
 ### 3.4 部署流水线：从校准到上线
 
@@ -504,7 +504,7 @@ ZeroQuant-V3 是一次范式转移：**从"部署时补救"转向"训练时预�
   教师提供软标签，学生在前向中模拟量化——量化误差被训练过程吸收，而不是部署时
   硬扛；
 - **意义**：PTQ 的精度天花板（尤其 4bit 以下）靠事后补救够不着，必须事前预防。
-  这一趋势与第 3 篇的 OmniQuant（learnable 等价变换 + 权重裁剪）、以及后来的
+  这一趋势与第 05 篇的 OmniQuant（learnable 等价变换 + 权重裁剪）、以及后来的
   QAT 2.0 完全同频——**量化方法论的钟摆，从"怎么量化"摆向了"怎么让模型适应量化"**。
 
 ### 4.5 三代对照与 SmoothQuant 横向对比
@@ -542,7 +542,7 @@ SmoothQuant 与 ZeroQuant 的全方位对比：
 - **合流是必然**：SmoothQuant 论文本身就用 per-token 动态量化做激活兜底（平滑 +
   动态的组合拳）；ZeroQuant 后来的版本与社区实践也吸收平滑思想。今天的 W8A8 部署
   几乎都是"静态平滑（或旋转均衡）+ 动态 scale"的混合体——这个混合体的样子，就是
-  第 7 篇 QuaRot/SpinQuant 的舞台。
+  第 12 篇 QuaRot/SpinQuant 的舞台。
 
 ---
 ## 5. 亲手实现：numpy 版 SmoothQuant
@@ -664,7 +664,7 @@ alpha 扫描（token-wise 激活量化）:
 
 读者可以自己改几个变量加深理解：把 outlier 通道数从 8 改成 2（模拟小模型），
 平滑的收益会明显变小；把 outlier 幅值从 100 提到 1000，α=0.5 也不再够用，需要
-更小的 α 或者干脆承认"这个任务该用 QuaRot 了"（第 7 篇预告）。
+更小的 α 或者干脆承认"这个任务该用 QuaRot 了"（第 12 篇预告）。
 
 ---
 
@@ -698,7 +698,7 @@ W8A8 没有取代 W4A16，它们在带宽与算力的天平两端各据一方：
 2026 年的主流实践是**场景化混用**：decode 阶段用 W4A16 省带宽，prefill 阶段切
 W8A8 吃算力，KV cache 用 KV8——这不是某一篇论文的发明，而是三者的工程合流。
 另外，SmoothQuant 的平滑与 GPTQ/AWQ 的 4bit 权重并不冲突：先平滑再做低比特权重
-量化是常见叠加（平滑让后续一切量化更容易），这点在第 2 篇的 GPTQ 讨论里也提到过。
+量化是常见叠加（平滑让后续一切量化更容易），这点在第 03 篇的 GPTQ 讨论里也提到过。
 
 ### 6.3 批判：α 调参、校准依赖与"静态假设"
 
@@ -748,7 +748,7 @@ W8A8/FP8 部署的数据流设计。**
 的幅值差异、残差流的逐层累积、GELU 正区间的无界输出，共同塑造了少数"高幅值
 语义通道"。只要 Transformer 结构不变，outlier 就在——量化方法能做的只有
 "绕开、削平、或打散"三种选择。SmoothQuant 选了削平，LLM.int8() 选了绕开，而
-QuaRot/SpinQuant（第 7 篇）选择用旋转正交变换**打散** outlier——那是"更彻底的
+QuaRot/SpinQuant（第 12 篇）选择用旋转正交变换**打散** outlier——那是"更彻底的
 平滑"：不做逐通道搬运，而是把所有通道的幅值能量均匀摊到每个维度上，连 α 都
 不用调了。平滑的极限，正是旋转的起点。
 
@@ -767,7 +767,7 @@ W8A8 有可测的退化（困惑度看不出，pass@k 看得出）。这催生�
 **展望：量化与结构优化的联合。** 下一阶段的看点在于量化与稀疏、低秩、投机
 解码的联合优化——"让模型更好量化"正在从"后处理技巧"变成"架构设计目标"
 （量化感知的预训练、量化友好的激活函数）。而硬件侧 FP8/MXFP4 的粒度革命
-（第 8 篇）会把 scale 的设计空间从"每张量一个"推向"每 32 个元素一组"——
+（第 15 篇）会把 scale 的设计空间从"每张量一个"推向"每 32 个元素一组"——
 到那时，SmoothQuant 的"难度守恒"视角依然适用：守恒定律不变，只是搬运工
 具换了。
 
@@ -788,7 +788,7 @@ W8A8 有可测的退化（困惑度看不出，pass@k 看得出）。这催生�
 
 ---
 
-> 本文是 LLM 量化系列的第 6 篇，
+> 本文是 LLM 量化系列的第 10 篇，
 > 前五篇覆盖 RTN/LLM.int8、GPTQ、AWQ/OmniQuant、SpQR/OWQ/HQQ 与 QuIP#/AQLM，
-> 下一篇（第 7 篇）将拆解 QuaRot/SpinQuant——看旋转正交变换如何把 SmoothQuant
+> 下一篇（第 12 篇）将拆解 QuaRot/SpinQuant——看旋转正交变换如何把 SmoothQuant
 > 的"逐通道搬运"升级为"全局打散"。欢迎在评论区交流 W8A8 部署中的实战细节。

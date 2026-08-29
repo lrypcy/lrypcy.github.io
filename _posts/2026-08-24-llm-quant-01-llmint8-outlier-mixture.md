@@ -1,26 +1,30 @@
 ---
-title: "大模型量化算法（01）：LLM.int8()——激活 outlier 与混合精度分解"
+title: "大模型量化算法（02）：LLM.int8()——激活 outlier 与混合精度分解"
 date: 2026-08-24 08:00:00 +0800
 categories:
   - 模型量化
-tags: [llm-inference, quantization, ptq, llmint8, outlier, int8-gemm]
+tags: [llm-inference, quantization, llmint8, outlier, mixed-precision]
 layout: post
 mathjax: true
 ---
+
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 1 · Weight-only PTQ** ｜ 第 02 篇 / 共 26 篇
+>
+> [← 01 量化器数学地基与 RTN](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) ｜ [03 GPTQ →](/2026/08/24/ptq-02-gptq/)
 
 > **TL;DR**
 >
 > * **核心结论**：LLM.int8() 的全部数学是一个严格等式——把激活矩阵按列拆成「干净列」集合 $I$ 与 outlier 列集合 $\bar{I}$，GEMM 随之拆成 INT8 主路与 FP16 小路：$XW = X_I W_I + X_{\bar{I}}W_{\bar{I}}$。**分解零近似，近似只发生在 INT8 路径的 RTN 上**。outlier 必须拆的原因藏在 scale 的 max 绑定机制里：一个约 130 的尖峰把正常值的有效位宽压到实测 2.98 bit（分解后恢复至 7.80 bit）——本篇实测，粒度细化只能收回三成误差（31.4%），物理分离才能回到基线（相对朴素 RTN 改善 792 倍）。
 > * **反直觉发现**：① INT8 失败是相变不是渐变——论文观察 ≤2.7B 无碍、6.7B 出现系统性 outlier、175B 直接崩溃[arXiv:2208.07339](https://arxiv.org/abs/2208.07339)；② 本篇阈值扫描显示失效是跳变式的：$\tau$ 在 [6,120] 平台内误差纹丝不动（恒为 $2.562\times10^{-6}$），越过 160 一列都拦不住、误差瞬间跳回 token-wise 水平——没有温和退化区；③ FP16 小路在数学上几乎免费（FLOPs 占比 ≈ outlier 列占比 0.4%，GEMM 层访存只多 0.4%），真正的代价在工程端——串行 kernel、物化中间张量、反量化 epilogue，让大模型端到端延迟不降反升。
-> * **系列定位**：这是 00 篇结尾埋的雷「激活侧 emergent outlier」的正式拆弹。00 篇证明权重量化的白噪声假设在 8-bit 下成立；本篇证明它对激活不成立，并给出第一代解法「绕开」（FP16 小路）。02 篇 SmoothQuant 将给出第二代解法「搬走」——用等效变换把 outlier 迁进权重，重新合并两条路径。配套实验真实可跑（纯 numpy，几秒出图）：llmint8_mixture。
+> * **系列定位**：这是 01 篇结尾埋的雷「激活侧 emergent outlier」的正式拆弹。01 篇证明权重量化的白噪声假设在 8-bit 下成立；本篇证明它对激活不成立，并给出第一代解法「绕开」（FP16 小路）。09 篇 SmoothQuant 将给出第二代解法「搬走」——用等效变换把 outlier 迁进权重，重新合并两条路径。配套实验真实可跑（纯 numpy，几秒出图）：llmint8_mixture。
 
 ---
 
-## 1. 从 00 篇的裂缝说起：INT8 在 LLM 上的相变式失败
+## 1. 从 01 篇的裂缝说起：INT8 在 LLM 上的相变式失败
 
 ### 1.1 规模阈值现象
 
-00 篇 §6.3 给出的结论是「8-bit RTN + max-scale 是合理默认」，证据来自白噪声期望分析：误差能量 $m\cdot s^2\lVert x\rVert^2/12$ 可控、逐层平均后互相抵消。但那套分析有个隐含前提——**scale 本身是正常的**。LLM.int8()（Dettmers et al., NeurIPS 2022）用一组跨规模的对照实验击碎了这个前提[arXiv:2208.07339](https://arxiv.org/abs/2208.07339)：
+01 篇 §6.3 给出的结论是「8-bit RTN + max-scale 是合理默认」，证据来自白噪声期望分析：误差能量 $m\cdot s^2\lVert x\rVert^2/12$ 可控、逐层平均后互相抵消。但那套分析有个隐含前提——**scale 本身是正常的**。LLM.int8()（Dettmers et al., NeurIPS 2022）用一组跨规模的对照实验击碎了这个前提[arXiv:2208.07339](https://arxiv.org/abs/2208.07339)：
 
 | 模型规模（OPT 系列） | 激活侧观察 | 朴素 INT8 RTN 表现 |
 |---|---|---|
@@ -52,7 +56,7 @@ LLM.int8() 论文内部的推进路线本身就是一部微型教材——每一
 
 ### 1.3 本篇的三件事与总览
 
-按 ROADMAP 01 行的要求，本篇覆盖三件事：outlier 长尾的实证刻画（§2）、混合精度分解为什么严格等价于原 GEMM（§3）、INT8 GEMM 的显存带宽账（§4）。先给整篇的数据流总览：
+本篇覆盖三件事：outlier 长尾的实证刻画（§2）、混合精度分解为什么严格等价于原 GEMM（§3）、INT8 GEMM 的显存带宽账（§4）。先给整篇的数据流总览：
 
 ```mermaid
 flowchart LR
@@ -72,19 +76,19 @@ flowchart LR
 
 ## 2. 激活 outlier 的长尾画像
 
-先按系列惯例登记本篇新增符号（沿用 00 篇字典，只增不改义）：
+先按系列惯例登记本篇新增符号（沿用 01 篇字典，只增不改义）：
 
 ### 2.1 符号字典增量表（本篇新增）
 
 | 符号 | 含义 | 易混淆提示 |
 |---|---|---|
 | $T$ | token 数，激活矩阵的行数 | 区别于权重形状的 $m$（输出通道数）；$X\in\mathbb{R}^{T\times n}$，$W\in\mathbb{R}^{n\times m}$ |
-| $\tau$ | outlier 绝对幅值阈值（论文记作 $\alpha=6.0$） | **$\alpha$ 已被 00 篇占用为裁剪比例**，全系列阈值一律用 $\tau$ |
+| $\tau$ | outlier 绝对幅值阈值（论文记作 $\alpha=6.0$） | **$\alpha$ 已被 01 篇占用为裁剪比例**，全系列阈值一律用 $\tau$ |
 | $I,\;\bar{I}$ | 干净列 / outlier 列的索引集，$\bar{I}=\{j:\max_i\lvert x_{ij}\rvert\ge\tau\}$ | 是**指标集**不是矩阵；对应矩阵块写作 $X_I$、$W_{\bar{I}}$ |
-| $R$ | 张量级动态范围 $R=\max_{t,k}\lvert x_{tk}\rvert$ | 数据属性；区别于 00 篇 $M=sq_{\max}$（量化器可表示幅值） |
+| $R$ | 张量级动态范围 $R=\max_{t,k}\lvert x_{tk}\rvert$ | 数据属性；区别于 01 篇 $M=sq_{\max}$（量化器可表示幅值） |
 | $x_{\mathrm{ref}}$ | 正常值的参考幅值（高斯场景取 $3\sigma$） | 仅用于有效位宽估算的经验锚点，不是严格统计量 |
-| $\tilde{b}$ | 正常值实际可用的有效位宽 $\log_2 L$ | 与 00 篇 $b_{\mathrm{eff}}$ 方向相反：$b_{\mathrm{eff}}$ 是元数据税做加法，$\tilde{b}$ 是被 outlier 吃掉后的剩余位宽 |
-| $X_q,\;W_q$ | INT8 码字矩阵 | 00 篇标量码字 $q$ 的矩阵推广，元素仍记作 $q$ |
+| $\tilde{b}$ | 正常值实际可用的有效位宽 $\log_2 L$ | 与 01 篇 $b_{\mathrm{eff}}$ 方向相反：$b_{\mathrm{eff}}$ 是元数据税做加法，$\tilde{b}$ 是被 outlier 吃掉后的剩余位宽 |
+| $X_q,\;W_q$ | INT8 码字矩阵 | 01 篇标量码字 $q$ 的矩阵推广，元素仍记作 $q$ |
 | $C_q$ | INT8 GEMM 的整数累加结果（int32） | 中间量；不乘回 scale 就不是合法输出 |
 | $s_x,\;s_w$ | token-wise / per-output-channel scale 向量 | 仍是字典里的 $s$，只是带方向下标：$s_x[t]$ 第 $t$ 行、$s_w[o]$ 第 $o$ 个输出通道 |
 | $\odot,\;\otimes$ | Hadamard 积（逐元素乘）/ 外积 | 全系列仅这两个含义 |
@@ -113,7 +117,7 @@ $$
 
 ### 2.3 尖峰绑架 scale：有效位宽坍塌的推导
 
-符号沿用 00 篇字典（$s$ 为 scale、$q_{\max}=2^{b-1}-1$、$\epsilon$ 为量化误差），新增记号见 §2.1 增量表。动态对称量化的 scale 由每行自己的最大绝对值决定：
+符号沿用 01 篇字典（$s$ 为 scale、$q_{\max}=2^{b-1}-1$、$\epsilon$ 为量化误差），新增记号见 §2.1 增量表。动态对称量化的 scale 由每行自己的最大绝对值决定：
 
 $$
 s_x[t] = \frac{\max_k \lvert x_{tk}\rvert}{q_{\max}}.
@@ -136,11 +140,11 @@ L = 2\lfloor 127\times 0.03\rfloor + 1 = 2\lfloor 3.81\rfloor+1 = 7
 \tilde{b} = \log_2 7 \approx 2.81\ \text{bit}.
 $$
 
-**这就是「8-bit 被 outlier 偷走 5 个 bit」的数学形态**：坍塌程度完全由比值 $x_{\mathrm{ref}}/R$ 决定，而 $q_{\max}$ 是硬件常数。任何不动这个比值的手段——比如把 scale 做得更细——都是无效药方，§3.5 的实验会定量验证这一点。实测部分：不拆 outlier 时全张量正常值有效位宽均值 **2.98 bit**，分解后恢复到 **7.80 bit**（恢复 2.61 倍）；7.80 略小于 8 是因为干净行的 max（约 $4.7\sigma$）仍高于参考幅值 $3\sigma$——max-scale 的固有浪费，00 篇 §4 已给它定过价。
+**这就是「8-bit 被 outlier 偷走 5 个 bit」的数学形态**：坍塌程度完全由比值 $x_{\mathrm{ref}}/R$ 决定，而 $q_{\max}$ 是硬件常数。任何不动这个比值的手段——比如把 scale 做得更细——都是无效药方，§3.5 的实验会定量验证这一点。实测部分：不拆 outlier 时全张量正常值有效位宽均值 **2.98 bit**，分解后恢复到 **7.80 bit**（恢复 2.61 倍）；7.80 略小于 8 是因为干净行的 max（约 $4.7\sigma$）仍高于参考幅值 $3\sigma$——max-scale 的固有浪费，01 篇 §4 已给它定过价。
 
 ### 2.4 为什么权重没事、激活崩
 
-00 篇 §6 的白噪声分析对权重依然成立，问题全在激活侧。把两者的量化友好性摆在一起看：
+01 篇 §6 的白噪声分析对权重依然成立，问题全在激活侧。把两者的量化友好性摆在一起看：
 
 | 维度 | 权重 $W$ | 激活 $X$ |
 |---|---|---|
@@ -148,7 +152,7 @@ $$
 | outlier 来源 | 无系统性 outlier 列 | emergent outlier 通道，位置固定、跨 token 复现 |
 | 可达粒度 | 离线任意细：per-channel / per-group 都行 | 在线受限：per-tensor 或 per-token（per-channel 需每次前向做全列归约） |
 | scale 计算时机 | 离线一次，折叠进 kernel 载荷 | 每次前向现算（动态量化） |
-| INT8 RTN 后果 | 精度损失在噪声水平（00 篇 §6.3） | 6.7B 起劣化、175B 崩溃（表 1） |
+| INT8 RTN 后果 | 精度损失在噪声水平（01 篇 §6.3） | 6.7B 起劣化、175B 崩溃（表 1） |
 
 *表 3：权重与激活的量化友好性对比*
 
@@ -171,7 +175,7 @@ $$
 
 ### 3.1 outlier 集合的定义与三条切分规则
 
-给定阈值 $\tau$（论文取 $\tau=6.0$；注意本系列 00 篇已把 $\alpha$ 专用作裁剪比例，故此处改用 $\tau$ 记阈值），outlier 列集合定义为：
+给定阈值 $\tau$（论文取 $\tau=6.0$；注意本系列 01 篇已把 $\alpha$ 专用作裁剪比例，故此处改用 $\tau$ 记阈值），outlier 列集合定义为：
 
 $$
 \bar{I}(X) = \big\{\, j \in [n] \;:\; \max_i \lvert x_{ij}\rvert \ge \tau \,\big\},
@@ -211,7 +215,7 @@ $$
 **严格等式，零近似。**所以「为什么分解能精确恢复 FP16 语义」的答案要分两层说：
 
 - **结构层**：上面是恒等式，分割方式不影响总和；
-- **数值层**：FP16 小路对 outlier 列原样保留浮点表示，一个比特都不丢；唯一的近似来源是 INT8 路径内部的 RTN 舍入（其噪声水平由 00 篇 §6 分析过，$\mathbb{E}[\Delta y_i^2]=s^2\lVert x\rVert^2/12$）。
+- **数值层**：FP16 小路对 outlier 列原样保留浮点表示，一个比特都不丢；唯一的近似来源是 INT8 路径内部的 RTN 舍入（其噪声水平由 01 篇 §6 分析过，$\mathbb{E}[\Delta y_i^2]=s^2\lVert x\rVert^2/12$）。
 
 这也解释了论文的核心消融：只移除 outlier（全部走 FP16）就能让 175B 恢复零损失——病因不在 INT8 本身，而在 INT8 的 scale 被 outlier 劫持[arXiv:2208.07339](https://arxiv.org/abs/2208.07339)。
 
@@ -243,7 +247,7 @@ Y_{\mathrm{int8}}[t,o] - Y_I[t,o]
 \approx \sum_{k\in I}\Big( x_{tk}\,\epsilon^{w}_{ko} + w_{ko}\,\epsilon^{x}_{tk} \Big),
 $$
 
-二阶交叉项 $\epsilon^{x}\epsilon^{w}\sim s_xs_w/4$ 相对前两项可以忽略。套用 00 篇 §6.2 的白噪声期望（$\mathbb{E}[\epsilon]=0$、$\mathrm{Var}(\epsilon)=s^2/12$）：
+二阶交叉项 $\epsilon^{x}\epsilon^{w}\sim s_xs_w/4$ 相对前两项可以忽略。套用 01 篇 §6.2 的白噪声期望（$\mathbb{E}[\epsilon]=0$、$\mathrm{Var}(\epsilon)=s^2/12$）：
 
 $$
 \mathbb{E}\big[\Delta Y^2[t,o]\big] \approx \sum_{k\in I}\Big( w_{ko}^2\,\frac{s_x^2[t]}{12} + x_{tk}^2\,\frac{s_w^2[o]}{12} \Big).
@@ -309,7 +313,7 @@ $$
 
 **这张图回答四个问题**：
 
-1. **分解到底值多少**：朴素 RTN 的 $2.030\times10^{-3}$ 对混合分解的 $2.562\times10^{-6}$，改善 **792 倍**——误差水平回到「INT8 路径自身 RTN 噪声」的理论位置（00 篇 §6.3：8-bit 高斯相对均方误差约 $10^{-4}$ 量级，再经 $m$ 维求和平均稀释）。
+1. **分解到底值多少**：朴素 RTN 的 $2.030\times10^{-3}$ 对混合分解的 $2.562\times10^{-6}$，改善 **792 倍**——误差水平回到「INT8 路径自身 RTN 噪声」的理论位置（01 篇 §6.3：8-bit 高斯相对均方误差约 $10^{-4}$ 量级，再经 $m$ 维求和平均稀释）。
 2. **粒度细化为什么不够**：token-wise 不拆只比朴素好 **31.4%**（$1.393\times10^{-3}$ vs $2.030\times10^{-3}$），离基线还差近三个数量级。§2.3 的预言被精确兑现：不动 $x_{\mathrm{ref}}/R$ 的方案全是无效药方。
 3. **τ 的鲁棒区间在哪**：$[6,120]$ 的宽平台上 relMSE 恒为 $2.562\times10^{-6}$——因为合成数据两族幅值之间有空带，只要阈值落在带内结果就一模一样。这对应论文「对阈值选择不敏感」的报告[arXiv:2208.07339](https://arxiv.org/abs/2208.07339)。
 4. **失效是什么形状**：没有温和退化区。$\tau$ 越过下界是「全杀」（纯 FP16，慢但不准不到哪去），越过上界是「漏杀」（relMSE 跳回 $1.393\times10^{-3}$，一步从最优跌回最差）——**相变式失效**。工程推论：阈值要往保守方向偏置，宁可过杀进 FP16（代价线性小），不可漏杀（代价数量级大）。
@@ -322,7 +326,7 @@ $$
 
 ### 4.1 解码侧：每 token 字节账
 
-00 篇 §1 说过，解码阶段是访存受限负载：单流贪码每生成一个 token，都要把全部权重从显存过一遍（忽略 KV cache 与激活，这是理论下界的口径）：
+01 篇 §1 说过，解码阶段是访存受限负载：单流贪码每生成一个 token，都要把全部权重从显存过一遍（忽略 KV cache 与激活，这是理论下界的口径）：
 
 $$
 \mathcal{B}_{\mathrm{tok}} \approx N_{\mathrm{param}}\times\text{bytes\_per\_param}.
@@ -360,7 +364,7 @@ $$
 **这张图回答两个问题**：
 
 1. **正确性的存储价格是多少**：左图里混合配置与朴素 INT8 的柱子几乎等高——outlier 切片只带来 **+0.4%** 访存（3072 B）。在这个 toy 尺度上，「把 0.4% 的列保成 FP16」买回 792 倍误差改善，是一笔极其便宜的保险。
-2. **恢复后的 7.80 bit 为什么不满 8**：右图显示分解后仍有 0.2 bit 缺口——干净行的 max（约 $4.7\sigma$）高于正常值参考幅值 $3\sigma$，max-scale 天生要为一个用不上的头部范围买单。这正是 00 篇 §4 裁剪分析的回声，也是后续算法继续压榨的空间。
+2. **恢复后的 7.80 bit 为什么不满 8**：右图显示分解后仍有 0.2 bit 缺口——干净行的 max（约 $4.7\sigma$）高于正常值参考幅值 $3\sigma$，max-scale 天生要为一个用不上的头部范围买单。这正是 01 篇 §4 裁剪分析的回声，也是后续算法继续压榨的空间。
 
 ### 4.3 存储端与延迟端：钱到底省在哪、亏在哪
 
@@ -372,7 +376,7 @@ $$
 2. **工程层（真正的税）**：实现里两条路径串行执行、中间有同步点；outlier 集合依赖当前输入，切片 $X_{\bar{I}}$ 每次前向都要现场 gather，无法预编译进图；$C_q$（int32，$T\times m$）还要额外过一遍反量化 epilogue 才变成 FP16 输出；早期 cuBLASLt 的 INT8 接口还要求特定布局转换。bitsandbytes 为此写了自定义 CUDA kernel[arXiv:2208.07339](https://arxiv.org/abs/2208.07339)。
 3. **结论层**：论文明确该方法的目标是省显存而非加速，大模型上端到端速度持平或略慢于 FP16 基线（社区复现口径约慢 15–20%，原始统计口径未验证）[arXiv:2208.07339](https://arxiv.org/abs/2208.07339)。
 
-一句话记账：**省的是字节，亏的是时钟。**这句话是理解后续所有 W8A8 算法动机的钥匙——02 篇 SmoothQuant 的全部努力，就是把这两条账同时抹平。
+一句话记账：**省的是字节，亏的是时钟。**这句话是理解后续所有 W8A8 算法动机的钥匙——09 篇 SmoothQuant 的全部努力，就是把这两条账同时抹平。
 
 ### 4.4 与论文口径的对照（诚实注脚）
 
@@ -388,19 +392,19 @@ $$
 3. **$\tau$ 是经验超参**——本篇 τ 扫描显示失效是相变式（表 5），跨模型族、跨训练配置迁移时风险不可控；
 4. **只救 INT8**——4-bit 时代激活侧的问题原封不动，QLoRA 的对策干脆是不量化激活（NF4 只压权重、计算保持 bf16）[arXiv:2305.14314](https://arxiv.org/abs/2305.14314)。
 
-**下一篇预告**：《大模型量化算法（02）：SmoothQuant——把 outlier 搬走的等效变换》。既然「绕开」的代价是两条路径，那就让 outlier 根本不出现在激活里：找一个逐特征的等效缩放 $X\,\mathrm{diag}(d^{-1})\cdot\mathrm{diag}(d)\,W = XW$，把激活的量级迁进权重，使两条路径重新合并为一条 INT8 主路。迁移比例怎么定、为什么「量化难度守恒」、激活统计量怎么估——02 篇展开[arXiv:2211.10438](https://arxiv.org/abs/2211.10438)。
+**下一篇预告**：《大模型量化算法（02）：SmoothQuant——把 outlier 搬走的等效变换》。既然「绕开」的代价是两条路径，那就让 outlier 根本不出现在激活里：找一个逐特征的等效缩放 $X\,\mathrm{diag}(d^{-1})\cdot\mathrm{diag}(d)\,W = XW$，把激活的量级迁进权重，使两条路径重新合并为一条 INT8 主路。迁移比例怎么定、为什么「量化难度守恒」、激活统计量怎么估——09 篇展开[arXiv:2211.10438](https://arxiv.org/abs/2211.10438)。
 
-**遗留问题清单**（供读者带去后面各篇）：① τ 相变式失效能否被「按层校准」缓解？（SmoothQuant 用每层统计量回答）② FP16 小路的访存税在 W4A8 下会变成什么样？（AWQ/GPTQ 的 kernel 策略回答）③ 如果干脆不量化激活，只压权重能走多远？（QLoRA 与 10 篇数值格式回答）
+**遗留问题清单**（供读者带去后面各篇）：① τ 相变式失效能否被「按层校准」缓解？（SmoothQuant 用每层统计量回答）② FP16 小路的访存税在 W4A8 下会变成什么样？（AWQ/GPTQ 的 kernel 策略回答）③ 如果干脆不量化激活，只压权重能走多远？（QLoRA 与 15 篇数值格式回答）
 
 ## 参考清单
 
 **论文（ID 已逐一核验）**
 
 - Dettmers, Lewis, Belkada, Zettlemoyer, *LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale*, [arXiv:2208.07339](https://arxiv.org/abs/2208.07339) —— 本篇主角：outlier 实证、vector-wise 量化、分解数学与显存结论的全部出处
-- Xiao et al., *SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models*, [arXiv:2211.10438](https://arxiv.org/abs/2211.10438) —— 02 篇主角，等效变换迁移 outlier 的原始提案
-- Nagel et al., *A White Paper on Neural Network Quantization*, [arXiv:2106.08295](https://arxiv.org/abs/2106.08295) —— 00 篇框架出处，RTN 噪声模型沿用至此
-- Frantar et al., *GPTQ*, [arXiv:2210.17323](https://arxiv.org/abs/2210.17323) —— 04 篇主角；其 kernel 继承本篇的外积反量化结构
-- Lin et al., *AWQ: Activation-aware Weight Quantization*, [arXiv:2306.00978](https://arxiv.org/abs/2306.00978) —— 03 篇主角，激活感知 scale 是对本篇「轴不对症」诊断的另一条回应
+- Xiao et al., *SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models*, [arXiv:2211.10438](https://arxiv.org/abs/2211.10438) —— 09 篇主角，等效变换迁移 outlier 的原始提案
+- Nagel et al., *A White Paper on Neural Network Quantization*, [arXiv:2106.08295](https://arxiv.org/abs/2106.08295) —— 01 篇框架出处，RTN 噪声模型沿用至此
+- Frantar et al., *GPTQ*, [arXiv:2210.17323](https://arxiv.org/abs/2210.17323) —— 03 篇主角；其 kernel 继承本篇的外积反量化结构
+- Lin et al., *AWQ: Activation-aware Weight Quantization*, [arXiv:2306.00978](https://arxiv.org/abs/2306.00978) —— 04 篇主角，激活感知 scale 是对本篇「轴不对症」诊断的另一条回应
 - Dettmers et al., *QLoRA: Efficient Finetuning of Quantized LLMs*, [arXiv:2305.14314](https://arxiv.org/abs/2305.14314) —— 4-bit 时代「只量化权重」路线的参照
 
 **代码与规范**
@@ -412,7 +416,7 @@ $$
 
 **系列导航**
 
-- 系列规划：[ROADMAP.md](ROADMAP.md)（11 篇 PTQ 核心 + 4 篇 QAT）
+- 系列规划：见站内 [模型量化课程路线图](/quantization-roadmap/)（全 26 篇目录与阅读路径）
 - 上一篇：《00 量化器数学地基与 RTN 基线》｜下一篇：《02 SmoothQuant：把 outlier 搬走的等效变换》
 - 交叉引用：本站《AI 编译器量化综述》提供编译器视角的互补叙述
 

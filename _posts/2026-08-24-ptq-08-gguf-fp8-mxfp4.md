@@ -1,14 +1,16 @@
 ---
-title: "LLM PTQ 深度解析（08）：GGUF k-quants、FP8 与 MXFP4：生态与硬件格式"
+title: "大模型量化算法（15）：GGUF k-quants / FP8 / MXFP4——格式与生态"
 date: 2026-08-24 14:20:00 +0800
 categories:
   - 模型量化
-tags: [quantization, gguf, fp8, mxfp4]
+tags: [llm-inference, quantization, gguf, k-quants, fp8, mxfp4, numeric-format]
 layout: post
 mathjax: true
 ---
 
-> 系列第 8 篇（收尾篇）｜前篇回顾：第 7 篇 [QuaRot/SpinQuant 通过旋转消除激活离群值](/2026/08/24/ptq-07-quarot-spinquant/)
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 3 · 格式与部署** ｜ 第 15 篇 / 共 26 篇
+>
+> [← 14 OliVe](/2026/08/24/ptq-12-olive-abfloat/) ｜ [16 QServe/QQQ →](/2026/08/24/ptq-13-qserve-qqq/)
 >
 > 前七篇我们讨论的都是「算法」：GPTQ 的 Hessian 逆、AWQ 的激活感知、QuaRot 的旋转不变性……这一篇我们要换一个视角——**从算法回到工程与硬件**。因为 2026 年的现实是：绝大多数生产环境里的模型，跑的不是论文里的算法，而是 **GGUF 容器里的 k-quants**、**H100 上的 FP8**、以及正在爬坡的 **MXFP4**。格式即生态，生态即事实。
 
@@ -70,10 +72,10 @@ mathjax: true
 
 回看这个系列：
 
-- 第 1 篇 RTN/LLM.int8 解决「离群值」；
+- 第 E1 篇 RTN/LLM.int8 解决「离群值」；
 - 第 2、3 篇 GPTQ/AWQ 解决「误差补偿」；
-- 第 5 篇 QuIP#/AQLM 解决「格点与码本」；
-- 第 7 篇 QuaRot/SpinQuant 解决「激活分布」……
+- 第 07 篇 QuIP#/AQLM 解决「格点与码本」；
+- 第 12 篇 QuaRot/SpinQuant 解决「激活分布」……
 
 这些算法最终都要**落到某种具体的存储与计算格式**上。而一旦落到格式，就进入了另一个维度的博弈：CPU 的 cache line 宽度、GPU 的 Tensor Core 数据通路、容器的兼容性、社区的惯性。**算法论文可以天马行空，生产格式必须脚踏实地。**
 
@@ -296,7 +298,7 @@ $$
 3. 量化时：**先按 $I_i$ 决定行级位宽分配**（重要行 6-bit），再做块内 scale 求解时用 $I_i$ 加权最小二乘；
 4. 产出 `imatrix.dat` 文件，可复用于同一模型的多次量化。
 
-> **实践要点**：imatrix 的质量直接决定 k-quants 的最终精度。社区经验：**校准数据要与推理目标分布匹配**（代码模型用代码语料、中文模型用中文语料），且规模不能太小（建议 ≥ 1M token）。用错分布的 imatrix 甚至比不用还差——这是「校准数据分布漂移」问题在 CPU 生态的翻版，和第 3 篇 AWQ 里讨论的校准集敏感性同源。
+> **实践要点**：imatrix 的质量直接决定 k-quants 的最终精度。社区经验：**校准数据要与推理目标分布匹配**（代码模型用代码语料、中文模型用中文语料），且规模不能太小（建议 ≥ 1M token）。用错分布的 imatrix 甚至比不用还差——这是「校准数据分布漂移」问题在 CPU 生态的翻版，和第 05 篇 AWQ 里讨论的校准集敏感性同源。
 
 ### 3.5 k-quants 家族全景：bits/weight 与实测困惑度
 
@@ -376,7 +378,7 @@ $$
 
 ### 4.3 为什么 FP8 适合权重+激活同时量化
 
-回顾本系列第 6 篇 SmoothQuant 的核心困难：**激活的离群值让 INT8 激活量化必须做通道级 scale**（per-channel 或 per-token），否则误差爆炸。FP8 天然缓解这个问题：
+回顾本系列第 10 篇 SmoothQuant 的核心困难：**激活的离群值让 INT8 激活量化必须做通道级 scale**（per-channel 或 per-token），否则误差爆炸。FP8 天然缓解这个问题：
 
 **FP8 激活量化的容错机制**：设激活 $x$ 服从带离群值的分布，INT8 需要先估计全局 scale $s$，离群值直接饱和截断；FP8 则把每个数编码为 $2^{e} \cdot (1 + m/8)$——**离群值只是指数变大，尾数精度略微下降，不会截断**。对 E4M3：
 
@@ -552,7 +554,7 @@ NF4 的意义远超格式本身——它是 QLoRA 得以成立的精度基础：
 
 - **QLoRA 的量化-微调解耦**：基座模型用 NF4 冻结，LoRA 适配器用 BF16 训练。NF4 的精度保证「冻结基座 + 少量适配器」能逼近全参微调的效果（65B 模型单卡 48GB 可微调，原论文的 headline 数字）；
 - **与 4-bit 其他方案的对比**（QLoRA 原文实验）：NF4 在多数任务上优于 FP4 与 INT4——**这直接验证了「分位数 > 均匀 > 浮点（无 block scale）」的精度排序**；
-- **后续影响**：NF4 的分位数思想启发了 bitsandbytes 的 NF 系列格式，也间接启发了 GPTQ/AWQ 生态对「码本设计」的重视（对照第 5 篇的 QuIP# 格点码本）。
+- **后续影响**：NF4 的分位数思想启发了 bitsandbytes 的 NF 系列格式，也间接启发了 GPTQ/AWQ 生态对「码本设计」的重视（对照第 07 篇的 QuIP# 格点码本）。
 
 > **定位辨析**：NF4 是「离线存储 + 微调」格式，不是「在线推理」格式——它的码本查表在 GPU 上不如 INT4 的整数运算快，因此**主流推理引擎（vLLM、llama.cpp）默认不用 NF4 做推理**。它的历史角色是：**证明了 4-bit 的精度天花板可以靠「理解分布」而不是「堆硬件」来逼近**。
 
@@ -791,7 +793,7 @@ if __name__ == "__main__":
 这是本篇最想强调的一个观点：**过去我们认为是算法选择格式，2026 年的现实是硬件格式反过来约束算法空间**。
 
 - **格式定了，算法空间就定了**：FP8 成为标准后，SmoothQuant 这类「为 INT8 激活量化做预处理」的算法失去了用武之地——**不是算法失效了，是格式把问题消解掉了**。同样，MXFP4 一旦普及，AWQ 的激活感知通道缩放、GPTQ 的逐列 Hessian 补偿，都会从「必需」降级为「锦上添花」；
-- **逆向案例同样存在**：正因为 INT4 硬件不支持浮点尾数，GPTQ/AWQ 的「误差补偿」算法才被逼到极致——**算法是被格式的缺陷逼出来的**。QuIP# 的 incoherence processing 也是同理（第 5 篇）——它本质上是在「格式不支持浮点」的约束下，用旋转把分布改造得适合整数格式；
+- **逆向案例同样存在**：正因为 INT4 硬件不支持浮点尾数，GPTQ/AWQ 的「误差补偿」算法才被逼到极致——**算法是被格式的缺陷逼出来的**。QuIP# 的 incoherence processing 也是同理（第 07 篇）——它本质上是在「格式不支持浮点」的约束下，用旋转把分布改造得适合整数格式；
 - **对研究者的警示**：2026 年再提出新的量化算法，第一问应该是「**这个算法对应的格式，下一代硬件支持吗？**」——如果答案是否定的，它大概率只会停留在论文里。**硬件 ISA 的更新周期（2-3 年）正在成为量化研究的「看不见的审稿人」**。
 
 一个更深的判断：**量化研究的重心正在从「算法」转向「格式-硬件协同设计」**。Microscaling 规范（MX）的出现标志着：格式不再由软件社区各自定义，而是由**硬件厂商联合体**定义——AMD/ARM/Intel/Microsoft/NVIDIA 坐在一起定格式，然后软件生态跟着适配。这种「硬件先定义、软件后适配」的范式，与 k-quants 时代「软件先定义、硬件不理会」的范式，是根本性的反转。
@@ -824,7 +826,7 @@ if __name__ == "__main__":
 
 ---
 
-> 系列导航：第 0 篇 [量化全景](/2026/08/24/ptq-00-overview/) → 第 1 篇 [RTN/LLM.int8](/2026/08/24/ptq-01-rtn-llmint8/) → 第 2 篇 [GPTQ](/2026/08/24/ptq-02-gptq/) → 第 3 篇 [AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/) → 第 4 篇 [SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/) → 第 5 篇 [QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/) → 第 6 篇 [SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) → 第 7 篇 [QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/) → **第 8 篇 GGUF k-quants/FP8/MXFP4（本文）**
+> 系列导航：第 00 篇 [量化全景](/2026/08/24/ptq-00-overview/) → 第 E1 篇 [RTN/LLM.int8](/2026/08/24/ptq-01-rtn-llmint8/) → 第 03 篇 [GPTQ](/2026/08/24/ptq-02-gptq/) → 第 05 篇 [AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/) → 第 06 篇 [SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/) → 第 07 篇 [QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/) → 第 10 篇 [SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) → 第 12 篇 [QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/) → **第 15 篇 GGUF k-quants/FP8/MXFP4（本文）**
 
 ---
 

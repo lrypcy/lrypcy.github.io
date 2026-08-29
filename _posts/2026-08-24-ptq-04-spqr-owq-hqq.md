@@ -1,17 +1,16 @@
 ---
-title: "LLM PTQ 深度解析（04）：SpQR、OWQ 与 HQQ：异常值拆分与数据免费量化"
+title: "大模型量化算法（06）：SpQR / OWQ / HQQ——异常值拆分与免数据量化"
 date: 2026-08-24 11:40:00 +0800
 categories:
   - 模型量化
-tags: [quantization, ptq, spqr, owq, hqq]
+tags: [llm-inference, quantization, spqr, owq, hqq, outlier]
 layout: post
 mathjax: true
 ---
 
-> **系列导航（LLM PTQ 量化算法全景）**
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 1 · Weight-only PTQ** ｜ 第 06 篇 / 共 26 篇
 >
-> - 第 0 篇 [量化全景](/2026/08/24/ptq-00-overview/) → 第 1 篇 [RTN/LLM.int8](/2026/08/24/ptq-01-rtn-llmint8/) → 第 2 篇 [GPTQ](/2026/08/24/ptq-02-gptq/) → 第 3 篇 [AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/)
-> - **第 4 篇 SpQR / OWQ / HQQ（本文）** → 第 5 篇 [QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/) → 第 6 篇 [SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) → 第 7 篇 [QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/) → 第 8 篇 [GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)
+> [← 05 OmniQuant](/2026/08/24/ptq-03-awq-omniq/) ｜ [07 QuIP#/AQLM →](/2026/08/24/ptq-05-quip-aqlm/)
 
 ---
 
@@ -62,7 +61,7 @@ mathjax: true
 
 ## 1. 引言：outlier 的三条处理路线
 
-前几篇我们已经反复撞见同一个"钉子"：**LLM 的激活与权重中存在少量幅值极大的异常值（outlier）**。第 1 篇的 LLM.int8() 用混合精度分解（outlier 列走 fp16）硬扛，第 2 篇的 GPTQ 用 Hessian 做误差补偿硬压，第 3 篇的 AWQ 则发现"激活幅度大的通道，其权重必须保护"。
+前几篇我们已经反复撞见同一个"钉子"：**LLM 的激活与权重中存在少量幅值极大的异常值（outlier）**。第 E1 篇的 LLM.int8() 用混合精度分解（outlier 列走 fp16）硬扛，第 03 篇的 GPTQ 用 Hessian 做误差补偿硬压，第 05 篇的 AWQ 则发现"激活幅度大的通道，其权重必须保护"。
 
 先快速回顾 outlier 的成因与危害，便于理解本文三兄弟的动机：
 
@@ -114,7 +113,7 @@ $$
 s_{ij} \;\approx\; |W_{ij}| \cdot \sqrt{H_{jj}} \;=\; |W_{ij}| \cdot \sqrt{\mathbb{E}_{x \sim \mathcal{D}}[x_j^2]}
 $$
 
-这个公式的直觉非常清晰：**一个权重敏感，当且仅当它自身幅值大，并且它乘的激活 $x_j$ 方差大**。激活方差大的通道正是 LLM 里臭名昭著的 outlier 通道（第 1 篇 LLM.int8 的观察），SpQR 等于把"通道级 outlier"进一步细化到了"元素级敏感度"。
+这个公式的直觉非常清晰：**一个权重敏感，当且仅当它自身幅值大，并且它乘的激活 $x_j$ 方差大**。激活方差大的通道正是 LLM 里臭名昭著的 outlier 通道（第 E1 篇 LLM.int8 的观察），SpQR 等于把"通道级 outlier"进一步细化到了"元素级敏感度"。
 
 **计算流程上的两个工程细节**：
 
@@ -373,7 +372,7 @@ $$
 解出闭式解：
 
 $$
-\boxed{\,s^* = \frac{\mathrm{Cov}(Y, q)}{\mathrm{Var}(q)} \;=\; \frac{\sum_i (Y_i - \bar{Y})(q_i - \bar{q})}{\sum_i (q_i - \bar{q})^2}, \qquad z^* = \bar{Y} - s^* \bar{q}\,}
+\boxed{\,s^\ast = \frac{\mathrm{Cov}(Y, q)}{\mathrm{Var}(q)} \;=\; \frac{\sum_i (Y_i - \bar{Y})(q_i - \bar{q})}{\sum_i (q_i - \bar{q})^2}, \qquad z^\ast = \bar{Y} - s^\ast \bar{q}\,}
 $$
 
 即：**新 scale 是 $Y$ 与当前量化网格 $q$ 的协方差比，新 zero-point 让量化中心对齐 $Y$ 的均值**。更新完 $(s, z)$ 后，$q$ 会随之改变（网格移动了），于是下一轮迭代重新计算 $q$，再解一次最小二乘——如此往复直到自洽。
@@ -662,9 +661,9 @@ SpQR/OWQ 在论文里的 ppl 数字很漂亮，但**从论文到生产部署之�
 
 2023 下半年到 2024 年，两条"**不拆 outlier，而是让 outlier 消失**"的稠密路线崛起，直接终结了拆分路线的统治地位：
 
-- **码本路线（QuIP#/AQLM，系列第 5 篇）**：先用 Hadamard 旋转把权重和 Hessian 变成**不相干（incoherent）**的——outlier 的能量被摊平到所有坐标上，每个坐标都变得"平均"，不再有需要特殊保护的尖峰；然后对摊平后的权重做码本量化，2bit 都能接近无损。**全程稠密、规则、无稀疏**。码本还顺带解决了"每权重独立 scale"的存储开销问题（码本共享）。
-- **旋转路线（QuaRot/SpinQuant，系列第 7 篇）**：在**推理时**对激活做在线旋转（Hadamard/RQ 变换），把激活 outlier 直接消掉，配合常规 4bit 权重量化 + 8bit 激活量化即可。它甚至不需要改权重格式，对现有推理栈的侵入最小，是"用数学换工程确定性"的极致。
-- **SmoothQuant（系列第 6 篇）**：把激活的 outlier 迁移到权重侧，两边都变得平滑，8bit 激活 + 8bit 权重就能跑，硬件支持成熟。
+- **码本路线（QuIP#/AQLM，系列第 07 篇）**：先用 Hadamard 旋转把权重和 Hessian 变成**不相干（incoherent）**的——outlier 的能量被摊平到所有坐标上，每个坐标都变得"平均"，不再有需要特殊保护的尖峰；然后对摊平后的权重做码本量化，2bit 都能接近无损。**全程稠密、规则、无稀疏**。码本还顺带解决了"每权重独立 scale"的存储开销问题（码本共享）。
+- **旋转路线（QuaRot/SpinQuant，系列第 12 篇）**：在**推理时**对激活做在线旋转（Hadamard/RQ 变换），把激活 outlier 直接消掉，配合常规 4bit 权重量化 + 8bit 激活量化即可。它甚至不需要改权重格式，对现有推理栈的侵入最小，是"用数学换工程确定性"的极致。
+- **SmoothQuant（系列第 10 篇）**：把激活的 outlier 迁移到权重侧，两边都变得平滑，8bit 激活 + 8bit 权重就能跑，硬件支持成熟。
 
 这三条路线的共同点：**拒绝稀疏、拒绝混合精度、拒绝不规则内存**，用数学变换（旋转/码本）换取工程上的确定性。相比之下，SpQR 的稀疏表示在今天的主流硬件（NVIDIA GPU、Apple Silicon、各类 NPU）上找不到任何"结构性红利"——硬件的稀疏支持要么是结构化的（2:4），要么根本不存在。
 
@@ -676,7 +675,7 @@ SpQR/OWQ 在论文里的 ppl 数字很漂亮，但**从论文到生产部署之�
 2. **HQQ 的 data-free 思想**至今活跃：在隐私敏感场景（无法外传校准数据）、即时量化场景（设备端现场压缩、模型热更新）、以及低比特快速实验场景，HQQ 依然是首选之一；HQQ+LoRA 微调证明了"先量化再微调"路线的可行性；它的半二次分裂框架也被后续工作推广到激活量化与 KV cache 量化。
 3. **稀疏本身并未死亡**：在 CPU 推理（llama.cpp 对 2:4 结构化稀疏的实验性支持）、以及 Groq/Cerebras 这类**稀疏友好架构**上，结构化稀疏量化仍在被探索——只是不再以"不规则 outlier 拆分"的形式出现。
 
-**对读者的实操建议**（2026 年视角）：新项目做 4bit 部署优先看 GPTQ/AWQ（稠密、生态成熟）或 GGUF k-quants（第 8 篇）；做 2–3bit 激进压缩看码本/旋转路线；而"没有校准数据"是硬约束时，HQQ 是唯一不需要妥协的选择。SpQR/OWQ 则更适合作为**理解 outlier 本质的教科书**——它们的失败与成功同样有价值：SpQR 教会我们"误差是激活放大的"，OWQ 教会我们"保护要按结构来"，HQQ 教会我们"数据不是万能的"。
+**对读者的实操建议**（2026 年视角）：新项目做 4bit 部署优先看 GPTQ/AWQ（稠密、生态成熟）或 GGUF k-quants（第 15 篇）；做 2–3bit 激进压缩看码本/旋转路线；而"没有校准数据"是硬约束时，HQQ 是唯一不需要妥协的选择。SpQR/OWQ 则更适合作为**理解 outlier 本质的教科书**——它们的失败与成功同样有价值：SpQR 教会我们"误差是激活放大的"，OWQ 教会我们"保护要按结构来"，HQQ 教会我们"数据不是万能的"。
 
 ---
 
@@ -712,4 +711,4 @@ RTN 的 scale/zero 由 min/max 决定，被极值绑架；HQQ 通过半二次分
 
 ---
 
-*本文为 LLM PTQ 量化算法全景系列第 4 篇。下一篇：[QuIP#/AQLM：码本量化与不相干旋转](/2026/08/24/ptq-05-quip-aqlm/)。*
+*本文为 LLM PTQ 量化算法全景系列第 06 篇。下一篇：[QuIP#/AQLM：码本量化与不相干旋转](/2026/08/24/ptq-05-quip-aqlm/)。*

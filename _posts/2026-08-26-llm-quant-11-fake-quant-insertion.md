@@ -1,18 +1,22 @@
 ---
-title: "大模型量化算法（11）：伪量化算子插入——QAT 的地基"
+title: "大模型量化算法（17）：伪量化算子插入——QAT 的地基"
 date: 2026-08-26 08:30:00 +0800
 categories:
   - 模型量化
-tags: [llm-inference, quantization, qat, fake-quant, ste, straight-through-estimator]
+tags: [llm-inference, quantization, qat, fake-quant, ste]
 layout: post
 mathjax: true
 ---
 
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 4 · QAT** ｜ 第 17 篇 / 共 26 篇
+>
+> [← 16 QServe/QQQ](/2026/08/24/ptq-13-qserve-qqq/) ｜ [18 LSQ/PACT/DSQ →](/2026/08/29/llm-quant-18-lsq-pact-dsq/)
+
 > **TL;DR**
 >
-> * **核心结论**：量化感知训练（QAT）的全部技巧建立在一个算子之上——伪量化（Fake-Quantize）。它的前向就是00篇的 RTN round-trip：$\hat{x}=s\,\mathrm{clip}(\mathrm{round}(x/s),\,q_{\min},q_{\max})$；反向用直通估计器（STE）让梯度假装量化不存在。本篇把这个算子的数学、插入位置、框架实现、反传断裂问题一次性讲透：**伪量化把 PTQ 的离线评估与 QAT 的在线训练统一到同一张计算图里——同一个算子，PTQ 用来量后验证，QAT 用来训中模拟**。
+> * **核心结论**：量化感知训练（QAT）的全部技巧建立在一个算子之上——伪量化（Fake-Quantize）。它的前向就是01 篇的 RTN round-trip：$\hat{x}=s\,\mathrm{clip}(\mathrm{round}(x/s),\,q_{\min},q_{\max})$；反向用直通估计器（STE）让梯度假装量化不存在。本篇把这个算子的数学、插入位置、框架实现、反传断裂问题一次性讲透：**伪量化把 PTQ 的离线评估与 QAT 的在线训练统一到同一张计算图里——同一个算子，PTQ 用来量后验证，QAT 用来训中模拟**。
 > * **反直觉发现**：① 4-bit per-tensor 伪量化的 SNR 低至3.02 dB，而 per-group(128) 恢复到14.10 dB——粒度从 per-tensor 到 per-group 在同一算子上白捡11 dB；② STE 在有效范围内梯度均值为1.0（完美直通），但软量化真实梯度只有0.5——**STE 系统性高估梯度约一倍**，偏差来自 round 的平台效应；③ 权重伪量化只需一次插入（离线），激活伪量化必须逐前向动态计算 scale——两者的工程复杂度差一个数量级。
-> * **系列定位**：这是「大模型量化算法」第二部分（QAT）的开篇。PTQ 部分（00-10 篇）的共同假设是"训练结束、只调权重"；QAT 部分从本篇开始打破这个假设——把量化搬进计算图，让模型在量化约束下继续学习。伪量化算子是 QAT 的全部地基，后续 LSQ（12 篇）学 scale、PACT 学 clamp 上界、AdaRound/BRECQ（13 篇）做 PTQ-QAT 之间的桥，全都从这个算子出发。配套实验真实可跑（纯 numpy，几秒出图）：fake_quant_ste_check。
+> * **系列定位**：这是「大模型量化算法」第二部分（QAT）的开篇。PTQ 部分（00–16 篇）的共同假设是"训练结束、只调权重"；QAT 部分从本篇开始打破这个假设——把量化搬进计算图，让模型在量化约束下继续学习。伪量化算子是 QAT 的全部地基，后续 LSQ（18 篇）学 scale、PACT 学 clamp 上界、AdaRound/BRECQ（19 篇）做 PTQ-QAT 之间的桥，全都从这个算子出发。配套实验真实可跑（纯 numpy，几秒出图）：fake_quant_ste_check。
 
 ---
 
@@ -29,7 +33,7 @@ mathjax: true
 | 计算单元 | Tensor Core (FP16/BF16) | Tensor Core (INT8/FP8) / INT GEMM kernel |
 | 核心操作 | 反向传播 + 梯度更新 | 纯前向推理 |
 
-这个鸿沟意味着：**训练时看到的数值分布 ≠ 部署时量化后的数值分布**。模型在 FP32 下优化的权重，一旦量化到 INT4，层输出就偏了——00 篇证明这个偏差在 per-tensor 粒度下可达11 dB 的 SNR 损失。
+这个鸿沟意味着：**训练时看到的数值分布 ≠ 部署时量化后的数值分布**。模型在 FP32 下优化的权重，一旦量化到 INT4，层输出就偏了——01 篇证明这个偏差在 per-tensor 粒度下可达11 dB 的 SNR 损失。
 
 ### 1.2 PTQ 与 QAT：同一个算子的两种用法
 
@@ -39,11 +43,11 @@ $$
 \mathrm{FQ}(x;\,s,\,z_p,\,b) = s \cdot \mathrm{clip}\big(\mathrm{round}(x/s) + z_p,\; q_{\min},\; q_{\max}\big)
 $$
 
-前向执行一次量化再反量化的 round-trip（00 篇 §3.1 的仿射量化器），输出仍然是浮点数——但这个浮点数被"吸附"到了量化网格上。
+前向执行一次量化再反量化的 round-trip（01 篇 §3.1 的仿射量化器），输出仍然是浮点数——但这个浮点数被"吸附"到了量化网格上。
 
 **PTQ 用法**：训练完成后，在权重上插入伪量化算子，用少量校准数据跑前向，统计量化误差，作为评估基线。Scale 由校准集离线确定，插入后不再训练。
 
-**QAT 用法**：训练过程中，在权重和/或激活上插入伪量化算子，每次前向都模拟量化误差，反向传播时用 STE 让梯度"穿过"量化节点继续更新权重。Scale 可以固定（由校准集提供），也可以作为可学习参数（LSQ，12 篇预告）。
+**QAT 用法**：训练过程中，在权重和/或激活上插入伪量化算子，每次前向都模拟量化误差，反向传播时用 STE 让梯度"穿过"量化节点继续更新权重。Scale 可以固定（由校准集提供），也可以作为可学习参数（LSQ，18 篇预告）。
 
 两者的对比如下：
 
@@ -73,7 +77,7 @@ flowchart TD
 
 ## 2. 符号字典增量表
 
-全系列沿用00篇的符号约定：$x$ 为激活、$W$ 为权重、$s$ 为步长、$z_p$ 为零点、$q$ 为整数码、$\hat{x}$ 为反量化值、$b$ 为位宽、$q_{\min}=-2^{b-1}$、$q_{\max}=2^{b-1}-1$。本篇只新增以下行：
+全系列沿用01 篇的符号约定：$x$ 为激活、$W$ 为权重、$s$ 为步长、$z_p$ 为零点、$q$ 为整数码、$\hat{x}$ 为反量化值、$b$ 为位宽、$q_{\min}=-2^{b-1}$、$q_{\max}=2^{b-1}-1$。本篇只新增以下行：
 
 | 符号 | 含义 | 易混淆提示 |
 |---|---|---|
@@ -107,7 +111,7 @@ flowchart TD
 
 ### 3.1 QuantizeLinear → DequantizeLinear Round-trip
 
-从00篇 §3.1 的仿射量化器出发，伪量化算子就是一步量化紧跟一步反量化：
+从01 篇 §3.1 的仿射量化器出发，伪量化算子就是一步量化紧跟一步反量化：
 
 $$
 \hat{x} = \mathrm{FQ}(x) = s \cdot \mathrm{clip}\Big(\mathrm{round}\big(\tfrac{x}{s}\big)+z_p,\; q_{\min},\; q_{\max}\Big)
@@ -115,8 +119,8 @@ $$
 
 展开来看，round 和 clip 在公式中各司其职：
 
-- **round**：将连续值 $x/s$ 映射到最近整数，产生舍入误差 $\epsilon_r \in [-0.5, 0.5]$（00 篇 §3.2 的 granular error）。
-- **clip**：将超出 $[q_{\min}, q_{\max}]$ 的整数截断到边界，产生裁剪误差 $\epsilon_c$（00 篇 §3.2 的 saturation error）。
+- **round**：将连续值 $x/s$ 映射到最近整数，产生舍入误差 $\epsilon_r \in [-0.5, 0.5]$（01 篇 §3.2 的 granular error）。
+- **clip**：将超出 $[q_{\min}, q_{\max}]$ 的整数截断到边界，产生裁剪误差 $\epsilon_c$（01 篇 §3.2 的 saturation error）。
 
 Round-trip 后，数值被"吸附"到量化网格点上：$\hat{x} \in \mathcal{G}$。非网格点的原始值 $x$ 与最近网格点之差，就是伪量化引入的误差 $\epsilon = x - \hat{x}$。
 
@@ -130,7 +134,7 @@ $$
 
 在 clip 范围内（$\lvert x\rvert \le s\cdot q_{\max}$），误差上界为 $s/2$。这直接决定了伪量化算子的精度：**步长 $s$ 越小（位宽越高或粒度越细），误差上界越小**。
 
-对称量化（$z_p=0$）时，$s = \max\lvert x\rvert/q_{\max}$（min-max scale），网格关于零对称。非对称量化时 $z_p\neq 0$，网格平移以覆盖 $[x_{\min}, x_{\max}]$（00 篇 §3.1 推导）。
+对称量化（$z_p=0$）时，$s = \max\lvert x\rvert/q_{\max}$（min-max scale），网格关于零对称。非对称量化时 $z_p\neq 0$，网格平移以覆盖 $[x_{\min}, x_{\max}]$（01 篇 §3.1 推导）。
 
 ### 3.3 对称 vs 非对称在算子参数上的表达
 
@@ -139,11 +143,11 @@ $$
 | 对称（$z_p=0$） | $s=\max\lvert x\rvert/q_{\max}$ | $\hat{x}=sq$ | $[-sq_{\max},\;sq_{\max}]$ |
 | 非对称 | $s,\;z_p$ | $\hat{x}=s(q-z_p)$ | $[s(q_{\min}-z_p),\;s(q_{\max}-z_p)]$ |
 
-工程经验：**LLM 权重用对称**（分布近似零对称），**激活视情况用非对称**（ReLU/GELU 后单边偏斜）。00 篇 §3.2 已给出数字支撑。
+工程经验：**LLM 权重用对称**（分布近似零对称），**激活视情况用非对称**（ReLU/GELU 后单边偏斜）。01 篇 §3.2 已给出数字支撑。
 
 ### 3.4 粒度在算子参数上的表达
 
-粒度决定一组 $(s, z_p)$ 覆盖多少个元素——粒度越细，每组元素越少，$s$ 越小，误差越小。但 scale 元数据本身要存 FP16/INT32，粒度不是免费的（00 篇 §7.2 的有效位宽公式）：
+粒度决定一组 $(s, z_p)$ 覆盖多少个元素——粒度越细，每组元素越少，$s$ 越小，误差越小。但 scale 元数据本身要存 FP16/INT32，粒度不是免费的（01 篇 §7.2 的有效位宽公式）：
 
 | 粒度 | 参数组数 | $s$ 的 Shape | 典型配置 |
 |---|---|---|---|
@@ -153,7 +157,7 @@ $$
 
 ### 3.5 网格吸附效应：实验验证
 
-伪量化 round-trip 最直观的效果是**网格吸附**：非网格点被拉到最近的网格电平。00 篇 §4 证明 per-tensor 在 outlier 权重上 SNR 仅0.97 dB；本篇在含 outlier 通道的256×1024 权重矩阵上，系统对比三种粒度 × 三种位宽（配套实验 Demo A，`experiments/fake_quant_ste_check/run.py`）：
+伪量化 round-trip 最直观的效果是**网格吸附**：非网格点被拉到最近的网格电平。01 篇 §4 证明 per-tensor 在 outlier 权重上 SNR 仅0.97 dB；本篇在含 outlier 通道的256×1024 权重矩阵上，系统对比三种粒度 × 三种位宽（配套实验 Demo A，`experiments/fake_quant_ste_check/run.py`）：
 
 ![伪量化 round-trip 误差随位宽和粒度变化：左图 SNR 在 4-bit 下从 per-tensor 的3.02 dB阶梯式爬升到 per-group 的14.10 dB；右图 MSE 对数坐标显示粒度细化的指数级收益](/assets/img/quant/fake_quant_roundtrip_error.png)
 
@@ -172,7 +176,7 @@ $$
 **这张表回答三个问题**：
 
 1. **粒度的11 dB 白捡**：4-bit 下 per-group(128) 比 per-tensor 高 11.08 dB——这个差距完全来自 scale 被 outlier 通道绑架后逐步释放的过程。per-channel 解决行间 outlier（+5.56 dB），per-group 进一步隔离行内散点（+5.52 dB）。
-2. **位宽提升的边际递减**：per-group 下从 4-bit 到 8-bit 提升 20.94 dB（约每 bit 5.2 dB），低于00 篇的 6.02 dB 理论值——因为 outlier 引入的裁剪误差在低位宽更重，抵消了部分位宽收益。
+2. **位宽提升的边际递减**：per-group 下从 4-bit 到 8-bit 提升 20.94 dB（约每 bit 5.2 dB），低于01 篇的 6.02 dB 理论值——因为 outlier 引入的裁剪误差在低位宽更重，抵消了部分位宽收益。
 3. **最大绝对误差的"天花板"效应**：per-channel 和 per-group 在 6-bit 和 8-bit 的最大绝对误差均为0.185（由 outlier 通道的最大值决定，已被 per-channel 的行级 scale 吸收），只有 per-tensor 才能看到全局 outlier 撑大的误差。
 
 ## 4. 插入位置学
@@ -213,7 +217,7 @@ $$
 
 以 ReLU 后的激活为例：大部分值在 $[0, M]$ 之间（$M=s\cdot q_{\max}$），但偶有大值超出范围。如果不模拟 clip，优化器会认为这些大值可以自由存在；部署时它们被截断，误差无法预测。伪量化算子的 clip 正是在告诉优化器：**"超过 $M$ 的值会被截断到 $M$，请学会控制它们"**。
 
-这就是 PACT（Parameterized Clipping Activation，arXiv:1805.06085）的核心思想：把 clip 的上界 $M$ 也变成可学习参数，让模型自己决定"在哪里截断最好"——12 篇展开。
+这就是 PACT（Parameterized Clipping Activation，arXiv:1805.06085）的核心思想：把 clip 的上界 $M$ 也变成可学习参数，让模型自己决定"在哪里截断最好"——18 篇展开。
 
 ### 4.4 BN folding 与伪量化的配合
 
@@ -433,8 +437,8 @@ $$
 
 STE 的有偏性启发了两类改进方向：
 
-1. **学习 scale**：如果 $s$ 不再是固定常数而是可学习参数，梯度可以直接流过 $s$（不需要 STE），而 round 的不可导问题仍然存在——这就是 LSQ（Learned Step Size Quantization，arXiv:1902.08153）的核心思想，12 篇展开。
-2. **学习 clamp 上界**：STE 在饱和区的梯度为零，导致模型无法学习"最优截断点"——PACT（arXiv:1805.06085）把 clip 上界变成可学习参数，让梯度通过 $M$ 流回网络，12 篇一起讲。
+1. **学习 scale**：如果 $s$ 不再是固定常数而是可学习参数，梯度可以直接流过 $s$（不需要 STE），而 round 的不可导问题仍然存在——这就是 LSQ（Learned Step Size Quantization，arXiv:1902.08153）的核心思想，18 篇展开。
+2. **学习 clamp 上界**：STE 在饱和区的梯度为零，导致模型无法学习"最优截断点"——PACT（arXiv:1805.06085）把 clip 上界变成可学习参数，让梯度通过 $M$ 流回网络，18 篇一起讲。
 
 ## 7. 实验
 
@@ -446,7 +450,7 @@ STE 的有偏性启发了两类改进方向：
 
 （§3.5 已嵌入数据表和图，此处补充解读。）
 
-关键观察：**粒度收益在低位宽更显著**。4-bit 下 per-group 比 per-tensor 提升 11.08 dB，8-bit 下提升 28.18 dB。这说明粒度细化不仅减小了舍入误差，还通过隔离 outlier 释放了更多有效位宽——与00 篇 §7.3 的结论一致。
+关键观察：**粒度收益在低位宽更显著**。4-bit 下 per-group 比 per-tensor 提升 11.08 dB，8-bit 下提升 28.18 dB。这说明粒度细化不仅减小了舍入误差，还通过隔离 outlier 释放了更多有效位宽——与01 篇 §7.3 的结论一致。
 
 ### 7.3 Demo B：STE 梯度偏差
 
@@ -473,7 +477,7 @@ STE 的有偏性启发了两类改进方向：
 
 ### 8.2 致命局限
 
-STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学到的"适应量化"策略是次优的。更关键的是，伪量化算子的 scale（$s_w$, $s_a$）在默认实现中是固定常数，模型无法通过梯度去优化 scale 本身——这就像给模型戴上了"只能调权重、不能调量化器"的镣铐。打破这个镣铐，就是12 篇 LSQ/PACT 的主题。
+STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学到的"适应量化"策略是次优的。更关键的是，伪量化算子的 scale（$s_w$, $s_a$）在默认实现中是固定常数，模型无法通过梯度去优化 scale 本身——这就像给模型戴上了"只能调权重、不能调量化器"的镣铐。打破这个镣铐，就是18 篇 LSQ/PACT 的主题。
 
 此外，本篇的插入位置规则是"手动指定"的——每个算子该在哪里插、用什么粒度，都靠工程师经验决定。自动化插入（如 ONNX Runtime 的 dynamo quantization、TVM 的 annotate pass）是工程侧的开放问题。
 
@@ -492,14 +496,14 @@ STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学�
 - Bengio et al., *Estimating or Propagating Gradients Through Stochastic Neurons for Conditional Computation*, [arXiv:1308.3432](https://arxiv.org/abs/1308.3432) —— STE 直通估计器的原始论文
 - Jacob et al., *Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference*, [arXiv:1712.05877](https://arxiv.org/abs/1712.05877) —— QAT 白皮书，伪量化算子的工程定义
 - Han et al., *Deep Compression: Compressing Deep Neural Networks with Pruning, Trained Quantization and Huffman Coding*, [arXiv:1510.00149](https://arxiv.org/abs/1510.00149) —— 训练量化的早期工作
-- Choi et al., *PACT: Parameterized Clipping Activation for Quantized Neural Networks*, [arXiv:1805.06085](https://arxiv.org/abs/1805.06085) —— 可学习 clip 上界（12 篇主角之一）
-- Esser et al., *Learned Step Size Quantization*, [arXiv:1902.08153](https://arxiv.org/abs/1902.08153) —— 可学习 scale（12 篇主角之一）
-- Banner et al., *Post-training 4-bit quantization of convolution networks for rapid-deployment*, [arXiv:1810.05723](https://arxiv.org/abs/1810.05723) —— AdaRound rounding 优化（13 篇）
-- Li et al., *BRECQ: Pushing the Limit of Post-Training Quantization by Block Reconstruction*, [arXiv:2102.05426](https://arxiv.org/abs/2102.05426) —— block 重构（13 篇）
-- Xiao et al., *SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models*, [arXiv:2211.10438](https://arxiv.org/abs/2211.10438) —— 02 篇主角
-- Dettmers et al., *LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale*, [arXiv:2208.07339](https://arxiv.org/abs/2208.07339) —— 01 篇主角
-- Frantar et al., *GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers*, [arXiv:2210.17323](https://arxiv.org/abs/2210.17323) —— 04 篇主角
-- Lin et al., *AWQ: Activation-aware Weight Quantization*, [arXiv:2306.00978](https://arxiv.org/abs/2306.00978) —— 03 篇主角
+- Choi et al., *PACT: Parameterized Clipping Activation for Quantized Neural Networks*, [arXiv:1805.06085](https://arxiv.org/abs/1805.06085) —— 可学习 clip 上界（18 篇主角之一）
+- Esser et al., *Learned Step Size Quantization*, [arXiv:1902.08153](https://arxiv.org/abs/1902.08153) —— 可学习 scale（18 篇主角之一）
+- Banner et al., *Post-training 4-bit quantization of convolution networks for rapid-deployment*, [arXiv:1810.05723](https://arxiv.org/abs/1810.05723) —— AdaRound rounding 优化（19 篇）
+- Li et al., *BRECQ: Pushing the Limit of Post-Training Quantization by Block Reconstruction*, [arXiv:2102.05426](https://arxiv.org/abs/2102.05426) —— block 重构（19 篇）
+- Xiao et al., *SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models*, [arXiv:2211.10438](https://arxiv.org/abs/2211.10438) —— 09 篇主角
+- Dettmers et al., *LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale*, [arXiv:2208.07339](https://arxiv.org/abs/2208.07339) —— 02 篇主角
+- Frantar et al., *GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers*, [arXiv:2210.17323](https://arxiv.org/abs/2210.17323) —— 03 篇主角
+- Lin et al., *AWQ: Activation-aware Weight Quantization*, [arXiv:2306.00978](https://arxiv.org/abs/2306.00978) —— 04 篇主角
 
 **代码与规范**
 
@@ -511,9 +515,9 @@ STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学�
 
 **系列导航**
 
-- 系列规划：源仓库 congyuan_blogs 的 `technology/quantization/llm_quant_series/ROADMAP.md`（10 篇 PTQ + 4 篇 QAT）
-- 上一篇：《10 数值格式终局》｜下一篇：《12 LSQ / PACT——可学习量化参数》
-- PTQ 部分（00-10 篇）提供量化器数学基础；本篇开启 QAT 部分
+- 系列规划：见站内 [模型量化课程路线图](/quantization-roadmap/)（全 26 篇目录与阅读路径）
+- 上一篇：[15 GGUF k-quants / FP8 / MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/) ｜ 下一篇：**18 LSQ / PACT / DSQ**（待写）
+- PTQ 部分（00–16 篇）提供量化器数学基础；本篇开启 QAT 部分
 
 **中文社区**：知乎上关于 QAT 和 STE 的讨论较多，尤其"量化感知训练为什么有效"类话题下有若干高质量回答；掘金上 PyTorch 量化实战教程覆盖了 torch.ao 的 eager mode 流程。本篇未能核验到稳定直链，暂不列出——诚实标注：本节为占位，非完整来源。
 

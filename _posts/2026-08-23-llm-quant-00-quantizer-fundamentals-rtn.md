@@ -1,18 +1,22 @@
 ---
-title: "大模型量化算法（00）：量化器数学地基与 RTN 基线"
+title: "大模型量化算法（01）：量化器数学地基与 RTN 基线"
 date: 2026-08-23 22:30:00 +0800
 categories:
   - 模型量化
-tags: [llm-inference, quantization, ptq, rtn, numerical-methods, snr]
+tags: [llm-inference, quantization, quantizer, rtn, numerical-methods]
 layout: post
 mathjax: true
 ---
 
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 0 · 总纲与地基** ｜ 第 01 篇 / 共 26 篇
+>
+> [← 00 量化全景](/2026/08/24/ptq-00-overview/) ｜ [02 LLM.int8() →](/2026/08/24/llm-quant-01-llmint8-outlier-mixture/)
+
 > **TL;DR**
 >
 > * **核心结论**：所有后训练量化（PTQ）算法其实都在解同一个损失函数 $\min_{\hat{W}} \mathbb{E}_x\lVert Wx-\hat{W}x\rVert^2$。本篇把这个损失的最简情形——固定均匀网格、就近取整（RTN）、启发式 scale——的数学彻底拆开：**scale 决定格距有多细，粒度决定 scale 有多少个，clipping 决定 scale 和分布尾部怎么折衷**。这三个自由度就是后面十几篇算法各自发力的地方。
-> * **反直觉发现**：① 教科书里"$6.02b$ dB"是满幅均匀信号的**天花板而不是承诺**——高斯型权重在 4-bit 下用最常见的 max-scale 实测只有 **14.35 dB**，离天花板差 11.4 dB；② 主动裁掉分布尾部（最优裁剪比例 $\alpha^*\approx 0.5$）反而比"一个都不裁"白捡约 **5 dB**；③ 样本最大值随数据量按 $\sqrt{2\ln n}$ 漂移——校准集从一万条扩到一百万条，max-scale 会自己变大，这就是"换个校准集、精度就变了"的数学根源。
-> * **系列定位**：这是「大模型量化算法」系列的地基篇（系列规划见同目录 ROADMAP）。后续每一篇算法都可以看作对本篇 RTN 基线的一个自由度做改造：GPTQ 改舍入策略、AWQ/SmoothQuant 改等效变换下的 scale、QuIP#/QuaRot 改权重分布本身。把对照组立稳，每一步改进才有的放矢。配套实验全部真实可跑（纯 numpy，几秒出图）：quantizer_granularity。
+> * **反直觉发现**：① 教科书里"$6.02b$ dB"是满幅均匀信号的**天花板而不是承诺**——高斯型权重在 4-bit 下用最常见的 max-scale 实测只有 **14.35 dB**，离天花板差 11.4 dB；② 主动裁掉分布尾部（最优裁剪比例 $\alpha^\ast\approx 0.5$）反而比"一个都不裁"白捡约 **5 dB**；③ 样本最大值随数据量按 $\sqrt{2\ln n}$ 漂移——校准集从一万条扩到一百万条，max-scale 会自己变大，这就是"换个校准集、精度就变了"的数学根源。
+> * **系列定位**：这是「大模型量化算法」系列的地基篇（系列规划见 [课程路线图](/quantization-roadmap/)）。后续每一篇算法都可以看作对本篇 RTN 基线的一个自由度做改造：GPTQ 改舍入策略、AWQ/SmoothQuant 改等效变换下的 scale、QuIP#/QuaRot 改权重分布本身。把对照组立稳，每一步改进才有的放矢。配套实验全部真实可跑（纯 numpy，几秒出图）：quantizer_granularity。
 
 ---
 
@@ -188,20 +192,20 @@ $$
 \;\Longrightarrow\;
 \frac{t}{2q_{\max}} = 1-t
 \;\Longrightarrow\;
-t^* = \frac{2q_{\max}}{2q_{\max}+1} = \frac{2^b-2}{2^b-1}.
+t^\ast = \frac{2q_{\max}}{2q_{\max}+1} = \frac{2^b-2}{2^b-1}.
 $$
 
-代回 $s^* = a\,t^*/q_{\max}$：
+代回 $s^\ast = a\,t^\ast/q_{\max}$：
 
 $$
-\boxed{\,s^* = \frac{2a}{2^b - 1}\,}
+\boxed{\,s^\ast = \frac{2a}{2^b - 1}\,}
 \qquad\text{vs. folklore 公式}\qquad
 s_{\mathrm{folk}} = \frac{\max\lvert x\rvert}{q_{\max}} = \frac{a}{2^{b-1}-1} \approx \frac{2a}{2^b}.
 $$
 
 三个值得停下来的结论：
 
-1. **最优解居然要裁剪**：$t^* = (2^b-2)/(2^b-1) < 1$，即使数据是均匀分布、根本不存在"离群值"，最优 scale 也应该牺牲最外侧 $1-t^*\approx 2^{-b}$ 的概率质量换取更细的格距。"一个都不裁"从来不是最优。
+1. **最优解居然要裁剪**：$t^\ast = (2^b-2)/(2^b-1) < 1$，即使数据是均匀分布、根本不存在"离群值"，最优 scale 也应该牺牲最外侧 $1-t^\ast\approx 2^{-b}$ 的概率质量换取更细的格距。"一个都不裁"从来不是最优。
 2. folklore 与闭式最优在 8-bit 只差 $2^b/(2^b-1)\approx 0.4\%$，4-bit 差 $16/15\approx 6.7\%$——**位宽越低，scale 公式的选择越重要**。
 3. folklore 公式里藏着样本量：$\max\lvert x\rvert$ 是随机变量，见 §4.3 的漂移分析。
 
@@ -234,7 +238,7 @@ $$
 \;}
 $$
 
-这个函数没有闭式根，数值求根得：$b=4$ 时 $u^*\approx 2.50$（$s^*\approx 0.36\sigma$），$b=8$ 时 $u^*\approx 4.0$。对照 folklore：$n=5\times10^5$ 个高斯样本的 $\max\lvert x\rvert\approx 4.7\sigma$，折算 $s_{\mathrm{folk}}\approx 0.67\sigma$——**比最优 scale 大约 89%**。位宽越低、分布越重尾，folklore 偏得越离谱。
+这个函数没有闭式根，数值求根得：$b=4$ 时 $u^\ast \approx 2.50$（$s^\ast \approx 0.36\sigma$），$b=8$ 时 $u^\ast \approx 4.0$。对照 folklore：$n=5\times10^5$ 个高斯样本的 $\max\lvert x\rvert\approx 4.7\sigma$，折算 $s_{\mathrm{folk}}\approx 0.67\sigma$——**比最优 scale 大约 89%**。位宽越低、分布越重尾，folklore 偏得越离谱。
 
 ### 4.3 实验：MSE 随裁剪比例的完整曲线
 
@@ -244,10 +248,10 @@ $$
 
 **这张图回答四个问题**：
 
-1. **内部最优点为什么存在**：$\alpha$ 变小时舍入项 $\propto\alpha^2$ 变小、裁剪项变大，两者此消彼长——高斯最优点 $\alpha^*=0.50$（即 $M^*=2.36\sigma$），拉普拉斯 $\alpha^*=0.35$（$M^*=3.23\sigma$）。
-2. **裁剪到底值多少 dB**：高斯从 $\alpha=1$ 移到 $\alpha^*$，MSE 从 $0.0380\,\sigma^2$ 降到 $0.0120\,\sigma^2$，**白捡 5.02 dB**；拉普拉斯更夸张，**7.26 dB**。
+1. **内部最优点为什么存在**：$\alpha$ 变小时舍入项 $\propto\alpha^2$ 变小、裁剪项变大，两者此消彼长——高斯最优点 $\alpha^\ast=0.50$（即 $M^\ast=2.36\sigma$），拉普拉斯 $\alpha^\ast=0.35$（$M^\ast=3.23\sigma$）。
+2. **裁剪到底值多少 dB**：高斯从 $\alpha=1$ 移到 $\alpha^\ast$，MSE 从 $0.0380\,\sigma^2$ 降到 $0.0120\,\sigma^2$，**白捡 5.02 dB**；拉普拉斯更夸张，**7.26 dB**。
 3. **重尾分布的谷更宽**：拉普拉斯曲线在谷底附近平缓（$\alpha$ 在 0.32–0.40 之间 MSE 变化不到 3%），高斯更尖——重尾分布对裁剪点选偏更鲁棒，这是"百分位裁剪"在重尾激活上还能用的原因。
-4. **实测与解析的差距有多诚实**：实测 $M^*=2.36\sigma$ vs 解析 $2.50\sigma$，差 5.6%。来源有三：有限样本（$n=5\times10^5$，实测 $\max=4.72\sigma$ 比理论典型值重）、$\alpha$ 网格分辨率（$\Delta M\approx 0.05\sigma$）、蒙特卡洛噪声。方向上实测更激进，因为经验尾部比拟合的高斯更重。
+4. **实测与解析的差距有多诚实**：实测 $M^\ast=2.36\sigma$ vs 解析 $2.50\sigma$，差 5.6%。来源有三：有限样本（$n=5\times10^5$，实测 $\max=4.72\sigma$ 比理论典型值重）、$\alpha$ 网格分辨率（$\Delta M\approx 0.05\sigma$）、蒙特卡洛噪声。方向上实测更激进，因为经验尾部比拟合的高斯更重。
 
 **样本 max 的漂移定律**。folklore 公式最大的隐患是 $\max\lvert x\rvert$ 随样本量增长。$n$ 个独立高斯样本的最大值近似为 $\sigma\sqrt{2\ln n}$（极值理论的启发式公式）：
 
@@ -256,9 +260,9 @@ $$
 | $\sqrt{2\ln n}\cdot\sigma$ | $3.85\sigma$ | $4.29\sigma$ | $4.66\sigma$ | $4.86\sigma$ |
 | 实测（本实验） | — | — | **4.72σ** ✓ | — |
 
-公式与实测吻合。这解释了一个工程现象：**换一个更大的校准集，max-scale 会自己变大、精度反而掉**——不是玄学，是极值统计。也解释了为什么百分位裁剪（如 99.99%）本质上是把"样本量的函数"换成"分布分位数的函数"，向 §4.2 的 $u^*$ 靠拢。
+公式与实测吻合。这解释了一个工程现象：**换一个更大的校准集，max-scale 会自己变大、精度反而掉**——不是玄学，是极值统计。也解释了为什么百分位裁剪（如 99.99%）本质上是把"样本量的函数"换成"分布分位数的函数"，向 §4.2 的 $u^\ast$ 靠拢。
 
-> **Lab 1（动手）**：把 `run.py` Demo C 的分布换成自由度 df=2 的学生氏 t 分布（`rng.standard_t(2, n)`），观察 $\alpha^*$ 向哪边移动、谷底变宽还是变尖；再把 `alphas` 网格从 71 点粗化到 11 点，看 $M^*$ 的测量值偏移多少——亲手复现"网格分辨率"这项误差。
+> **Lab 1（动手）**：把 `run.py` Demo C 的分布换成自由度 df=2 的学生氏 t 分布（`rng.standard_t(2, n)`），观察 $\alpha^\ast$ 向哪边移动、谷底变宽还是变尖；再把 `alphas` 网格从 71 点粗化到 11 点，看 $M^\ast$ 的测量值偏移多少——亲手复现"网格分辨率"这项误差。
 
 ## 5. SNR = 6.02b dB 的来历与三个陷阱
 
@@ -278,7 +282,7 @@ $$
 \mathrm{SNR}_{\mathrm{sine}} = 6.02\,b + 10\log_{10}\tfrac{3}{2} = 6.02\,b + 1.76\ \text{dB}.
 $$
 
-**高斯 + 最优裁剪**：直接用 §4.2 的公式，SNR 就是 $\sigma^2/\mathrm{MSE}(u^*)$ 的对数——$b=4$ 解析值约 18.9 dB。注意它**不是** $6.02b$ 减个常数：$u^*$ 依赖 $b$，裁剪惩罚随位宽非线性变化。
+**高斯 + 最优裁剪**：直接用 §4.2 的公式，SNR 就是 $\sigma^2/\mathrm{MSE}(u^\ast)$ 的对数——$b=4$ 解析值约 18.9 dB。注意它**不是** $6.02b$ 减个常数：$u^\ast$ 依赖 $b$，裁剪惩罚随位宽非线性变化。
 
 ### 5.2 实验：实测曲线对齐理论
 
@@ -289,7 +293,7 @@ $$
 **这张图回答四个问题**：
 
 1. **6.02b 是真的吗**：均匀满幅实测 b=4→8 为 23.52→48.13 dB，斜率 6.15 dB/bit，渐近逼近 6.02——高分辨率假设在 b≥4 后成立。
-2. **b=2 为什么掉线**：实测 9.55 dB，比理论 12.0 低 2.5 dB。只有 4 个电平时，量化噪声不再是"独立均匀"的白噪声，$s^2/12$ 假设失效。**2-bit 均匀量化在数学上就撑不住**，这是 QuIP#/AQLM 转向向量量化与码本的根因（08 篇伏笔）。
+2. **b=2 为什么掉线**：实测 9.55 dB，比理论 12.0 低 2.5 dB。只有 4 个电平时，量化噪声不再是"独立均匀"的白噪声，$s^2/12$ 假设失效。**2-bit 均匀量化在数学上就撑不住**，这是 QuIP#/AQLM 转向向量量化与码本的根因（07 篇伏笔）。
 3. **scale 优化值多少钱**：高斯信号下 max-scale 与 MSE 最优 scale 的差距在 b=4 撕开到 **4.89 dB**（14.35 vs 19.24），b=8 收窄到 1.28 dB。**位宽越低，scale 选择越是一门大生意**——这就是 AWQ/OmniQuant 等算法在 4-bit 时代爆发的定量背景。
 4. **天花板与现实的鸿沟**：4-bit 高斯实测 19.24 dB，离正弦天花板 25.8 差 6.6 dB，离均匀天花板 24.1 差 4.9 dB。**裁剪是低位宽不可回避的代价**。
 
@@ -338,13 +342,13 @@ RTN 隐含地用 $\sigma_x^2 I$ 替换了 $C$——即假设误差与输入方�
 1. **误差与输入相关**：outlier 行的 $\epsilon$ 大，而 LLM 激活能量又恰好集中在少数方向——大误差撞上大输入，期望分析的低阶矩掩盖了高阶灾难；
 2. **误差非白**：同一行的舍入误差在列间有结构（尤其分组共享 scale 时），无法逐层平均抵消。
 
-GPTQ（04 篇）的第一性原理就藏在这个损失里：既然 $\mathcal{L}$ 有显式的 $C$ 加权，就不该逐元素独立取整，而应该**让后面列的量化误差去主动补偿前面列已经产生的误差**——把"白噪声"变成"受控抵消"。AWQ/SmoothQuant（02/03 篇）则是另一条路：先做等效变换改变 $W$ 与 $x$ 的分布形状，让 RTN 的假设重新成立。
+GPTQ（03 篇）的第一性原理就藏在这个损失里：既然 $\mathcal{L}$ 有显式的 $C$ 加权，就不该逐元素独立取整，而应该**让后面列的量化误差去主动补偿前面列已经产生的误差**——把"白噪声"变成"受控抵消"。AWQ/SmoothQuant（02/04 篇）则是另一条路：先做等效变换改变 $W$ 与 $x$ 的分布形状，让 RTN 的假设重新成立。
 
 ### 6.3 为什么 8-bit 够用、4-bit 崩
 
 每丢 1 bit，格距翻倍，噪声方差变四倍——**每 bit 恰好 −6.02 dB**，这就是 6.02b 斜率的工程含义。但 Demo A 的高斯曲线显示，低位的实际损失超过线性：max-scale 配置从 b=8 到 b=4 掉了 24.8 dB，比 $4\times 6.02=24.1$ 还多 0.7 dB——多出来的正是随位宽恶化的裁剪惩罚。
 
-数字感受一下：8-bit 高斯实测 39.19 dB，相对均方误差 $\mathrm{MSE}/\sigma^2\approx 1.2\times10^{-4}$（RMS 相对误差约 1.1%），逐层平均后对困惑度的影响在噪声水平以下（LLM.int8() 论文的实证：INT8 与 FP16 输出几乎不可区分[arXiv:2208.07339](https://arxiv.org/abs/2208.07339)）。4-bit 即使做到 MSE 最优 scale 也只有 19.24 dB，相对均方误差约 1.2%、RMS 相对误差约 11%——**单层看不大，几十层乘性累积后就是灾难**。结论：8-bit 时代 RTN + max-scale 是合理的默认；4-bit 时代，scale 优化（本篇 §4）、粒度细化（§7）、舍入补偿（04 篇）、分布变换（02/03 篇）全部被迫上场。
+数字感受一下：8-bit 高斯实测 39.19 dB，相对均方误差 $\mathrm{MSE}/\sigma^2\approx 1.2\times10^{-4}$（RMS 相对误差约 1.1%），逐层平均后对困惑度的影响在噪声水平以下（LLM.int8() 论文的实证：INT8 与 FP16 输出几乎不可区分[arXiv:2208.07339](https://arxiv.org/abs/2208.07339)）。4-bit 即使做到 MSE 最优 scale 也只有 19.24 dB，相对均方误差约 1.2%、RMS 相对误差约 11%——**单层看不大，几十层乘性累积后就是灾难**。结论：8-bit 时代 RTN + max-scale 是合理的默认；4-bit 时代，scale 优化（本篇 §4）、粒度细化（§7）、舍入补偿（03 篇）、分布变换（02/04 篇）全部被迫上场。
 
 ## 7. 粒度：per-tensor → per-channel → per-group
 
@@ -389,7 +393,7 @@ $g=128$ 的元数据税只有 3%，换来的是 §7.3 里 9 dB 量级的精度�
 | per-tensor 对称 | **0.97** | **89.4** | 全局 max 被热行撑大 7.6×，普通行格距被绑架 |
 | per-tensor 非对称 | 1.39 | 86.0 | 平移救不了格距问题 |
 | per-channel 对称 | 5.80 | 51.4 | 隔离行间 outlier，行内散点仍拖累 |
-| per-channel + MSE 裁剪 | 7.12 | 44.3 | $\alpha^*=0.44$：行内重尾仍值得裁 |
+| per-channel + MSE 裁剪 | 7.12 | 44.3 | $\alpha^\ast=0.44$：行内重尾仍值得裁 |
 | **per-group(128) 对称** | **15.25** | **17.4** | 散点被关进 128 列的小格子 |
 | per-channel 非对称 | 7.86 | 40.9 | 平移自由度 +2.06 dB（散点注入使行分布略偏） |
 
@@ -399,7 +403,7 @@ $g=128$ 的元数据税只有 3%，换来的是 §7.3 里 9 dB 量级的精度�
 2. **下游误差比权重 SNR 更残酷**：per-group 与 per-channel 的权重 SNR 差 9.4 dB，下游输出误差却差 3 倍（17.4% vs 51.4%）。矩阵乘对大误差行是凸放大的——这预告了用激活二阶矩 $C$ 加权的损失（§6.2）比裸权重 MSE 更接近真实伤害，GPTQ/AWQ 都在这个加权上下手。
 3. **非对称的收益依赖分布偏斜程度**：本实验 +2.06 dB，真实权重上通常更小（分布更对称）——为 §3.2 的"权重对称默认"提供了数字支撑。
 
-**诚实注脚**：本实验的散点 outlier（×30）比真实 LLM 权重更极端，绝对数字夸大了粒度差距；真实权重上 per-channel 与 per-group 的差距通常更温和。但**排序方向**与文献一致：AWQ 论文报告 group-wise 显著优于 per-tensor[arXiv:2306.00978](https://arxiv.org/abs/2306.00978)，GPTQ 的默认配置同样是 $g=128$ 分组[arXiv:2210.17323](https://arxiv.org/abs/2210.17323)，GGUF 的 k-quants 更是把"分组 + 变步长"做成了位布局设计（10 篇展开）。
+**诚实注脚**：本实验的散点 outlier（×30）比真实 LLM 权重更极端，绝对数字夸大了粒度差距；真实权重上 per-channel 与 per-group 的差距通常更温和。但**排序方向**与文献一致：AWQ 论文报告 group-wise 显著优于 per-tensor[arXiv:2306.00978](https://arxiv.org/abs/2306.00978)，GPTQ 的默认配置同样是 $g=128$ 分组[arXiv:2210.17323](https://arxiv.org/abs/2210.17323)，GGUF 的 k-quants 更是把"分组 + 变步长"做成了位布局设计（15 篇展开）。
 
 > **Lab 3（动手）**：把 `make_weight_matrix()` 里 `hot_rows` 从 16 改到 256，看 per-channel 相对 per-tensor 的优势怎么变；再把散点注入关掉（`mask` 那两行），看 per-group 是否还领先 per-channel——预期领先幅度大幅缩水，验证"group 主要隔离的是行内局部 outlier"。
 
@@ -417,10 +421,10 @@ $g=128$ 的元数据税只有 3%，换来的是 §7.3 里 9 dB 量级的精度�
 
 - Nagel et al., *A White Paper on Neural Network Quantization*, [arXiv:2106.08295](https://arxiv.org/abs/2106.08295) —— 本篇 scale/clipping/粒度框架的规范出处
 - Jacob et al., *Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference*, [arXiv:1712.05877](https://arxiv.org/abs/1712.05877) —— affine 量化器与 zero-point 的原始工程定义
-- Dettmers et al., *LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale*, [arXiv:2208.07339](https://arxiv.org/abs/2208.07339) —— 01 篇主角，激活 outlier 的系统实证
-- Frantar et al., *GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers*, [arXiv:2210.17323](https://arxiv.org/abs/2210.17323) —— 04 篇主角，$C$ 加权损失的逐列补偿
-- Lin et al., *AWQ: Activation-aware Weight Quantization*, [arXiv:2306.00978](https://arxiv.org/abs/2306.00978) —— 03 篇主角，激活感知的 scale 与裁剪
-- Dettmers et al., *QLoRA: Efficient Finetuning of Quantized LLMs*, [arXiv:2305.14314](https://arxiv.org/abs/2305.14314) —— NF4 非均匀格子的信息论动机（10 篇展开）
+- Dettmers et al., *LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale*, [arXiv:2208.07339](https://arxiv.org/abs/2208.07339) —— 02 篇主角，激活 outlier 的系统实证
+- Frantar et al., *GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers*, [arXiv:2210.17323](https://arxiv.org/abs/2210.17323) —— 03 篇主角，$C$ 加权损失的逐列补偿
+- Lin et al., *AWQ: Activation-aware Weight Quantization*, [arXiv:2306.00978](https://arxiv.org/abs/2306.00978) —— 04 篇主角，激活感知的 scale 与裁剪
+- Dettmers et al., *QLoRA: Efficient Finetuning of Quantized LLMs*, [arXiv:2305.14314](https://arxiv.org/abs/2305.14314) —— NF4 非均匀格子的信息论动机（15 篇展开）
 
 **代码与规范**
 
@@ -433,7 +437,7 @@ $g=128$ 的元数据税只有 3%，换来的是 §7.3 里 9 dB 量级的精度�
 
 **系列导航**
 
-- 系列规划：[ROADMAP.md](ROADMAP.md)（11 篇 PTQ 核心 + 4 篇 QAT）
+- 系列规划：见站内 [模型量化课程路线图](/quantization-roadmap/)（全 26 篇目录与阅读路径）
 - 上一篇：无（本篇为系列起点）｜下一篇：《01 LLM.int8()：outlier 分解的数学与代价》
 - 交叉引用：本站《AI 编译器量化综述》提供编译器视角的互补叙述
 

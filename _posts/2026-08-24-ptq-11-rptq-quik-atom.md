@@ -1,17 +1,18 @@
 ---
-title: "LLM PTQ 深度解析（11）：RPTQ、QUIK 与 ATOM：W4A4 的三块基石"
+title: "大模型量化算法（13）：RPTQ / QUIK / ATOM——W4A4 三块基石"
 date: 2026-08-24 16:20:00 +0800
 categories:
   - 模型量化
-tags: [quantization, w4a4, rptq, atom, quik]
+tags: [llm-inference, quantization, rptq, quik, atom, w4a4]
 layout: post
 mathjax: true
 ---
 
-> **系列导航(LLM PTQ 量化算法全景)**
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 2 · Activation PTQ** ｜ 第 13 篇 / 共 26 篇
 >
-> - 第 0 篇 [量化全景](/2026/08/24/ptq-00-overview/) → 第 1 篇 [RTN/LLM.int8](/2026/08/24/ptq-01-rtn-llmint8/) → 第 2 篇 [GPTQ](/2026/08/24/ptq-02-gptq/) → 第 3 篇 [AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/) → 第 4 篇 [SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/) → 第 5 篇 [QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/) → 第 6 篇 [SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) → 第 7 篇 [QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/) → 第 8 篇 [GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/) → 第 9 篇 [SqueezeLLM/VPTQ/CLAQ](/2026/08/24/ptq-09-squeezellm-vptq-claq/) → 第 10 篇 [Outlier Suppression/OS+](/2026/08/24/ptq-10-outlier-suppression/)
-> - **第 11 篇 RPTQ/QUIK/ATOM(本文)** -- 激活也压到 4-bit 的三块基石:通道聚类重排、双路混合精度、融合 GEMM。后续姊妹篇:[第 12 篇 OliVe](/2026/08/24/ptq-12-olive-abfloat/)、[第 13 篇 QoQ/QServe 与 QQQ](/2026/08/24/ptq-13-qserve-qqq/)
+> [← 12 QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/) ｜ [14 OliVe →](/2026/08/24/ptq-12-olive-abfloat/)
+>
+> - **第 13 篇 RPTQ/QUIK/ATOM(本文)** -- 激活也压到 4-bit 的三块基石:通道聚类重排、双路混合精度、融合 GEMM。后续姊妹篇:[第 14 篇 OliVe](/2026/08/24/ptq-12-olive-abfloat/)、[第 16 篇 QoQ/QServe 与 QQQ](/2026/08/24/ptq-13-qserve-qqq/)
 
 ---
 
@@ -49,7 +50,7 @@ mathjax: true
 第 6/10 篇的 W8A8 战场上,激活有 127 级网格可用,SmoothQuant/OS+ 把分布整形之后一切好谈。到了 W4A4,游戏规则突变:
 
 * **网格深度塌缩**:4-bit 对称量化只有 $[-7,+7]$ 共 15 个电平(int8 是 255 个)。同样的分布整形手段能改善相对形状,但 15 级对重尾分布的分辨率天花板摆在那里;
-* **scale 本身成为开销**:激活的 scale 必须**在线计算**(token 依赖),per-channel 动态 scale 意味着 GEMM 内逐列缩放累加,Tensor Core 的整齐流水线被打断(第 6 篇详述);
+* **scale 本身成为开销**:激活的 scale 必须**在线计算**(token 依赖),per-channel 动态 scale 意味着 GEMM 内逐列缩放累加,Tensor Core 的整齐流水线被打断(第 10 篇详述);
 * **权重侧没有新问题,但地板更低了**:W4 权重经 GPTQ/AWQ 处理后误差已经很小,激活侧任何粗糙处理都会立刻成为主导项。
 
 行业收敛出的折中是 **per-group 激活量化**:沿通道维切组(典型 32~128),每组一个在线计算的 scale。它把 per-tensor 的"全局劫持"缓解为"局部劫持",把 per-channel 的"逐列缩放"缓解为"逐组缩放"--但只要组里混进离群通道,"局部劫持"依然致命。本文三个主角就是围绕这个矛盾的三层递进:
@@ -126,7 +127,7 @@ $$
 
 QUIK(arXiv:2310.09259,ETH Zürich 的 IST-DASLab)的定位与 RPTQ 不同:它不再回答"怎么分组",而是回答"**W4A4 能不能做成一个完整的推理引擎**"。方法层面用的都是前人验证过的零件,组装方式值得记录:
 
-1. **双_operand 混合精度分解**:不只激活有离群通道,权重也有敏感列。QUIK 用 Hessian 型重要度(第 4 篇 OWQ/SpQR 同款思路)挑出权重敏感列、用校准统计挑出激活离群通道,两路都以高精度(fp16)保留,主干权重/激活统一 4-bit;
+1. **双_operand 混合精度分解**:不只激活有离群通道,权重也有敏感列。QUIK 用 Hessian 型重要度(第 06 篇 OWQ/SpQR 同款思路)挑出权重敏感列、用校准统计挑出激活离群通道,两路都以高精度(fp16)保留,主干权重/激活统一 4-bit;
 2. **重排区分精度**:以重排把高精度成分与主干物理分开,使 kernel 可以按"稠密 int4 主矩阵 + 少量高精度修正"的双路径调度(LLM.int8 的分解思想,推广到 W4A4);
 3. **kernel 与图级优化**:融合反量化的 GEMM epilogue、定制流水线并行度、逐层融合,把"分解带来的调度开销"吃回去,最终报告了对 fp16 与 W8A8 基线的端到端加速(具体数值随模型/硬件浮动,以原文为准)。
 
@@ -144,9 +145,9 @@ $$
 Y \;=\; \underbrace{X_{:,n} W_{:,n}^\top}_{\text{主干:全部 }4\text{-bit}} \;+\; \underbrace{X_{:,o} W_{:,o}^\top}_{\text{离群:激活 }8\text{-bit}}
 $$
 
-其中 $\mathcal{O}$ 由校准统计选出(占比通常仅百分之几)。注意与 LLM.int8()(第 1 篇)的区别:那里**整个 GEMM 被拆成两份 fp16/int8 分别算再相加**;这里只有**离群的少数列**走 int8 短支路,主干保持 int4×int4 的 Tensor Core 主航道,分解的开销从"整层"缩到"几列"。
+其中 $\mathcal{O}$ 由校准统计选出(占比通常仅百分之几)。注意与 LLM.int8()(第 E1 篇)的区别:那里**整个 GEMM 被拆成两份 fp16/int8 分别算再相加**;这里只有**离群的少数列**走 int8 短支路,主干保持 int4×int4 的 Tensor Core 主航道,分解的开销从"整层"缩到"几列"。
 
-RPTQ 式重排在这里的角色是"**分拣机**":把 $\mathcal{O}$ 与正常通道在内存里排开,双路 kernel 才能各自连续读写。这也是第 11 篇把两者放在一起讲的原因--重排是混合精度的前置工序。
+RPTQ 式重排在这里的角色是"**分拣机**":把 $\mathcal{O}$ 与正常通道在内存里排开,双路 kernel 才能各自连续读写。这也是第 13 篇把两者放在一起讲的原因--重排是混合精度的前置工序。
 
 ### 5.2 分组反量化累加的 GEMM 结构
 
@@ -165,8 +166,8 @@ for each group g:                       # K 维方向逐组推进
 
 两个补充设计补齐全链路:
 
-* **激活动态量化**:激活 scale 在线计算(不依赖校准的静态 scale),并与前一算子的 epilogue 融合,免掉额外 pass--这是 ZeroQuant(第 6 篇)验证过的老配方,好处是对分布漂移免疫;
-* **KV cache 非对称 int4**:K/V 的分布普遍偏离零点(第 10 篇 OS+ 讲过偏移形态),对称 int4 的 15 级网格浪费一半。ATOM 用带 zero-point 的非对称 int4 存 KV,attention 核心计算前反量化回 fp16--"存储低比特、计算高精度",与第 13 篇 QServe 的 KV4 思想一脉相承。
+* **激活动态量化**:激活 scale 在线计算(不依赖校准的静态 scale),并与前一算子的 epilogue 融合,免掉额外 pass--这是 ZeroQuant(第 10 篇)验证过的老配方,好处是对分布漂移免疫;
+* **KV cache 非对称 int4**:K/V 的分布普遍偏离零点(第 11 篇 OS+ 讲过偏移形态),对称 int4 的 15 级网格浪费一半。ATOM 用带 zero-point 的非对称 int4 存 KV,attention 核心计算前反量化回 fp16--"存储低比特、计算高精度",与第 16 篇 QServe 的 KV4 思想一脉相承。
 
 ## 6. 三者对比与定位
 
@@ -279,12 +280,12 @@ print(f"[置换等价性] ||XP(WP)^T − XW^T||_max = {np.abs(rhs - lhs).max():.
 
 **批判**:
 
-1. **静态重排的脆弱性**:`order` 从校准集冻结,域外输入的离群格局可能漂移--虽然离群通道的位置本身相当稳定(第 1 篇以来的共识),但"哪些通道属于最脏的那一组"在边界情形会翻转,重排的最优性随之退化;
+1. **静态重排的脆弱性**:`order` 从校准集冻结,域外输入的离群格局可能漂移--虽然离群通道的位置本身相当稳定(第 E1 篇以来的共识),但"哪些通道属于最脏的那一组"在边界情形会翻转,重排的最优性随之退化;
 2. **重排的连带税**:KV cache、attention 内部状态都要跟随同一 `order`,任何一处遗漏都是静默错误;多卡切分时还要保证各 rank 的 order 一致,工程心智负担不小;
 3. **双路方案的位宽账**:ATOM 给离群列发 int8,这部分列的实际位宽是 8+元数据,严格的平均位宽要高于标称的"4-bit";论文按主流道报吞吐没有问题,但拿压缩率对比时需要诚实还原;
-4. **评估盲区未除**:W4A4 的对比大多停在 PPL + 少数任务,长上下文、代码、数学等对离群更敏感的场景覆盖不足(第 0 篇 §批判的老问题在这一代工作中依旧存在)。
+4. **评估盲区未除**:W4A4 的对比大多停在 PPL + 少数任务,长上下文、代码、数学等对离群更敏感的场景覆盖不足(第 00 篇 §批判的老问题在这一代工作中依旧存在)。
 
-**展望**:三条延伸清晰可见。其一,**重排与旋转合流**:QuaRot/SpinQuant(第 7 篇)的正交变换本质上是"连续版的重排",把离群能量摊匀而非隔离,两者在 2024 后的系统里开始组合使用;其二,**离群集合的动态化**:按 token 在线调整 $\mathcal{O}$ 的代价正在被更聪明的 kernel 吞下,这与 MoE 的动态路由在系统形态上殊途同归;其三,**硬件原生混合格式**:OliVe(第 12 篇)会把"给离群值特殊待遇"这件事直接焊进数据格式与指令集--那是这条路线的下一站。
+**展望**:三条延伸清晰可见。其一,**重排与旋转合流**:QuaRot/SpinQuant(第 12 篇)的正交变换本质上是"连续版的重排",把离群能量摊匀而非隔离,两者在 2024 后的系统里开始组合使用;其二,**离群集合的动态化**:按 token 在线调整 $\mathcal{O}$ 的代价正在被更聪明的 kernel 吞下,这与 MoE 的动态路由在系统形态上殊途同归;其三,**硬件原生混合格式**:OliVe(第 14 篇)会把"给离群值特殊待遇"这件事直接焊进数据格式与指令集--那是这条路线的下一站。
 
 ## 9. 常见问题 FAQ
 
@@ -292,13 +293,13 @@ print(f"[置换等价性] ||XP(WP)^T − XW^T||_max = {np.abs(rhs - lhs).max():.
 有必要,而且不可替代:ATOM 的双路执行**前提**是离群列在内存里连续,RPTQ 正是这个前提的提供者。另外在不想付双路 kernel 成本的场合(边缘端、轻量 runtime),"重排 + 纯 int4 组量化"仍是性价比很高的中间态(本文实测 1.18x 地板)。
 
 **Q2:为什么不干脆对激活做 per-channel 量化?**
-数学上它是最优分组(g=1,污染比恒为 1),但在线 per-channel scale 的 GEMM 要逐列缩放累加,Tensor Core 效率崩溃(第 6 篇详述)。g=32/64 的分组是对精度与吞吐的折中,RPTQ/ATOM 的全部努力都是在"g>1 的约束下"逼近"g=1 的精度"。
+数学上它是最优分组(g=1,污染比恒为 1),但在线 per-channel scale 的 GEMM 要逐列缩放累加,Tensor Core 效率崩溃(第 10 篇详述)。g=32/64 的分组是对精度与吞吐的折中,RPTQ/ATOM 的全部努力都是在"g>1 的约束下"逼近"g=1 的精度"。
 
-**Q3:这些方法和第 10 篇 OS+ 的 shift/scale 是竞争关系吗?**
-正交互补。shift/scale 是**逐通道仿射整形**(改变每个通道自己的分布),重排/混合精度是**通道间的组织方式**(决定谁跟谁共享命运)。生产级的 W4A4 流水线通常先做 OS+/OmniQuant 式整形,再重排,再双路执行--QServe(第 13 篇)就是这样的全家桶。
+**Q3:这些方法和第 11 篇 OS+ 的 shift/scale 是竞争关系吗?**
+正交互补。shift/scale 是**逐通道仿射整形**(改变每个通道自己的分布),重排/混合精度是**通道间的组织方式**(决定谁跟谁共享命运)。生产级的 W4A4 流水线通常先做 OS+/OmniQuant 式整形,再重排,再双路执行--QServe(第 16 篇)就是这样的全家桶。
 
 **Q4:KV4 为什么必须是非对称量化?**
-K/V 通道普遍带稳定偏移(第 10 篇 §4.1 的形态),对称 int4 的 15 级网格以零为中心,一半浪费在从不出现的负半轴。zero-point 平移让网格罩住实际支撑集,等效于免费的 shift--代价是反量化多一次乘加。
+K/V 通道普遍带稳定偏移(第 11 篇 §4.1 的形态),对称 int4 的 15 级网格以零为中心,一半浪费在从不出现的负半轴。zero-point 平移让网格罩住实际支撑集,等效于免费的 shift--代价是反量化多一次乘加。
 
 ## 10. 参考清单
 
@@ -307,8 +308,8 @@ K/V 通道普遍带稳定偏移(第 10 篇 §4.1 的形态),对称 int4 的 15 �
 | RPTQ: Reorder-based Post-training Quantization for Large Language Models | [arXiv:2304.01089](https://arxiv.org/abs/2304.01089) · [GitHub](https://github.com/hahnyuan/RPTQ4LLM) |
 | QUIK: Towards End-to-end 4-Bit Inference on Generative Large Language Models | [arXiv:2310.09259](https://arxiv.org/abs/2310.09259) · [GitHub](https://github.com/IST-DASLab/QUIK) |
 | ATOM: Low-bit Quantization for Efficient and Accurate LLM Serving | [arXiv:2310.19102](https://arxiv.org/abs/2310.19102) · [GitHub](https://github.com/efeslab/Atom) |
-| LLM.int8()(分解思想的源头,第 1 篇) | [arXiv:2208.07339](https://arxiv.org/abs/2208.07339) |
-| ZeroQuant(动态量化与算子融合的老配方,第 6 篇) | [arXiv:2206.01861](https://arxiv.org/abs/2206.01861) |
+| LLM.int8()(分解思想的源头,第 E1 篇) | [arXiv:2208.07339](https://arxiv.org/abs/2208.07339) |
+| ZeroQuant(动态量化与算子融合的老配方,第 10 篇) | [arXiv:2206.01861](https://arxiv.org/abs/2206.01861) |
 | 本文配套实验 | 配套实验脚本（纯 numpy 实现，种子固定可复现） |
 
 > **下一篇**:[OliVe](/2026/08/24/ptq-12-olive-abfloat/)--当算法社区还在用稀疏编码给离群值"开后门",硬件团队给出了本地化解:牺牲离群值旁边的邻居(victim),把离群值嵌进低精度矩阵(OVP 配对),并为它专门发明 abfloat 浮点格式。

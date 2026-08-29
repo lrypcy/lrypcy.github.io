@@ -1,15 +1,18 @@
 ---
-title: "LLM PTQ 深度解析（01）：RTN 基线与 LLM.int8()：outlier 问题的提出"
+title: "大模型量化算法（扩展篇 E1）：RTN 与 LLM.int8()：工程视角与历史脉络"
 date: 2026-08-24 09:40:00 +0800
 categories:
   - 模型量化
-tags: [quantization, ptq, rtn, llmint8, outlier]
+tags: [llm-inference, quantization, rtn, llmint8, engineering]
 layout: post
 mathjax: true
 ---
 
-> **PTQ 深度系列 · 第 1 篇 / 共 9 篇**
-> 本系列从"为什么朴素量化在大模型上会崩"讲起，逐步覆盖 outlier 处理（本篇）、GPTQ 二阶补偿（第 2 篇）、AWQ/OmniQuant 激活感知（第 3 篇）、SmoothQuant/ZeroQuant 激活平滑（第 6 篇）等核心算法与硬件格式（第 8 篇）。
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **扩展篇 · E1**
+>
+> 本篇与 [01 量化器数学地基与 RTN](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)、[02 LLM.int8()](/2026/08/24/llm-quant-01-llmint8-outlier-mixture/) 主题重叠，侧重工程落地细节与历史脉络，作为主线之外的补充视角。
+>
+> 与主线精读的差异：本篇保留写作当时的工程视角与实验细节，未做后续精读版的数学重写，适合作为历史脉络与落地踩坑的补充材料。
 
 ---
 
@@ -330,7 +333,7 @@ $$
 - **大模型（13B+）**：outlier 扩散到 **FFN 中间激活**——即 up-projection + GELU 之后、down-projection 之前的那个大矩阵（维度如 $4H$，OPT-175B 上 $H=12288$ → 中间 49152 维）。有一个直观解释：FFN 的中间维度充当"记忆槽"，少数神经元对应高频语义模式，学出了系统性大权重/大激活。
 - **175B**：outlier 几乎遍布所有层，且强度进一步增大（这正是 2.4 节表 1 中"崩溃"的解剖学基础）。
 
-从量化视角看，outlier 的位置决定了**哪条路径会被 fp16 拖累**：attention 输出路径的 $|O|$ 小，fp16 开销可忽略；一旦 FFN 中间层也冒出 outlier 列，$|O|$ 和矩阵本身的宽度同时变大，fp16 路径的串行代价上升（第 6 章量化这个代价）。而对 SmoothQuant（本系列第 6 篇）而言，**outlier 集中在 FFN 中间层意味着可以用"每层一个迁移 scale"低成本搞定**——这是后话，先记住这个伏笔。
+从量化视角看，outlier 的位置决定了**哪条路径会被 fp16 拖累**：attention 输出路径的 $|O|$ 小，fp16 开销可忽略；一旦 FFN 中间层也冒出 outlier 列，$|O|$ 和矩阵本身的宽度同时变大，fp16 路径的串行代价上升（第 6 章量化这个代价）。而对 SmoothQuant（本系列第 10 篇）而言，**outlier 集中在 FFN 中间层意味着可以用"每层一个迁移 scale"低成本搞定**——这是后话，先记住这个伏笔。
 
 ---
 
@@ -579,7 +582,7 @@ LLM.int8() 混合                     148224     0.50
 
 之后的演进可以概括为两条路（详细内容见第 7 章系列导航）：
 
-1. **"消灭 outlier"路线（SmoothQuant，第 6 篇）**：既然 outlier 在激活里，那就通过数学变换 $\text{diag}(\sigma)^{-1}X \cdot \text{diag}(\sigma)W$ 把量级迁移到权重侧，让激活变得"可量化"，从而**不需要 fp16 兜底路径**，全 int8。这是对 LLM.int8() "fp16 串行路径"代价的直接回应。
+1. **"消灭 outlier"路线（SmoothQuant，第 10 篇）**：既然 outlier 在激活里，那就通过数学变换 $\text{diag}(\sigma)^{-1}X \cdot \text{diag}(\sigma)W$ 把量级迁移到权重侧，让激活变得"可量化"，从而**不需要 fp16 兜底路径**，全 int8。这是对 LLM.int8() "fp16 串行路径"代价的直接回应。
 2. **"绕过 outlier"路线（GPTQ/AWQ，第 2-3 篇）**：权重侧用二阶信息（Hessian）做逐列补偿，或者用激活统计挑选敏感通道加权——既然 outlier 通道对输出影响最大，就优先保证它们的精度。
 
 ### 6.3 int8 硬件路径遗产
@@ -594,24 +597,24 @@ LLM.int8() 的部署形态虽然退场，但它验证并普及了 **int8 硬件�
 
 | 篇目 | 主题（文件） | 与本文的关系 |
 |---|---|---|
-| 第 0 篇 | 量化全景：[设计空间与算法族谱](/2026/08/24/ptq-00-overview/) | 量化器数学与算法族谱的统一坐标系 |
-| **第 1 篇（本文）** | RTN 基线 + LLM.int8() outlier 分解**本篇** | 建立误差上界、动态范围、per-channel/row scale 的数学框架 |
-| 第 2 篇 | GPTQ：[Hessian 二阶补偿](/2026/08/24/ptq-02-gptq/) | 从本文 RTN 崩溃出发，用二阶信息补误差 |
-| 第 3 篇 | AWQ/OmniQuant：[激活感知与可学习参数](/2026/08/24/ptq-03-awq-omniq/) | 从"outlier 通道影响最大"出发保护显著通道 |
-| 第 4 篇 | SpQR/OWQ/HQQ：[outlier 拆分与数据免费](/2026/08/24/ptq-04-spqr-owq-hqq/) | outlier 拆分的极致路线与无校准替代 |
-| 第 5 篇 | QuIP#/AQLM：[格码本与加性量化](/2026/08/24/ptq-05-quip-aqlm/) | 极低位宽下的码本路线 |
-| 第 6 篇 | SmoothQuant/ZeroQuant：[激活平滑 W8A8](/2026/08/24/ptq-06-smoothquant-zeroquant/) | 数学上消灭 outlier 而非绕开/拆分 |
-| 第 7 篇 | QuaRot/SpinQuant：[旋转消除 outlier](/2026/08/24/ptq-07-quarot-spinquant/) | 用坐标变换摊薄 outlier 的 W4A4 路线 |
-| 第 8 篇 | GGUF k-quants/FP8/MXFP4：[工程生态与硬件格式](/2026/08/24/ptq-08-gguf-fp8-mxfp4/) | 硬件格式视角的收尾 |
+| 第 00 篇 | 量化全景：[设计空间与算法族谱](/2026/08/24/ptq-00-overview/) | 量化器数学与算法族谱的统一坐标系 |
+| **第 E1 篇（本文）** | RTN 基线 + LLM.int8() outlier 分解**本篇** | 建立误差上界、动态范围、per-channel/row scale 的数学框架 |
+| 第 03 篇 | GPTQ：[Hessian 二阶补偿](/2026/08/24/ptq-02-gptq/) | 从本文 RTN 崩溃出发，用二阶信息补误差 |
+| 第 05 篇 | AWQ/OmniQuant：[激活感知与可学习参数](/2026/08/24/ptq-03-awq-omniq/) | 从"outlier 通道影响最大"出发保护显著通道 |
+| 第 06 篇 | SpQR/OWQ/HQQ：[outlier 拆分与数据免费](/2026/08/24/ptq-04-spqr-owq-hqq/) | outlier 拆分的极致路线与无校准替代 |
+| 第 07 篇 | QuIP#/AQLM：[格码本与加性量化](/2026/08/24/ptq-05-quip-aqlm/) | 极低位宽下的码本路线 |
+| 第 10 篇 | SmoothQuant/ZeroQuant：[激活平滑 W8A8](/2026/08/24/ptq-06-smoothquant-zeroquant/) | 数学上消灭 outlier 而非绕开/拆分 |
+| 第 12 篇 | QuaRot/SpinQuant：[旋转消除 outlier](/2026/08/24/ptq-07-quarot-spinquant/) | 用坐标变换摊薄 outlier 的 W4A4 路线 |
+| 第 15 篇 | GGUF k-quants/FP8/MXFP4：[工程生态与硬件格式](/2026/08/24/ptq-08-gguf-fp8-mxfp4/) | 硬件格式视角的收尾 |
 
-**阅读建议**：如果你只记得本文三句话——(1) RTN 崩在 $s$ 被 outlier 撑大，有效位宽坍塌；(2) LLM.int8() 用 $X = X_{\text{int8}} + X_{\text{outlier}}$ 把 outlier 物理剔出主路径，代价是 fp16 串行路径与 2x 内存；(3) 第 6 篇 SmoothQuant 将用"迁移 scale"同时解决这两个代价。
+**阅读建议**：如果你只记得本文三句话——(1) RTN 崩在 $s$ 被 outlier 撑大，有效位宽坍塌；(2) LLM.int8() 用 $X = X_{\text{int8}} + X_{\text{outlier}}$ 把 outlier 物理剔出主路径，代价是 fp16 串行路径与 2x 内存；(3) 第 10 篇 SmoothQuant 将用"迁移 scale"同时解决这两个代价。
 
 ---
 
 ## 8. 参考清单
 
 1. Dettmers, Lewis, Belkada, Zettlemoyer. **LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale**. arXiv:2208.07339, NeurIPS 2022. （本文全部"论文观察"数据的来源：0.1% outlier 列、30% 激活范数、≥20x 强度、α=6.0 阈值、OPT-175B 崩溃、per-channel/per-row scale 数学）
-2. Xiao, Lin, et al. **SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models**. arXiv:2211.10438. （系列第 6 篇素材：activation scale 迁移到权重的数学变换）
-3. Frantar, Ashkboos, Hoefler, Alistarh. **GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers**. arXiv:2210.17323. （系列第 2 篇素材：二阶 Hessian 权重补偿）
+2. Xiao, Lin, et al. **SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models**. arXiv:2211.10438. （系列第 10 篇素材：activation scale 迁移到权重的数学变换）
+3. Frantar, Ashkboos, Hoefler, Alistarh. **GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers**. arXiv:2210.17323. （系列第 03 篇素材：二阶 Hessian 权重补偿）
 4. Nagel, Amjad, van Baalen, Louizos, Blankevoort. **A White Paper on Neural Network Quantization**. arXiv:2106.08295. （RTN 误差上界、MSE 最优 scale、均匀量化理论的经典总结）
 5. Dettmers et al. **bitsandbytes** 库与 HuggingFace Transformers 的 `load_in_8bit` 实现（LLM.int8() 的开源落地形态）。

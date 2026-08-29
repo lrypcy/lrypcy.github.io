@@ -1,18 +1,22 @@
 ---
-title: "大模型量化算法（02）：SmoothQuant——W8A8 的等效缩放迁移"
+title: "大模型量化算法（09）：SmoothQuant——W8A8 的等效缩放迁移"
 date: 2026-08-24 08:10:00 +0800
 categories:
   - 模型量化
-tags: [llm-inference, quantization, ptq, smoothquant, w8a8, activation-outliers]
+tags: [llm-inference, quantization, smoothquant, w8a8, activation-outliers]
 layout: post
 mathjax: true
 ---
 
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 2 · Activation PTQ** ｜ 第 09 篇 / 共 26 篇
+>
+> [← 08 SqueezeLLM/VPTQ/CLAQ](/2026/08/24/ptq-09-squeezellm-vptq-claq/) ｜ [10 ZeroQuant →](/2026/08/24/ptq-06-smoothquant-zeroquant/)
+
 > **TL;DR**
 >
 > * **核心结论**：W8A8（权重、激活都压到 8-bit）的难点从来不在权重，而在激活——权重可以 per-channel 量化，激活只能 per-token/per-tensor，于是常驻 outlier 通道把激活 scale 拉爆而拿权重毫无办法。SmoothQuant 用一条严格恒等式 $XW=\big(X\,\mathrm{diag}(\boldsymbol{\tau})^{-1}\big)\big(\mathrm{diag}(\boldsymbol{\tau})\,W\big)$ 把量化难度按迁移强度 $\beta$ 在两侧之间搬运：$\tau_j=a_j^{\beta}/w_j^{\,1-\beta}$。本篇推导出这条变换为什么输出分毫不变、为什么"难度守恒"、为什么默认 $\beta=0.5$ 恰是两端动态范围的均衡点；配套实验实测直接 W8A8 的层输出 MSE 是平滑后的 **10.7 倍**，且 U 形曲线谷底精确落在 $\beta^{*}=0.50$。
-> * **反直觉发现**：① 平滑不消灭难度、只搬运难度——逐通道动态范围乘积 $\max|X'_{:j}|\cdot\max|W'_{j:}|$ 在变换前后最大相对偏差 **$2.4\times10^{-16}$**，机器精度级的守恒；② 权重被放大 $\tau_j$ 倍并不受伤：per-channel scale 精确地跟着乘 $\tau_j$，整数量码一个不变，相对误差分毫不动；③ 校准集从 256 token 扩到 65536，outlier 通道的 max 统计估计从 45.1 单调漂到 70.0（+55%）——00 篇的极值漂移定律在 SmoothQuant 上有了真实后果，而 99.9% 分位数估计的波动只有 max 估计的约 60%，代价是留下截断误差。
-> * **系列定位**：00 篇立起 RTN 对照组，01 篇 LLM.int8() 用混合精度分解"绕开"outlier，本篇第一次正面回答"能不能让激活本身变得可量化"。等效变换思想是本系列的第二条主线：AWQ（03 篇）换目标函数、OmniQuant（07 篇）把变换参数学化、QuaRot/SpinQuant（09 篇）把逐通道缩放升级为正交旋转。全部结论有配套实验背书：smoothquant_alpha_sweep。
+> * **反直觉发现**：① 平滑不消灭难度、只搬运难度——逐通道动态范围乘积 $\max|X'_{:j}|\cdot\max|W'_{j:}|$ 在变换前后最大相对偏差 **$2.4\times10^{-16}$**，机器精度级的守恒；② 权重被放大 $\tau_j$ 倍并不受伤：per-channel scale 精确地跟着乘 $\tau_j$，整数量码一个不变，相对误差分毫不动；③ 校准集从 256 token 扩到 65536，outlier 通道的 max 统计估计从 45.1 单调漂到 70.0（+55%）——01 篇的极值漂移定律在 SmoothQuant 上有了真实后果，而 99.9% 分位数估计的波动只有 max 估计的约 60%，代价是留下截断误差。
+> * **系列定位**：01 篇立起 RTN 对照组，02 篇 LLM.int8() 用混合精度分解"绕开"outlier，本篇第一次正面回答"能不能让激活本身变得可量化"。等效变换思想是本系列的第二条主线：AWQ（04 篇）换目标函数、OmniQuant（05 篇）把变换参数学化、QuaRot/SpinQuant（12 篇）把逐通道缩放升级为正交旋转。全部结论有配套实验背书：smoothquant_alpha_sweep。
 
 ---
 
@@ -32,7 +36,7 @@ W8A8 是另一条路线：GEMM 整体落到 INT8 Tensor Core（吞吐约为 FP16
 
 ### 1.2 不对称性的数学：同一套量化器，两种命运
 
-先把"难"字数学化。对称 $b$-bit 均匀量化的步长由动态范围决定（00 篇 §3.2）：
+先把"难"字数学化。对称 $b$-bit 均匀量化的步长由动态范围决定（01 篇 §3.2）：
 
 $$
 s \;=\; \frac{\max\lvert x\rvert}{q_{\max}}, \qquad q_{\max}=2^{b-1}-1 .
@@ -63,23 +67,23 @@ $$
 
 ### 1.3 符号字典（本篇增量）
 
-全部沿用 00 篇约定：$s$ 永远是量化步长、$\hat{\cdot}$ 永远是反量化值、$W\in\mathbb{R}^{m\times n}$ 行为输出通道列为输入通道、$C=\mathbb{E}[xx^\top]$ 沿用 00 篇预留。本篇只新增以下记号：
+全部沿用 01 篇约定：$s$ 永远是量化步长、$\hat{\cdot}$ 永远是反量化值、$W\in\mathbb{R}^{m\times n}$ 行为输出通道列为输入通道、$C=\mathbb{E}[xx^\top]$ 沿用 01 篇预留。本篇只新增以下记号：
 
 | 符号 | 含义 | 易混淆提示 |
 |---|---|---|
-| $\boldsymbol{\tau}$，$\tau_j$ | SmoothQuant 平滑系数向量及其第 $j$ 个分量，$\tau_j>0$ | 论文原文记 $s_j$；本系列 $s$ 已被 00 篇占用，故改记 $\tau$ |
-| $\beta$ | 迁移强度，$\tau_j(\beta)=a_j^{\beta}/w_j^{\,1-\beta}$ | 论文原文记 $\alpha$；$\alpha$ 已被 00 篇专用为裁剪比例，全系列不得挪用 |
-| $a_j$ | 激活第 $j$ 输入通道在校准集上的幅值统计量 $\max_t\lvert X_{tj}\rvert$ | 带下标的通道统计量；与 00 篇 §4.1 均匀分布半宽 $a$（无下标标量）同名不同物 |
+| $\boldsymbol{\tau}$，$\tau_j$ | SmoothQuant 平滑系数向量及其第 $j$ 个分量，$\tau_j>0$ | 论文原文记 $s_j$；本系列 $s$ 已被 01 篇占用，故改记 $\tau$ |
+| $\beta$ | 迁移强度，$\tau_j(\beta)=a_j^{\beta}/w_j^{\,1-\beta}$ | 论文原文记 $\alpha$；$\alpha$ 已被 01 篇专用为裁剪比例，全系列不得挪用 |
+| $a_j$ | 激活第 $j$ 输入通道在校准集上的幅值统计量 $\max_t\lvert X_{tj}\rvert$ | 带下标的通道统计量；与 01 篇 §4.1 均匀分布半宽 $a$（无下标标量）同名不同物 |
 | $w_j$ | 权重第 $j$ 输入通道对应行的幅值统计量 $\max_i\lvert W_{ji}\rvert$ | 左乘 diag 时行指标即输入通道；别与 per-channel 量化的输出通道 scale 相混 |
-| $X'$，$W'$ | 平滑后的激活批次与权重 | 撇号专指平滑变换；反量化恢复值仍用帽子 $\hat{X}$（00 篇定义） |
+| $X'$，$W'$ | 平滑后的激活批次与权重 | 撇号专指平滑变换；反量化恢复值仍用帽子 $\hat{X}$（01 篇定义） |
 | $T$ | 激活批次的 token 数，$X\in\mathbb{R}^{T\times n}$ | 新增维度记号 |
 | $\tilde{s}_{tj}$ | 并入 $\tau_j$ 后的有效激活步长（仅 §4 出现） | 仍是步长家族：$\tilde{s}_{tj}=s'_t\,\tau_j$ |
 
 引用 SmoothQuant 论文图表时请做换算：论文的 $s_j$ 即本文 $\tau_j$，论文的 $\alpha$ 即本文 $\beta$。配套代码变量名刻意保留论文原记号（`alpha`、`s`），对照关系见 §2.4 的变量映射表。
 
-### 1.4 01 篇的教训与本篇的总路线
+### 1.4 02 篇的教训与本篇的总路线
 
-LLM.int8()（01 篇）给了两个事实：其一，outlier 是结构性现象——少数通道幅值可达中位数的 20 倍以上，位置跨 token 稳定、随深度系统性存在[arXiv:2208.07339](https://arxiv.org/abs/2208.07339)；其二，混合精度分解（outlier 通道走 FP16、其余走 INT8）数学精确但工程昂贵，双路 GEMM 与合并的开销让加速比随 outlier 增多而递减。
+LLM.int8()（02 篇）给了两个事实：其一，outlier 是结构性现象——少数通道幅值可达中位数的 20 倍以上，位置跨 token 稳定、随深度系统性存在[arXiv:2208.07339](https://arxiv.org/abs/2208.07339)；其二，混合精度分解（outlier 通道走 FP16、其余走 INT8）数学精确但工程昂贵，双路 GEMM 与合并的开销让加速比随 outlier 增多而递减。
 
 把两件事并排放，问题第一次可以被正面提出：outlier 既然**稳定存在、可被统计**，能不能不做运行时分解，而是**预先改变张量的分布形状，让激活自己变得可量化**？这就是 SmoothQuant 的总路线。本篇的结构如下：
 
@@ -164,7 +168,7 @@ $$
 a'_j\cdot w'_j = \frac{a_j}{\tau_j}\cdot \tau_j w_j = a_j\cdot w_j ,
 $$
 
-乘积与 $\tau_j$ 无关——**每通道的"量化难度总量"是守恒量，$\tau_j$ 只是决定它在激活侧与权重侧之间的分配比例**。SmoothQuant 全部的魔法，就是把守恒量从"激活独占"重新分配成"两边分担"，利用 §2.2 的不对称性赚差价。这也立刻给出一条边界：如果权重也要压到很低比特（如 4-bit），权重侧的容错余量收缩，可迁移的空间随之收窄——这个张力在 AWQ（03 篇）会成为主角。
+乘积与 $\tau_j$ 无关——**每通道的"量化难度总量"是守恒量，$\tau_j$ 只是决定它在激活侧与权重侧之间的分配比例**。SmoothQuant 全部的魔法，就是把守恒量从"激活独占"重新分配成"两边分担"，利用 §2.2 的不对称性赚差价。这也立刻给出一条边界：如果权重也要压到很低比特（如 4-bit），权重侧的容错余量收缩，可迁移的空间随之收窄——这个张力在 AWQ（04 篇）会成为主角。
 
 ![SmoothQuant 等效缩放的难度守恒与激活削平（合成数据：T=1024，d_in=256，12 个 outlier 通道 ×20~80）：上图平滑前后每通道动态范围乘积完全重叠；下图激活各通道幅值在对数轴上从约 50 比 1 的峰谷差被压平到约 7 比 1](/assets/img/quant/smoothquant_difficulty_conservation.png)
 
@@ -177,7 +181,7 @@ $$
 
 ### 2.4 迁移强度 β：连续谱上的均衡点
 
-剩下的唯一问题是 $\tau_j$ 怎么选。论文把它参数化为一条从"不动激活"到"抹平激活"的连续谱（原文记号 $\alpha$，本系列因 00 篇已把 $\alpha$ 占用为裁剪比例，改记 $\beta$）：
+剩下的唯一问题是 $\tau_j$ 怎么选。论文把它参数化为一条从"不动激活"到"抹平激活"的连续谱（原文记号 $\alpha$，本系列因 01 篇已把 $\alpha$ 占用为裁剪比例，改记 $\beta$）：
 
 $$
 \boxed{\;\tau_j(\beta) \;=\; \frac{a_j^{\,\beta}}{w_j^{\,1-\beta}}, \qquad \beta\in[0,1]\;}
@@ -215,7 +219,7 @@ $$
 
 一个具体数字过一遍公式：设 $a_j=80$、$w_j=0.4$，则 $\tau_j^{*}=\sqrt{200}\approx14.1$，平滑后两端范围同为 $\sqrt{32}\approx5.66$；若 $\beta=0$，激活范围仍是 80（outlier 原封不动）；若 $\beta=1$，权重行被放大 80 倍。$\beta$ 就是在"激活的 80"与"权重的 80"之间挑一个双方都能接受的中间点。
 
-当然，min-max 均衡只是启发式——真实的层损失是 00 篇那条 $\mathcal{L}=\mathrm{tr}\big((W-\hat{W})\,C\,(W-\hat{W})^\top\big)$（$C=\mathbb{E}[xx^\top]$），两侧误差如何进入 $C$ 加权的输出误差才是最终裁判。所以均衡点到底是不是实测最优，要靠实验说话：
+当然，min-max 均衡只是启发式——真实的层损失是 01 篇那条 $\mathcal{L}=\mathrm{tr}\big((W-\hat{W})\,C\,(W-\hat{W})^\top\big)$（$C=\mathbb{E}[xx^\top]$），两侧误差如何进入 $C$ 加权的输出误差才是最终裁判。所以均衡点到底是不是实测最优，要靠实验说话：
 
 ![α（本文记 β）扫描实验：左图 W8A8 层输出 MSE 随迁移强度呈对称 U 形，谷底精确落在 β*=0.50；右图激活与权重的平均动态范围呈镜像跷跷板，交点同样在 β=0.5](/assets/img/quant/smoothquant_alpha_sweep_mse.png)
 
@@ -268,7 +272,7 @@ $\tau_j$ 依赖 $a_j$ 与 $w_j$。$w_j$ 是权重自身的属性，离线精确�
 
 ### 3.2 max 的漂移定律与 β 的降噪杠杆
 
-00 篇 §4.3 讲过：样本最大值随样本量按 $\sqrt{2\ln n}$ 漂移。SmoothQuant 把这个纯统计现象变成了部署风险：$a_j$ 漂，$\tau_j$ 跟着漂，平滑就失准。漂移被传导多少，由 §2.4 的杠杆公式决定：$a_j$ 高估 10%，$\tau_j$ 就偏 $(1.1^{\beta}-1)$——$\beta=0.3$ 时只偏 2.9%，$\beta=0.5$ 偏 4.9%，$\beta=0.9$ 偏 9.0%。**β 小不仅意味着少搬难度，还意味着校准噪声被指数衰减掉大半**；反之越激进的平滑越依赖校准质量。
+01 篇 §4.3 讲过：样本最大值随样本量按 $\sqrt{2\ln n}$ 漂移。SmoothQuant 把这个纯统计现象变成了部署风险：$a_j$ 漂，$\tau_j$ 跟着漂，平滑就失准。漂移被传导多少，由 §2.4 的杠杆公式决定：$a_j$ 高估 10%，$\tau_j$ 就偏 $(1.1^{\beta}-1)$——$\beta=0.3$ 时只偏 2.9%，$\beta=0.5$ 偏 4.9%，$\beta=0.9$ 偏 9.0%。**β 小不仅意味着少搬难度，还意味着校准噪声被指数衰减掉大半**；反之越激进的平滑越依赖校准质量。
 
 实测这两件事（构造 $10^6$ token 的"无限"激活池，其中 12 个 outlier 通道 ×20~80）：
 
@@ -276,10 +280,10 @@ $\tau_j$ 依赖 $a_j$ 与 $w_j$。$w_j$ 是权重自身的属性，离线精确�
 
 **这张图回答四个问题**：
 
-1. **漂移有多快？** 校准集 N 从 256 扩到 65536，outlier 通道的 max 估计单调上涨 45.1 → 50.3 → 59.3 → 63.8 → 70.0，累计 +55%——与 00 篇 $\sqrt{2\ln n}$ 律方向一致，且没有饱和迹象。
+1. **漂移有多快？** 校准集 N 从 256 扩到 65536，outlier 通道的 max 估计单调上涨 45.1 → 50.3 → 59.3 → 63.8 → 70.0，累计 +55%——与 01 篇 $\sqrt{2\ln n}$ 律方向一致，且没有饱和迹象。
 2. **max 有多不稳？** 固定 N=4096、重采 30 个子集，max 估计的 std 为 3.62；99.9% 分位数估计 std 为 2.19，稳定性约为 max 的 1.65 倍。
 3. **正常通道呢？** 无重尾的正常通道 max 估计 std 仅 0.067——比 outlier 通道稳 54 倍。**漂移与不稳都是重尾专属**：outlier 越极端的通道，其统计量越像彩票。
-4. **分位数的代价是什么？** 99.9% 分位数天然截掉了最尾部 0.1% 的质量——换成量化语言，就是 00 篇 §4 分析过的裁剪误差：换稳健性，付截断税。β 越大（激活被削得越狠），这笔税越不能免。
+4. **分位数的代价是什么？** 99.9% 分位数天然截掉了最尾部 0.1% 的质量——换成量化语言，就是 01 篇 §4 分析过的裁剪误差：换稳健性，付截断税。β 越大（激活被削得越狠），这笔税越不能免。
 
 ### 3.3 三种估计方式的取舍
 
@@ -289,7 +293,7 @@ $\tau_j$ 依赖 $a_j$ 与 $w_j$。$w_j$ 是权重自身的属性，离线精确�
 | 分位数（如 99.9%） | $a_j=\lvert X\rvert$ 的样本分位数 | 对重采样稳定（std 低 39%）、抗脏数据 | 留截断误差；分位点选择又是一个超参 |
 | 调小 β | $\tau_j=a_j^{\beta}/w_j^{1-\beta}$ | 不换统计量，直接用杠杆 $\partial\log\tau/\partial\log a=\beta$ 衰减噪声 | 治标：outlier 压不下去，激活侧残余难度仍在 |
 
-三条路线并不互斥：工程实践常是"分位数统计 + 中等 β"的组合拳；论文原文用 max + β∈[0.5 默认]，并在更大规模上验证了近无损[arXiv:2211.10438](https://arxiv.org/abs/2211.10438)，说明在足够干净的数据上 max 的漂移尚可容忍。但校准集与线上分布一旦偏移（多语言混排、代码、极端长尾生成），静态 $\tau_j$ 就可能失效——这是它结构性软肋，ZeroQuant 一系干脆用动态量化绕开校准依赖[arXiv:2206.01861](https://arxiv.org/abs/2206.01861)（06 篇展开）。
+三条路线并不互斥：工程实践常是"分位数统计 + 中等 β"的组合拳；论文原文用 max + β∈[0.5 默认]，并在更大规模上验证了近无损[arXiv:2211.10438](https://arxiv.org/abs/2211.10438)，说明在足够干净的数据上 max 的漂移尚可容忍。但校准集与线上分布一旦偏移（多语言混排、代码、极端长尾生成），静态 $\tau_j$ 就可能失效——这是它结构性软肋，ZeroQuant 一系干脆用动态量化绕开校准依赖[arXiv:2206.01861](https://arxiv.org/abs/2206.01861)（10 篇展开）。
 
 静态与动态其实各守半壁江山：静态 $\tau_j$ 管"通道间"的幅值失衡（它跨 token 稳定，适合离线统计），动态 per-token scale 管"token 间"的整体涨落（它逐 token 变化，必须现算）。SmoothQuant 的默认配方本来就是两者叠加——先平滑再 per-token 动态量化；后来生产引擎的 W8A8/FP8 数据流（权重 per-channel 静态 scale + 激活 per-token 动态 scale）正是这套组合的直接后裔。
 
@@ -375,7 +379,7 @@ $$
 
 **致命局限**：其一，静态假设——$\boldsymbol{\tau}$ 由校准集冻结，而 §3 实测 max 统计天然漂移（N 扩 256 倍涨 55%），分布一旦偏移平滑就可能帮倒忙；其二，逐通道对角变换只能**重分配**能量、不能**消灭**能量，outlier 的幅值被原样塞进了权重——权重侧还有 4-bit 任务时（AWQ 场景），迁移空间被两头挤压；其三，β 是新超参，分层调 β 又是一轮搜索成本；其四，激活 scale 从标量变向量，kernel 层面并非绝对零开销（论文 1.56× 的加速已含这部分优化的抵偿）。
 
-**如何引出下一篇**：同样的"等效变换"武器库，AWQ（03 篇）换了目标函数——不再问"两端动态范围怎么均衡"，而是问"哪些通道对输出误差重要"，用激活二阶矩加权去搜缩放因子，把 4-bit 权重量化的重构误差直接压下去[arXiv:2306.00978](https://arxiv.org/abs/2306.00978)；OmniQuant（07 篇）把变换参数全部梯度化学出来；QuaRot/SpinQuant（09 篇）则更进一步——用正交旋转取代逐通道缩放，把 outlier 能量均匀摊到所有维度上，连"谁迁谁"都不用决定了[arXiv:2404.00456](https://arxiv.org/abs/2404.00456)。平滑的极限，正是旋转的起点。
+**如何引出下一篇**：同样的"等效变换"武器库，AWQ（04 篇）换了目标函数——不再问"两端动态范围怎么均衡"，而是问"哪些通道对输出误差重要"，用激活二阶矩加权去搜缩放因子，把 4-bit 权重量化的重构误差直接压下去[arXiv:2306.00978](https://arxiv.org/abs/2306.00978)；OmniQuant（05 篇）把变换参数全部梯度化学出来；QuaRot/SpinQuant（12 篇）则更进一步——用正交旋转取代逐通道缩放，把 outlier 能量均匀摊到所有维度上，连"谁迁谁"都不用决定了[arXiv:2404.00456](https://arxiv.org/abs/2404.00456)。平滑的极限，正是旋转的起点。
 
 **遗产**：硬件从 INT8 走向 FP8（Hopper 起），但 SmoothQuant 的遗产没有过时反而更深——FP8 的 E4M3 尾数只有 3 bit，对激活幅值失衡更敏感，"难度迁移"的需求不减反增；vLLM、TensorRT-LLM 的 FP8 部署沿用的正是"权重 per-channel 静态 scale + 激活 per-token 动态 scale"这套 SmoothQuant 数据流（口径：社区公开实现惯例，未逐一核验版本）。一句话定位它的历史角色：它没发明新指令也没发明新格式，只发明了"难度搬运"这个视角——而此后所有 W8A8/FP8 部署的数据流设计都活在这个视角里。
 
@@ -384,11 +388,11 @@ $$
 **论文（ID 已逐一核验）**
 
 - Xiao et al., *SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models*, [arXiv:2211.10438](https://arxiv.org/abs/2211.10438) —— 本篇主角，NeurIPS 2023；等效变换、β 谱、175B 近无损与 1.56× 加速均出自此文
-- Dettmers et al., *LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale*, [arXiv:2208.07339](https://arxiv.org/abs/2208.07339) —— 01 篇主角；outlier 结构性现象的实证来源
-- Yao et al., *ZeroQuant: Efficient and Affordable Post-Training Quantization for Large-Scale Transformers*, [arXiv:2206.01861](https://arxiv.org/abs/2206.01861) —— "无校准集"的另一条路，06 篇主角
+- Dettmers et al., *LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale*, [arXiv:2208.07339](https://arxiv.org/abs/2208.07339) —— 02 篇主角；outlier 结构性现象的实证来源
+- Yao et al., *ZeroQuant: Efficient and Affordable Post-Training Quantization for Large-Scale Transformers*, [arXiv:2206.01861](https://arxiv.org/abs/2206.01861) —— "无校准集"的另一条路，10 篇主角
 - Nagel et al., *A White Paper on Neural Network Quantization*, [arXiv:2106.08295](https://arxiv.org/abs/2106.08295) —— 权重易/激活难不对称性的规范表述
-- Lin et al., *AWQ: Activation-aware Weight Quantization*, [arXiv:2306.00978](https://arxiv.org/abs/2306.00978) —— 03 篇主角，同族等效变换的另一种目标函数
-- Ashkboos et al., *QuaRot: Outlier-Free 4-Bit Inference via Rotations*, [arXiv:2404.00456](https://arxiv.org/abs/2404.00456) —— 09 篇预告：旋转版"彻底平滑"
+- Lin et al., *AWQ: Activation-aware Weight Quantization*, [arXiv:2306.00978](https://arxiv.org/abs/2306.00978) —— 04 篇主角，同族等效变换的另一种目标函数
+- Ashkboos et al., *QuaRot: Outlier-Free 4-Bit Inference via Rotations*, [arXiv:2404.00456](https://arxiv.org/abs/2404.00456) —— 12 篇预告：旋转版"彻底平滑"
 
 **代码与规范**
 
@@ -399,8 +403,8 @@ $$
 
 **系列导航**
 
-- 系列规划：[ROADMAP.md](ROADMAP.md)（11 篇 PTQ 核心 + 4 篇 QAT）
+- 系列规划：见站内 [模型量化课程路线图](/quantization-roadmap/)（全 26 篇目录与阅读路径）
 - 上一篇：《00 量化器数学地基与 RTN 基线》（已发布）｜《01 LLM.int8()》施工中｜下一篇：《03 AWQ：激活感知的权重缩放搜索》
-- 交叉引用：00 篇 §4.3 的极值漂移定律在本篇 §3 落地为部署风险；00 篇 §6.2 的 $C$ 加权损失是理解 §2.4"均衡为何只是启发式"的钥匙
+- 交叉引用：01 篇 §4.3 的极值漂移定律在本篇 §3 落地为部署风险；01 篇 §6.2 的 $C$ 加权损失是理解 §2.4"均衡为何只是启发式"的钥匙
 
 **中文社区**：知乎与掘金上关于 SmoothQuant 平滑实现与 vLLM/TensorRT-LLM 部署实践的讨论较多，本篇未能核验到稳定直链，暂不列出——后续各篇补齐（诚实标注：本节为占位，非完整来源）。

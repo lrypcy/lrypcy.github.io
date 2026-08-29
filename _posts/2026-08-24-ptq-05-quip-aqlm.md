@@ -1,16 +1,16 @@
 ---
-title: "LLM PTQ 深度解析（05）：QuIP# 与 AQLM：极低位宽的码本路线"
+title: "大模型量化算法（07）：QuIP# / AQLM——极低位宽的码本路线"
 date: 2026-08-24 12:20:00 +0800
 categories:
   - 模型量化
-tags: [quantization, ptq, quip, aqlm, vector-quantization]
+tags: [llm-inference, quantization, quip, aqlm, vector-quantization, e8-lattice]
 layout: post
 mathjax: true
 ---
 
-> **系列第 5 篇** · LLM 量化算法深潜 · 更新于 2026-08
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 1 · Weight-only PTQ** ｜ 第 07 篇 / 共 26 篇
 >
-> 本系列：第 0 篇 [量化全景](/2026/08/24/ptq-00-overview/) → 第 1 篇 [RTN/LLM.int8](/2026/08/24/ptq-01-rtn-llmint8/) → 第 2 篇 [GPTQ](/2026/08/24/ptq-02-gptq/) → 第 3 篇 [AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/) → 第 4 篇 [SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/) → **第 5 篇 QuIP#/AQLM（本文）** → 第 6 篇 [SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) → 第 7 篇 [QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/) → 第 8 篇 [GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)
+> [← 06 SpQR/OWQ/HQQ](/2026/08/24/ptq-04-spqr-owq-hqq/) ｜ [08 SqueezeLLM/VPTQ/CLAQ →](/2026/08/24/ptq-09-squeezellm-vptq-claq/)
 
 ---
 
@@ -93,7 +93,7 @@ graph TD
 
 ## 2. QuIP：不相干处理（incoherence processing）
 
-> QuIP（Quantization with Incoherence Processing），arXiv:2207.13366，Chee、Cai、Kuleshov、Mao 等，2022-2023。它是 QuIP# 的理论地基，也是"旋转（rotation）"这条技术线的开山之作——后来的 QuaRot、SpinQuant（本系列第 7 篇）都继承了它的思想。
+> QuIP（Quantization with Incoherence Processing），arXiv:2207.13366，Chee、Cai、Kuleshov、Mao 等，2022-2023。它是 QuIP# 的理论地基，也是"旋转（rotation）"这条技术线的开山之作——后来的 QuaRot、SpinQuant（本系列第 12 篇）都继承了它的思想。
 
 ### 2.1 量化误差的 Hessian 视角
 
@@ -173,7 +173,7 @@ QuIP 的工程巧思是用 **Hadamard 矩阵**做旋转，因为它有三个好�
 2. **快速变换**：$H_n x$ 可以用蝶形算法（与 FFT 同构）在 $O(n \log n)$ 内完成，这就是**快速 Hadamard 变换（FHT）**；$H_n$ 自逆（$H_n H_n = nI$），逆变换同样免费；
 3. **随机性只在一个对角阵**：$R = HD$ 中真正随机的只有 $D$——$n$ 个 $\pm 1$，用固定种子即可复现，不占存储。
 
-于是旋转的成本从 $O(n^2)$ 降到 $O(n \log n)$，且**不需要显式构造旋转矩阵**。推理时若激活也需要旋转（QuIP# 中需要），可以在线做 FHT，或者把旋转"吸收"进相邻层的权重里（本系列第 7 篇 QuaRot 就是这么干的）。
+于是旋转的成本从 $O(n^2)$ 降到 $O(n \log n)$，且**不需要显式构造旋转矩阵**。推理时若激活也需要旋转（QuIP# 中需要），可以在线做 FHT，或者把旋转"吸收"进相邻层的权重里（本系列第 12 篇 QuaRot 就是这么干的）。
 
 FHT 的蝶形实现只有十几行（本文第 6 章有完整代码）：
 
@@ -672,7 +672,7 @@ AQLM  2码本×2码字  重建 MSE : 0.003241  （≈2.50 bit/权重）
 
 - **GEMM 生态的断层**：GPTQ/AWQ 的权重解包后仍是"常规矩阵"，可以无缝落入 cuBLAS/CUTLASS 的 GEMM；而码本路线的核心算子是 **gather（查表）**，属于非规则访存，无法直接映射到张量核心（tensor core）的累加流水。QuIP# 需要定制 CUDA kernel 把"解包 → 查表 → GEMM"熔在一起，AQLM 还要额外处理 K 个码本求和。写一个能跑的 kernel 不难，写一个能在各种 shape/head 数下逼近 cuBLAS 95% 效率的 kernel 是另一个量级的工作。
 - **共享内存放不下码本**：2 bit 的 E8 码本（65536 码字 × 8 维 × fp16）约 1 MB，远超 GPU 共享内存容量。实际部署中要么让码本常驻 L2/常量内存、要么干脆**不存码本**——反量化时直接跑 E8 最近格点解析算法现场算坐标（第 6 章演示了这条路，开销是 O(1) 的四舍五入）。这反而暴露了一个反讽：格码本路线的"查表"在 GPU 上未必比"现算"更快，查表主要赢在 CPU 端与向量化访存。
-- **旋转的连带成本**：QuIP# 若激活也要旋转，每层前向多一次 FHT；虽然 O(n log n)，但打破了标准 GEMM 的计算图，kernel 融合难度陡增。QuaRot 系列（第 7 篇）把旋转吸收进相邻层权重才缓解了这个问题——但那是另一套复杂度。
+- **旋转的连带成本**：QuIP# 若激活也要旋转，每层前向多一次 FHT；虽然 O(n log n)，但打破了标准 GEMM 的计算图，kernel 融合难度陡增。QuaRot 系列（第 12 篇）把旋转吸收进相邻层权重才缓解了这个问题——但那是另一套复杂度。
 
 ### 7.2 AQLM 的训练成本与复现门槛
 
@@ -686,7 +686,7 @@ AQLM  2码本×2码字  重建 MSE : 0.003241  （≈2.50 bit/权重）
 
 1. **4 bit 足够**：绝大多数部署场景的甜点在 4 bit——显存减 75%、精度损失 <1%，GPTQ/AWQ 在这个区间成熟、快、稳。码本路线的精度优势要到 2-3 bit 才显著，而 2 bit 是"省一半显存换精度风险"的激进选择；
 2. **生态即护城河**：AutoGPTQ、llama.cpp、vLLM、HF Transformers 的量化链路全部围绕 GPTQ/AWQ 的格式与 kernel 转起来，接入一个新格式意味着推理框架、量化工具链、模型仓库（GGUF 等）三层都要改；
-3. **硬件路线分流**：FP8、MXFP4 等硬件原生格式（第 8 篇）正在吃掉"中等压缩"的需求，留给码本路线的只剩"1-2 bit 极端压缩"这一块。
+3. **硬件路线分流**：FP8、MXFP4 等硬件原生格式（第 15 篇）正在吃掉"中等压缩"的需求，留给码本路线的只剩"1-2 bit 极端压缩"这一块。
 
 ### 7.4 码本路线真正的战场
 
@@ -697,7 +697,7 @@ AQLM  2码本×2码字  重建 MSE : 0.003241  （≈2.50 bit/权重）
 - **与稀疏、结构化方法结合**：码本 + 4:8 结构化稀疏、码本 + outlier 分离（SpQR 的 2 bit 残差用码本编码）都是活跃方向；
 - **硬件查表指令**：若未来 GPU/加速器提供原生 gather/lookup 单元（类似向量处理器的 permutation 指令），码本路线的 kernel 复杂度会骤降——这是它从论文走向生产的最大变量。
 
-**一句话总结本系列第 5 篇**：QuIP# 用数学（E8 格 + 不相干旋转）把 2 bit 变成可用，AQLM 用数据（加性码本训练）把 2 bit 变成近乎无损；它们共同证明了"码本路线"是极低位宽量化的正确方向，也共同卡在"工程生态"这道坎上——**算法领先半步是优势，领先一步是包袱**，码本路线恰好领先了这一步。
+**一句话总结本系列第 07 篇**：QuIP# 用数学（E8 格 + 不相干旋转）把 2 bit 变成可用，AQLM 用数据（加性码本训练）把 2 bit 变成近乎无损；它们共同证明了"码本路线"是极低位宽量化的正确方向，也共同卡在"工程生态"这道坎上——**算法领先半步是优势，领先一步是包袱**，码本路线恰好领先了这一步。
 
 ---
 
@@ -706,8 +706,8 @@ AQLM  2码本×2码字  重建 MSE : 0.003241  （≈2.50 bit/权重）
 1. QuIP: *QuIP: 2-Bit Quantization of Large Language Models With Guarantees*，Chee 等，arXiv:2207.13366（不相干处理、LDLQ、随机 Hadamard 旋转引理）。
 2. QuIP#: *QuIP#: Even Better LLM Quantization with Hadamard Incoherence and Lattice Codebooks*，Tseng 等，arXiv:2311.01507（E8 格码本、查找表量化、2 bit LLaMA-2 70B ppl 5.44）。
 3. AQLM: *Additive Quantization for Extreme Compression of Large Language Models*，Egiazarian 等，arXiv:2401.06118（加性量化、块坐标下降、GPTQ 初始化、2.03 bit LLaMA-2 70B ppl 5.20）。
-4. 延伸：Conway & Sloane, *Sphere Packings, Lattices and Groups*（E8 格性质与最近格点算法）；本系列第 7 篇 [QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/)（旋转的推理侧融合）。
+4. 延伸：Conway & Sloane, *Sphere Packings, Lattices and Groups*（E8 格性质与最近格点算法）；本系列第 12 篇 [QuaRot/SpinQuant](/2026/08/24/ptq-07-quarot-spinquant/)（旋转的推理侧融合）。
 
 ---
 
-*本文为 LLM 量化系列第 5 篇。数值均引自各论文表格，实测以复现为准；代码为教学最小实现，生产请用官方仓库。*
+*本文为 LLM 量化系列第 07 篇。数值均引自各论文表格，实测以复现为准；代码为教学最小实现，生产请用官方仓库。*

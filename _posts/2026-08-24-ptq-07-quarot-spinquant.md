@@ -1,16 +1,18 @@
 ---
-title: "LLM PTQ 深度解析（07）：QuaRot 与 SpinQuant：旋转消除异常值"
+title: "大模型量化算法（12）：QuaRot / SpinQuant——旋转消除异常值"
 date: 2026-08-24 13:40:00 +0800
 categories:
   - 模型量化
-tags: [quantization, w4a4, quarot, spinquant]
+tags: [llm-inference, quantization, quarot, spinquant, rotation, w4a4]
 layout: post
 mathjax: true
 ---
 
-> **系列第 7 篇** ｜ 前一篇：[第 6 篇 SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) ｜ 后一篇：[第 8 篇 GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)
+> **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 2 · Activation PTQ** ｜ 第 12 篇 / 共 26 篇
 >
-> 配套阅读：第 1 篇 [LLM.int8()](/2026/08/24/ptq-01-rtn-llmint8/) 讲激活 outlier 的发现；第 2 篇 [GPTQ](/2026/08/24/ptq-02-gptq/) 讲 Hessian 加权量化；第 6 篇 [SmoothQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) 讲"迁移 outlier"的平滑变换——本文的旋转是它的"升级版"。
+> [← 11 Outlier Suppression](/2026/08/24/ptq-10-outlier-suppression/) ｜ [13 RPTQ/QUIK/ATOM →](/2026/08/24/ptq-11-rptq-quik-atom/)
+>
+> 配套阅读：第 E1 篇 [LLM.int8()](/2026/08/24/ptq-01-rtn-llmint8/) 讲激活 outlier 的发现；第 03 篇 [GPTQ](/2026/08/24/ptq-02-gptq/) 讲 Hessian 加权量化；第 10 篇 [SmoothQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) 讲"迁移 outlier"的平滑变换——本文的旋转是它的"升级版"。
 
 ---
 
@@ -18,7 +20,7 @@ mathjax: true
 
 **是什么**：QuaRot（arXiv:2404.00456）和 SpinQuant（arXiv:2405.16465）是两条"旋转流派"工作——它们给 LLM 的权重和激活施加**正交旋转**（QuaRot 用固定的 Hadamard 变换，SpinQuant 用可学习的旋转矩阵），把系统性 outlier 从少数坐标"摊薄"到所有坐标，从而让 **W4A4（权重 4bit + 激活 4bit）** 首次在 7B/70B 级别模型上逼近 FP16 精度。
 
-**为什么有效**：正交旋转不改变模型输出（旋转不变性：$XQW = XQ^{\mathsf{T}}QW = XW$），但改变了坐标系的"对齐方式"。原本集中在一两个隐藏维度的巨大 outlier（见第 1 篇 LLM.int8() 的发现），旋转后被均匀稀释到 $\sqrt{d}$ 个坐标上，每个坐标的动态范围从 $O(M)$ 缩到 $O(M/\sqrt{d})$——4bit 均匀量化的误差随之大幅下降。
+**为什么有效**：正交旋转不改变模型输出（旋转不变性：$XQW = XQ^{\mathsf{T}}QW = XW$），但改变了坐标系的"对齐方式"。原本集中在一两个隐藏维度的巨大 outlier（见第 E1 篇 LLM.int8() 的发现），旋转后被均匀稀释到 $\sqrt{d}$ 个坐标上，每个坐标的动态范围从 $O(M)$ 缩到 $O(M/\sqrt{d})$——4bit 均匀量化的误差随之大幅下降。
 
 **代价与现状**：旋转不能全部"免费"吸收进权重，每个 transformer block 需要常数次**在线 Hadamard 变换**（FHT，$O(d\log d)$），FLOPs 上可忽略但 kernel 融合复杂；SpinQuant 把旋转矩阵变成可学习参数、在校准集上优化，进一步压榨 2-4bit 精度，还顺带把 KV cache 压到 4bit。但到今天，W4A4 在生产推理引擎（vLLM 等）中依然少见——FP8 硬件原生的路线抢走了大部分工程落地。
 
@@ -42,7 +44,7 @@ mathjax: true
 
 前几篇我们讨论的 GPTQ、AWQ、SpQR 几乎都只量化**权重**（W4A16）：激活保持 FP16，量化误差只来自权重一侧，可以用 Hessian 加权、激活感知等技巧把误差压到最低。而 **W4A4** 要求权重和激活**同时**降到 4bit——这意味着两个独立的误差源叠加，而且激活一侧的问题比权重严重得多。
 
-回顾第 1 篇 LLM.int8() 的核心发现：大模型（≥6.7B）的激活中会出现**系统性 outlier**——某些隐藏维度（channel）的值在几乎所有 token 上都异常巨大（幅度是正常值的 20~60 倍）。这些 outlier 不是噪声，而是模型学习到的"强特征通道"。对权重来说，outlier 可以被 GPTQ 的 Hessian 加权和 AWQ 的尺度感知"驯服"；但对**激活**，我们无法离线重排——激活是推理时实时产生的，且 outlier 位置随层变化、不可预测。
+回顾第 E1 篇 LLM.int8() 的核心发现：大模型（≥6.7B）的激活中会出现**系统性 outlier**——某些隐藏维度（channel）的值在几乎所有 token 上都异常巨大（幅度是正常值的 20~60 倍）。这些 outlier 不是噪声，而是模型学习到的"强特征通道"。对权重来说，outlier 可以被 GPTQ 的 Hessian 加权和 AWQ 的尺度感知"驯服"；但对**激活**，我们无法离线重排——激活是推理时实时产生的，且 outlier 位置随层变化、不可预测。
 
 于是 W4A4 面对一个死结：
 
@@ -82,11 +84,11 @@ $$\mathrm{Var}(x'_i) \;\approx\; \frac{\mathrm{tr}(\Sigma_x)}{d},\qquad \forall 
 
 也就是说，旋转把激活分布**各向同性化**（isotropize）：每个坐标的方差趋于相等，量化步长不再被少数"宽动态范围"的坐标拖累。权重一侧同理——对权重矩阵 $W$ 施加 $W' = QW$，各行范数、各列范数都趋于均匀，权重 outlier 也被摊薄。
 
-**与 SmoothQuant 的关系**：第 6 篇的 SmoothQuant 本质是"对角变换"（$x \cdot \text{diag}(s)$，把激活 outlier 迁移到权重），只处理"激活大、权重小"这一种对齐模式，且变换矩阵必须是对角的（否则改变输出结构）。旋转是它的推广：用**满秩正交变换**同时处理权重和激活两侧的 outlier，且由于正交性**严格不改变输出**——这是对角平滑做不到的（平滑后需要额外补偿）。
+**与 SmoothQuant 的关系**：第 10 篇的 SmoothQuant 本质是"对角变换"（$x \cdot \text{diag}(s)$，把激活 outlier 迁移到权重），只处理"激活大、权重小"这一种对齐模式，且变换矩阵必须是对角的（否则改变输出结构）。旋转是它的推广：用**满秩正交变换**同时处理权重和激活两侧的 outlier，且由于正交性**严格不改变输出**——这是对角平滑做不到的（平滑后需要额外补偿）。
 
 ## 1.3 与 LLM.int8() 的呼应
 
-第 1 篇的 LLM.int8() 是"躲"：检测出 outlier 列，单独用 FP16 计算，其余走 INT8。旋转流派是"化"：不躲，而是把 outlier 打散到所有坐标，让整个矩阵乘都能安全地走低比特。两者哲学相反，但都基于同一个观察——**outlier 是少数坐标的、系统性的、方向性的**。LLM.int8() 证明 outlier 存在且位置固定；旋转证明 outlier 的存在依赖于坐标系——换一个坐标系，它就不"存在"了。
+第 E1 篇的 LLM.int8() 是"躲"：检测出 outlier 列，单独用 FP16 计算，其余走 INT8。旋转流派是"化"：不躲，而是把 outlier 打散到所有坐标，让整个矩阵乘都能安全地走低比特。两者哲学相反，但都基于同一个观察——**outlier 是少数坐标的、系统性的、方向性的**。LLM.int8() 证明 outlier 存在且位置固定；旋转证明 outlier 的存在依赖于坐标系——换一个坐标系，它就不"存在"了。
 
 这个观察引出一个关键问题：**旋转矩阵 $Q$ 从哪来？** 随机正交矩阵理论上可行，但随机矩阵无法快速计算（$O(d^2)$ 的矩阵乘等于白干）。QuaRot 的答案是：用 **Hadamard 矩阵**——它既是正交的，又有 $O(d\log d)$ 的快速算法。下一章展开。
 
@@ -117,7 +119,7 @@ $$X'W' = XQ^{\mathsf{T}}QW = XW = Y$$
 
 $$\mathbb{E}\left[\left\|\,(X - \hat{X})\,W\,\right\|^2\right] \;\approx\; \sum_i \frac{\delta_i^2}{12}\,\|W_{i:}\|^2$$
 
-旋转前，少数坐标的 $\delta_i$ 巨大（被 outlier 撑大），主导整个求和；旋转后所有 $\delta_i$ 趋于相同且大幅缩小，同时权重行范数 $\|W'_{i:}\|$ 也趋于均匀——两项共同作用下，总量化误差下降一个数量级。GPTQ（第 2 篇）用 Hessian 对角元素加权做**逐列**优化；旋转做的其实是"让 Hessian 对角元素自己变得均匀"，从而让**均匀量化**（无需任何逐列搜索）就接近最优。这正是 QuaRot 与 GPTQ 互补的地方：旋转负责"把问题变简单"，GPTQ/AWQ 负责"在简单的问题上再榨一点"。
+旋转前，少数坐标的 $\delta_i$ 巨大（被 outlier 撑大），主导整个求和；旋转后所有 $\delta_i$ 趋于相同且大幅缩小，同时权重行范数 $\|W'_{i:}\|$ 也趋于均匀——两项共同作用下，总量化误差下降一个数量级。GPTQ（第 03 篇）用 Hessian 对角元素加权做**逐列**优化；旋转做的其实是"让 Hessian 对角元素自己变得均匀"，从而让**均匀量化**（无需任何逐列搜索）就接近最优。这正是 QuaRot 与 GPTQ 互补的地方：旋转负责"把问题变简单"，GPTQ/AWQ 负责"在简单的问题上再榨一点"。
 
 ## 2.1.1 定量视角：动态范围如何决定量化信噪比
 
@@ -324,7 +326,7 @@ SpinQuant 论文里有几个容易被忽略、但对复现至关重要的工程�
 
 ## 4.1 变换类方法全景
 
-QuaRot、SpinQuant 与第 6 篇的 SmoothQuant 同属"**变换类**"PTQ：不直接改量化器，而是先对模型做数学变换、让量化变得容易。三者的本质区别在于**变换矩阵的"表达力"**：
+QuaRot、SpinQuant 与第 10 篇的 SmoothQuant 同属"**变换类**"PTQ：不直接改量化器，而是先对模型做数学变换、让量化变得容易。三者的本质区别在于**变换矩阵的"表达力"**：
 
 - SmoothQuant：**对角变换**（$\mathrm{diag}(s)$），把激活 outlier 按通道迁移到权重，变换后需要重写权重数值；
 - QuaRot：**固定正交变换**（Hadamard），同时摊薄权重与激活 outlier，输出严格不变；
@@ -523,7 +525,7 @@ W4A4 输出相对 MSE：无旋转 0.4123（41.23%） → 旋转后 0.00351（0.3
 
 ## 6.4 与 FP8/MXFP4 的竞争：W4A4 的生存空间
 
-第 8 篇将详细展开 FP8 与 MXFP4，这里只讨论竞争格局：
+第 15 篇将详细展开 FP8 与 MXFP4，这里只讨论竞争格局：
 
 - **FP8（W8A8）**：H100 起硬件原生支持，无 outlier 问题（8bit 动态范围足够），零校准、零预处理，精度近无损。它用"多一倍的比特"换来了"零工程成本"——在硬件原生加速面前，W4A4 省下的带宽很难抵消 kernel 重写成本。
 - **MXFP4（e2m1/e3m2）**：走"硬件理解 4bit 格式"的路线，把 scale 编码进格式本身，配合微缩放（micro-scaling）处理 outlier——这等于用硬件把 QuaRot 想要的效果"标准化"了。若 MXFP4 生态成熟，旋转方法的软件优化空间会被进一步压缩。
@@ -533,7 +535,7 @@ W4A4 输出相对 MSE：无旋转 0.4123（41.23%） → 旋转后 0.00351（0.3
 
 ## 6.5 旋转方法自身的局限
 
-- **只摊薄，不消除**：旋转把系统性 outlier 摊到所有坐标，但权重分布的非均匀性（重尾、非对称）仍在，均匀 4bit 的误差下界依然存在。想再压精度必须叠加 GPTQ 式逐列优化或混合位宽（如 QuIP# 的 incoherence processing + 格码本，见第 5 篇）。
+- **只摊薄，不消除**：旋转把系统性 outlier 摊到所有坐标，但权重分布的非均匀性（重尾、非对称）仍在，均匀 4bit 的误差下界依然存在。想再压精度必须叠加 GPTQ 式逐列优化或混合位宽（如 QuIP# 的 incoherence processing + 格码本，见第 07 篇）。
 - **SpinQuant 的校准集依赖**：学习旋转需要校准集与数小时训练，存在**分布漂移**风险——校准集与真实部署分布的 mismatch 会直接体现在旋转质量上。QuaRot 的零校准优势反而更稳健。
 - **在线旋转与系统优化的冲突**：投机解码（speculative decoding）、prefix caching、PD 分离都会与"每层 3 次在线变换"的流水线产生交互，优化空间被压缩。
 - **一个小但真实的缺陷**：Hadamard 要求 hidden size 是 2 的幂。非 2 幂的架构（部分 MoE 模型、非标准 hidden size）需要 padding 或块对角 Hadamard，会引入额外复杂度——这也是 SpinQuant 学习稠密旋转的隐性优势之一。
@@ -555,13 +557,13 @@ W4A4 输出相对 MSE：无旋转 0.4123（41.23%） → 旋转后 0.00351（0.3
 
 **系列内关联文章（对应文献）**
 
-- 第 0 篇 [量化全景](/2026/08/24/ptq-00-overview/)
-- 第 1 篇 [RTN/LLM.int8()](/2026/08/24/ptq-01-rtn-llmint8/) — LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale，arXiv:2208.07339；outlier 现象的原始出处
-- 第 2 篇 [GPTQ](/2026/08/24/ptq-02-gptq/) — GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers，arXiv:2210.17323
-- 第 3 篇 [AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/) — AWQ，arXiv:2306.00978；OmniQuant，arXiv:2308.13137
-- 第 5 篇 [QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/) — QuIP#（incoherence processing 与旋转思想同源），arXiv:2311.01507
-- 第 6 篇 [SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) — SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models，arXiv:2211.10438
-- 第 8 篇 [GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)（下一篇）
+- 第 00 篇 [量化全景](/2026/08/24/ptq-00-overview/)
+- 第 E1 篇 [RTN/LLM.int8()](/2026/08/24/ptq-01-rtn-llmint8/) — LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale，arXiv:2208.07339；outlier 现象的原始出处
+- 第 03 篇 [GPTQ](/2026/08/24/ptq-02-gptq/) — GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers，arXiv:2210.17323
+- 第 05 篇 [AWQ/OmniQuant](/2026/08/24/ptq-03-awq-omniq/) — AWQ，arXiv:2306.00978；OmniQuant，arXiv:2308.13137
+- 第 07 篇 [QuIP#/AQLM](/2026/08/24/ptq-05-quip-aqlm/) — QuIP#（incoherence processing 与旋转思想同源），arXiv:2311.01507
+- 第 10 篇 [SmoothQuant/ZeroQuant](/2026/08/24/ptq-06-smoothquant-zeroquant/) — SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models，arXiv:2211.10438
+- 第 15 篇 [GGUF k-quants/FP8/MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/)（下一篇）
 
 **延伸阅读**
 
@@ -573,4 +575,4 @@ W4A4 输出相对 MSE：无旋转 0.4123（41.23%） → 旋转后 0.00351（0.3
 
 *本文的数学推导与数值结果以论文为准，图表数值为近似读数；代码实验可自行运行验证。*
 
-旋转是"用坐标系思维解决数值问题"的漂亮案例——它没有删除任何信息，只是换了个角度看世界，然后发现世界变简单了。下一篇（第 8 篇）我们聊聊 GGUF k-quants、FP8 与 MXFP4，看看硬件路线如何回应软件路线的挑战。
+旋转是"用坐标系思维解决数值问题"的漂亮案例——它没有删除任何信息，只是换了个角度看世界，然后发现世界变简单了。下一篇（第 15 篇）我们聊聊 GGUF k-quants、FP8 与 MXFP4，看看硬件路线如何回应软件路线的挑战。
