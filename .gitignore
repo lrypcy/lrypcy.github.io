@@ -1,3 +1,10 @@
-```
-_posts/*.md
-```
+# Jekyll 构建产物
+_site/
+.jekyll-cache/
+
+# 本地工具与编辑器配置
+.obsidian/
+.omo/
+.workbuddy/
+.codegraph
+Clippings/

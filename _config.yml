@@ -45,8 +45,3 @@ exclude:
   - Gemfile.lock
   - vendor
   - .git
-  # 旧 Hexo 静态目录（已被 _posts/_layouts 生成的页面替代，保留作 git 历史）
-  - /2018/
-  - /archives/
-  - /categories/
-  - /tags/
