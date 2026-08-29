@@ -38,6 +38,7 @@
         <p class="sidebar-subtitle">{{ site.subtitle }}</p>
       </div>
 
+      {% unless paginator %}
       <div class="sidebar-section">
         <h3 class="sidebar-title">分类</h3>
         <ul class="sidebar-list">
@@ -55,6 +56,7 @@
           {% endfor %}
         </div>
       </div>
+      {% endunless %}
 
       <div class="sidebar-section">
         <h3 class="sidebar-title">最新文章</h3>

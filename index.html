@@ -6,46 +6,74 @@ title: 首页
 <div class="blog-hero">
   <h1 class="blog-hero-title">{{ site.title }}</h1>
   <p class="blog-hero-subtitle">{{ site.subtitle }}</p>
+  <div class="hero-stats">
+    <span class="hero-stat"><b>{{ site.posts | size }}</b> 篇文章</span>
+    <span class="hero-stat-sep">·</span>
+    <span class="hero-stat"><b>{{ site.categories | size }}</b> 个专栏</span>
+    <span class="hero-stat-sep">·</span>
+    <span class="hero-stat"><b>{{ site.tags | size }}</b> 个标签</span>
+  </div>
 </div>
 
-<!-- 分类卡片 -->
+<!-- 分类卡片（按文章数降序 + 差异化图标） -->
 <section class="home-section">
   <h2 class="section-title"><span class="section-mark">✦</span> 分类</h2>
+  {% assign goods = '' | split: ',' %}
+  {% for cat in site.categories %}
+    {% assign nn = cat[1] | size | prepend: '00' | slice: -2, 2 %}
+    {% assign item = nn | append: ':' | append: cat[0] %}
+    {% assign item_arr = item | split: '|' %}
+    {% assign goods = goods | concat: item_arr %}
+  {% endfor %}
+  {% assign goods = goods | sort | reverse %}
   <div class="category-grid">
-    {% for category in site.categories %}
-    <a class="category-card" href="/categories/#{{ category[0] | url_encode }}">
-      <div class="category-card-icon">📁</div>
-      <h3 class="category-card-name">{{ category[0] }}</h3>
-      <span class="category-card-count">{{ category[1] | size }} 篇</span>
-    </a>
+    {% for item in goods %}
+      {% assign parts = item | split: ':' %}
+      {% assign cat_name = parts[1] %}
+      {% assign cat_count = parts[0] | plus: 0 %}
+      {% assign icon = '📁' %}
+      {% if cat_name == 'AI Infra' %}{% assign icon = '⚡' %}
+      {% elsif cat_name == '强化学习' %}{% assign icon = '🎮' %}
+      {% elsif cat_name == '芯片架构' %}{% assign icon = '🖥️' %}
+      {% elsif cat_name == '生成模型' %}{% assign icon = '🎨' %}
+      {% elsif cat_name == '模型量化' %}{% assign icon = '🎯' %}
+      {% elsif cat_name == '深度学习' %}{% assign icon = '🧠' %}
+      {% elsif cat_name == '模型蒸馏' %}{% assign icon = '🧪' %}
+      {% elsif cat_name == '具身智能' %}{% assign icon = '🤖' %}
+      {% elsif cat_name == '编译器技术' %}{% assign icon = '🛠️' %}
+      {% elsif cat_name == 'AI 编译器' %}{% assign icon = '🔧' %}
+      {% elsif cat_name == '位置编码' %}{% assign icon = '📍' %}
+      {% endif %}
+      <a class="category-card" href="/categories/#{{ cat_name | url_encode }}">
+        <span class="category-card-icon">{{ icon }}</span>
+        <h3 class="category-card-name">{{ cat_name }}</h3>
+        <span class="category-card-count">{{ cat_count }} 篇</span>
+      </a>
     {% endfor %}
   </div>
 </section>
 
-<!-- 标签云 -->
+<!-- 标签云（top 24 高频 + 查看全部） -->
 <section class="home-section">
-  <h2 class="section-title"><span class="section-mark">✦</span> 标签云</h2>
-  {% assign tag_max = 0 %}
-  {% assign tag_min = 9999 %}
+  <h2 class="section-title"><span class="section-mark">✦</span> 标签云 <a class="section-more" href="/tags/">查看全部 →</a></h2>
+  {% assign goods = '' | split: ',' %}
   {% for tag in site.tags %}
-    {% assign sz = tag[1] | size %}
-    {% if sz > tag_max %}{% assign tag_max = sz %}{% endif %}
-    {% if sz < tag_min %}{% assign tag_min = sz %}{% endif %}
+    {% assign nn = tag[1] | size | prepend: '00' | slice: -2, 2 %}
+    {% assign item = nn | append: ':' | append: tag[0] %}
+    {% assign item_arr = item | split: '|' %}
+    {% assign goods = goods | concat: item_arr %}
   {% endfor %}
+  {% assign goods = goods | sort | reverse %}
   {% assign colors = "#3b82f6,#2563eb,#60a5fa,#1d4ed8,#93c5fd,#1e40af" | split: "," %}
   <div class="tag-cloud">
-    {% for tag in site.tags %}
-      {% assign tag_size = tag[1] | size %}
-      {% assign span = tag_max | minus: tag_min %}
-      {% if span > 0 %}
-        {% assign ratio = tag_size | minus: tag_min | times: 100 | divided_by: span %}
-      {% else %}
-        {% assign ratio = 50 %}
-      {% endif %}
-      {% assign font_pct = ratio | plus: 100 %}
+    {% for item in goods limit: 24 %}
+      {% assign parts = item | split: ':' %}
+      {% assign tag_name = parts[1] %}
+      {% assign tag_count = parts[0] | plus: 0 %}
       {% assign color_idx = forloop.index0 | modulo: 6 %}
       {% assign color = colors[color_idx] %}
-      <a class="tag-item" href="/tags/#{{ tag[0] | url_encode }}" style="font-size: {{ font_pct }}%; color: {{ color }};" title="{{ tag_size }} 篇文章">{{ tag[0] }}</a>
+      {% if tag_count > 9 %}{% assign font_pct = 150 %}{% elsif tag_count > 5 %}{% assign font_pct = 128 %}{% elsif tag_count > 2 %}{% assign font_pct = 112 %}{% else %}{% assign font_pct = 100 %}{% endif %}
+      <a class="tag-item" href="/tags/#{{ tag_name | url_encode }}" style="font-size: {{ font_pct }}%; color: {{ color }};" title="{{ tag_count }} 篇文章">{{ tag_name }}</a>
     {% endfor %}
   </div>
 </section>
@@ -55,15 +83,31 @@ title: 首页
   <h2 class="section-title"><span class="section-mark">✦</span> 最新文章</h2>
   <div class="post-list">
     {% for post in paginator.posts %}
+    {% assign post_ex = post.excerpt | strip_html | strip %}
+    {% if post_ex contains "系列导航" or post_ex contains "课程路线图" or post_ex contains "TL;DR" %}
+      {% assign ex_line = "" %}
+      {% assign content_lines = post.content | strip_html | newline_to_br | split: "<br />" %}
+      {% for ln in content_lines %}
+        {% assign l = ln | strip %}
+        {% assign bad_line = "" %}
+        {% if l == "" or l.size < 4 or l contains "系列导航" or l contains "TL;DR" or l contains "待写" or l contains "←" or l contains "篇 / 共" %}
+          {% assign bad_line = "y" %}
+        {% endif %}
+        {% if bad_line == "" and ex_line == "" %}
+          {% assign ex_line = l | strip %}
+        {% endif %}
+      {% endfor %}
+      {% if ex_line != "" %}{% assign post_ex = ex_line | truncate: 140 %}{% endif %}
+    {% endif %}
     <article class="post-card">
       <header class="post-card-header">
         <time class="post-card-date" datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%Y-%m-%d" }}</time>
         {% if post.categories %}<span class="post-card-cat">{{ post.categories | join: " / " }}</span>{% endif %}
       </header>
       <h2 class="post-card-title"><a href="{{ post.url }}">{{ post.title }}</a></h2>
-      <p class="post-card-excerpt">{{ post.excerpt | strip_html | truncate: 140 }}</p>
+      <p class="post-card-excerpt">{{ post_ex | truncate: 140 }}</p>
       <footer class="post-card-footer">
-        {% if post.tags %}<span class="post-card-tags">{% for tag in post.tags %}<a href="/tags/#{{ tag | url_encode }}">#{{ tag }}</a> {% endfor %}</span>{% endif %}
+        {% if post.tags %}<span class="post-card-tags">{% for tag in post.tags limit: 4 %}<a href="/tags/#{{ tag | url_encode }}">#{{ tag }}</a> {% endfor %}</span>{% endif %}
         <a class="post-card-more" href="{{ post.url }}">阅读全文 →</a>
       </footer>
     </article>

@@ -28,6 +28,7 @@
 body {
   background: var(--bg);
   color: var(--text);
+  font-size: 15.5px;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   line-height: 1.8;
@@ -753,7 +754,6 @@ a { color: var(--primary); }
   color: var(--text-light);
   font-variant-numeric: tabular-nums;
 }
-.post-card-date::before { content: "🕘 "; font-size: 11px; }
 
 /* 正文排版 Notion 化微调 */
 .post-body h2 {
@@ -1043,3 +1043,39 @@ a { color: var(--primary); }
 @media (max-width: 767px) {
   .page-post-detail .post-comments { padding: 22px 18px; }
 }
+
+/* ========== 首页增强：Hero 统计条 / 区块「查看全部」 ========== */
+.hero-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 8px 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  font-size: 13.5px;
+  color: var(--text-light);
+}
+.hero-stat b { color: var(--primary); font-size: 16px; font-weight: 700; margin-right: 4px; }
+.hero-stat-sep { color: var(--border); }
+@media (prefers-color-scheme: dark) {
+  .hero-stats { background: rgba(255, 255, 255, 0.06); border-color: var(--border); }
+}
+@media (max-width: 480px) {
+  .hero-stats { gap: 8px; padding: 6px 14px; font-size: 12.5px; }
+  .hero-stat b { font-size: 14px; }
+}
+
+.section-title { display: flex; align-items: baseline; gap: 8px; }
+.section-more {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-light);
+  text-decoration: none;
+  border-bottom: none;
+  transition: color 0.2s;
+}
+.section-more:hover { color: var(--primary); border-bottom: none; }
