@@ -8,8 +8,21 @@ title: 分类
   <!-- 分类卡片导航（点击过滤该分类文章） -->
   <div class="category-grid" id="category-nav">
     {% for category in site.categories %}
+    {% assign icon = '📁' %}
+    {% if category[0] == 'AI Infra' %}{% assign icon = '⚡' %}
+    {% elsif category[0] == '强化学习' %}{% assign icon = '🎮' %}
+    {% elsif category[0] == '芯片架构' %}{% assign icon = '🖥️' %}
+    {% elsif category[0] == '生成模型' %}{% assign icon = '🎨' %}
+    {% elsif category[0] == '模型量化' %}{% assign icon = '🎯' %}
+    {% elsif category[0] == '深度学习' %}{% assign icon = '🧠' %}
+    {% elsif category[0] == '模型蒸馏' %}{% assign icon = '🧪' %}
+    {% elsif category[0] == '具身智能' %}{% assign icon = '🤖' %}
+    {% elsif category[0] == '编译器技术' %}{% assign icon = '🛠️' %}
+    {% elsif category[0] == 'AI 编译器' %}{% assign icon = '🔧' %}
+    {% elsif category[0] == '位置编码' %}{% assign icon = '📍' %}
+    {% endif %}
     <a class="category-card" data-cat="{{ category[0] }}" href="#{{ category[0] | url_encode }}">
-      <span class="category-card-icon">📁</span>
+      <span class="category-card-icon">{{ icon }}</span>
       <h3 class="category-card-name">{{ category[0] }}</h3>
       <span class="category-card-count">{{ category[1] | size }} 篇</span>
     </a>

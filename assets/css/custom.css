@@ -197,7 +197,6 @@ a { color: var(--primary); }
 .category-card {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 10px;
   background: var(--card-bg);
   border: 1px solid var(--border);
@@ -213,12 +212,22 @@ a { color: var(--primary); }
   border-color: rgba(59, 130, 246, 0.3);
   background: linear-gradient(180deg, #fff, var(--primary-soft));
 }
-.category-card-icon { font-size: 22px; display: block; }
+.category-card-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+  width: 26px;
+  text-align: center;
+}
 .category-card-name {
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
   margin: 0;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .category-card:hover .category-card-name { color: var(--primary); }
 .category-card-count {
