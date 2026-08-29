@@ -164,8 +164,8 @@ Sinusoidal 的遗产不是它本身的性能，而是它埋下的三个观念：
 但在这之前，研究界先走了一段"直接改注意力公式"的弯路——T5 bias、Transformer-XL、XLNet 的相对位置编码家族，正是 [02 篇](/2026/08/29/posem-02-relative-t5/)的主角。
 
 **Lab 练习**：
-1. 用上面的代码画出 \(\boldsymbol{p}_m\cdot\boldsymbol{p}_n\) 随 \(|m-n|\) 的曲线（\(d=128\)，base=10000），观察衰减震荡；再换 base=100、base=1000000 对比衰减速度——直观感受"底数决定频率谱覆盖"；
-2. 在一个小模型上把 Sinusoidal 换成 learned PE，分别在第 100/1000/10000 步可视化前几层 attention map 的"位置偏置"（对角线集中度），观察两种 PE 学出的注意力局部性差异。
+1. 用上面的代码画出 \(\boldsymbol{p}_m\cdot\boldsymbol{p}_n\) 随 \(|m-n|\) 的曲线（\(d=128\)，base=10000），观察衰减震荡——预期在 \(|m-n|\approx 50\) 时内积降至峰值的 10% 以下，\(|m-n|\approx 200\) 时趋近于零；再换 base=100、base=1000000 对比衰减速度，直观感受"底数决定频率谱覆盖"；
+2. 在一个小模型上把 Sinusoidal 换成 learned PE，分别在第 100/1000/10000 步可视化前几层 attention map 的"位置偏置"（对角线集中度），观察两种 PE 学出的注意力局部性差异——预期 learned PE 的对角线更尖锐但泛化更差，Sinusoidal 的衰减包络更平滑。
 
 ## 参考文献
 

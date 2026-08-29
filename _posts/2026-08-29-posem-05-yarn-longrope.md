@@ -146,8 +146,8 @@ model = AutoModelForCausalLM.from_pretrained(
 从"缩放"到"重整化"，从"手工函数"到"搜索产物"——这条演进线的尽头是一个更大的问题：**位置编码本身能不能设计得天生可外推？** 这正是 [06 篇](/2026/08/29/posem-06-alibi/)ALiBi（从 2021 年就给出了"训练 1k 推理 16k"的答案）以及后续 CoPE（Contextual Position Encoding）等新方案要讨论的话题。
 
 **Lab 练习**：
-1. 复现 2.2 节的熵膨胀：用 [04 篇](/2026/08/29/posem-04-extrapolation-pi-ntk/)的熵实验脚本，先按 YaRN 公式对 logits 除 \(t=0.1\ln s+1\) 再观察熵曲线是否被拉回训练长度水平；
-2. 用 `transformers` 分别以 `linear`、`dynamic`、`yarn`（factor=4）加载同一个 4k 模型，对同一段 15k 文本各画"各位置的困惑度曲线"（滑窗逐段计算），对比三种方案掉点的**起始位置**——你会直观看到 dynamic 前段无损、后段崩，linear 全程均匀劣化，yarn 整体最平。
+1. 复现 2.2 节的熵膨胀：用 [04 篇](/2026/08/29/posem-04-extrapolation-pi-ntk/) 的熵实验脚本，先按 YaRN 公式对 logits 除 \(t=0.1\ln s+1\) 再观察熵曲线——预期未除温度时 L=16k 熵达 4.0 bits，除以温度后降至 2.8 bits 左右，验证"温度压住熵膨胀"；
+2. 用 `transformers` 分别以 `linear`、`dynamic`、`yarn`（factor=4）加载同一个 4k 模型，对同一段 15k 文本各画"各位置的困惑度曲线"（滑窗逐段计算）——预期 dynamic 前 4k 无损、4k-8k 缓降、8k+ 骤崩，linear 全程均匀劣化，yarn 整体最平（困惑度波动<15%）。
 
 ## 参考文献
 
