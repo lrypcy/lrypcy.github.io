@@ -9,7 +9,7 @@ title: 分类
   <div class="category-grid" id="category-nav">
     {% for category in site.categories %}
     {% assign icon = '📁' %}
-    {% if category[0] == 'AI Infra' %}{% assign icon = '⚡' %}
+    {% if category[0] == '分布式训练' %}{% assign icon = '🚂' %}
     {% elsif category[0] == '强化学习' %}{% assign icon = '🎮' %}
     {% elsif category[0] == '芯片架构' %}{% assign icon = '🖥️' %}
     {% elsif category[0] == '生成模型' %}{% assign icon = '🎨' %}

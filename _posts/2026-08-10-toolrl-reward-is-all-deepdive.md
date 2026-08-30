@@ -2,7 +2,7 @@
 title: "ToolRL 深度剖析：为什么说奖励是工具学习的全部"
 date: 2026-08-10 15:30:00 +0800
 categories:
-  - AI Infra
+  - 强化学习
 tags: [tool-rl, llm, agent, rl, reward-design, verl]
 layout: post
 ---

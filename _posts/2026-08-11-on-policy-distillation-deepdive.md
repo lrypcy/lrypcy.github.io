@@ -2,7 +2,7 @@
 title: "On-Policy Distillation 深度剖析：把 Agent 的探索成本外包给老师"
 date: 2026-08-11 14:00:00 +0800
 categories:
-  - AI Infra
+  - 模型蒸馏
 tags: [opd, distillation, llm, agent, rl, verl, retool]
 layout: post
 mathjax: true

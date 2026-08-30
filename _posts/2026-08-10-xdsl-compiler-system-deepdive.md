@@ -2,7 +2,7 @@
 title: "xDSL 编译器体系深入剖析：纯 Python 重写的 MLIR 精神实现"
 date: 2026-08-10 12:00:00 +0800
 categories:
-  - AI Infra
+  - 编译器技术
 tags: [xdsl, 编译器, mlir, compiler]
 layout: post
 ---

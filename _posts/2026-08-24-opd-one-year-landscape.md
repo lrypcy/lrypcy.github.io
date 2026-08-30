@@ -2,7 +2,7 @@
 title: "OPD 一年后：从配方到生态——AwesomeOPD 分类学、2026-08 新作与工业采用现状"
 date: 2026-08-24 08:00:00 +0800
 categories:
-  - AI Infra
+  - 模型蒸馏
 tags: [opd, distillation, llm, post-training, rl, awesome-list, mopd]
 layout: post
 mathjax: true

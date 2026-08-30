@@ -2,7 +2,7 @@
 title: "在线蒸馏方法全景：从 MiniLLM、GKD 到 OPD 的理论统一与工程实践"
 date: 2026-08-11 23:50:00 +0800
 categories:
-  - AI Infra
+  - 模型蒸馏
 tags: [distillation, opd, gkd, minillm, llm, post-training, verl, rl]
 layout: post
 mathjax: true

@@ -2,7 +2,7 @@
 title: "Search RL 深度剖析：当强化学习的动作空间变成搜索引擎"
 date: 2026-08-11 10:30:00 +0800
 categories:
-  - AI Infra
+  - 强化学习
 tags: [search-rl, llm, agent, rl, grpo, verl, deep-research]
 layout: post
 mathjax: true
