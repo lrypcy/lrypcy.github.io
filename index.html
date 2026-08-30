@@ -53,31 +53,6 @@ title: 首页
   </div>
 </section>
 
-<!-- 标签云（top 24 高频 + 查看全部） -->
-<section class="home-section">
-  <h2 class="section-title"><span class="section-mark">✦</span> 标签云 <a class="section-more" href="/tags/">查看全部 →</a></h2>
-  {% assign goods = '' | split: ',' %}
-  {% for tag in site.tags %}
-    {% assign nn = tag[1] | size | prepend: '00' | slice: -2, 2 %}
-    {% assign item = nn | append: ':' | append: tag[0] %}
-    {% assign item_arr = item | split: '|' %}
-    {% assign goods = goods | concat: item_arr %}
-  {% endfor %}
-  {% assign goods = goods | sort | reverse %}
-  {% assign colors = "#3b82f6,#6366f1,#8b5cf6,#a855f7,#ec4899,#e11d48,#ea580c,#d97706,#16a34a,#0d9488,#0891b2,#1d4ed8" | split: "," %}
-  <div class="tag-cloud">
-    {% for item in goods limit: 24 %}
-      {% assign parts = item | split: ':' %}
-      {% assign tag_name = parts[1] %}
-      {% assign tag_count = parts[0] | plus: 0 %}
-      {% assign color_idx = forloop.index0 | modulo: 12 %}
-      {% assign color = colors[color_idx] %}
-      {% if tag_count > 9 %}{% assign font_pct = 150 %}{% elsif tag_count > 5 %}{% assign font_pct = 128 %}{% elsif tag_count > 2 %}{% assign font_pct = 112 %}{% else %}{% assign font_pct = 100 %}{% endif %}
-      <a class="tag-item" href="/tags/#{{ tag_name | url_encode }}" style="font-size: {{ font_pct }}%; color: {{ color }};" title="{{ tag_count }} 篇文章">{{ tag_name }}</a>
-    {% endfor %}
-  </div>
-</section>
-
 <!-- 文章流（分页） -->
 <section class="home-section">
   <h2 class="section-title"><span class="section-mark">✦</span> 最新文章</h2>
