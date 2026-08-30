@@ -2,7 +2,7 @@
 title: "NV 卡性能剖析工具全景：从 nvidia-smi 到 Nsight Compute"
 date: 2026-08-26 16:00:00 +0800
 categories:
-  - AI 编译器
+  - 性能分析
 tags: [gpu-profiling, nvidia-smi, nsight-systems, nsight-compute, torch-profiler, cupti]
 layout: post
 mathjax: true

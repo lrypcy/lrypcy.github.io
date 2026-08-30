@@ -18,7 +18,7 @@ title: 分类
     {% elsif category[0] == '模型蒸馏' %}{% assign icon = '🧪' %}
     {% elsif category[0] == '具身智能' %}{% assign icon = '🤖' %}
     {% elsif category[0] == '编译器技术' %}{% assign icon = '🛠️' %}
-    {% elsif category[0] == 'AI 编译器' %}{% assign icon = '🔧' %}
+    {% elsif category[0] == '性能分析' %}{% assign icon = '📊' %}
     {% elsif category[0] == 'LLM算法' %}{% assign icon = '🧩' %}
     {% endif %}
     <a class="category-card" data-cat="{{ category[0] }}" href="#{{ category[0] | url_encode }}">
