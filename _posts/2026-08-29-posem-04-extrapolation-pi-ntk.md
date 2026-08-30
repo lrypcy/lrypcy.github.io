@@ -2,8 +2,8 @@
 title: "大模型位置编码（04）：长度外推（上）——从外推性分析到 PI 与 NTK-aware"
 date: 2026-08-29 09:20:00 +0800
 categories:
-  - 位置编码
-tags: [llm, positional-encoding, rope, extrapolation, position-interpolation, ntk-aware]
+  - LLM算法
+tags: [llm, 位置编码, rope, extrapolation, position-interpolation, ntk-aware]
 layout: post
 mathjax: true
 ---

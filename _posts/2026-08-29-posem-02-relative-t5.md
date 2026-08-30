@@ -2,8 +2,8 @@
 title: "大模型位置编码（02）：相对位置编码——从 Transformer-XL 到 T5 bias"
 date: 2026-08-29 08:40:00 +0800
 categories:
-  - 位置编码
-tags: [llm, positional-encoding, relative-pe, transformer-xl, t5]
+  - LLM算法
+tags: [llm, 位置编码, relative-pe, transformer-xl, t5]
 layout: post
 mathjax: true
 ---

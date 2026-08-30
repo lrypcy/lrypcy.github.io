@@ -2,8 +2,8 @@
 title: "大模型位置编码（07）：多模态 M-RoPE——当位置从一维坐标变成时空坐标"
 date: 2026-08-29 10:20:00 +0800
 categories:
-  - 位置编码
-tags: [llm, positional-encoding, mrope, multimodal, qwen2-vl, video]
+  - LLM算法
+tags: [llm, 位置编码, mrope, multimodal, qwen2-vl, video]
 layout: post
 mathjax: true
 ---

@@ -2,8 +2,8 @@
 title: "大模型位置编码（01）：正余弦位置编码与可学习位置编码"
 date: 2026-08-29 08:20:00 +0800
 categories:
-  - 位置编码
-tags: [llm, positional-encoding, sinusoidal, learned-pe, transformer]
+  - LLM算法
+tags: [llm, 位置编码, sinusoidal, learned-pe, transformer]
 layout: post
 mathjax: true
 ---

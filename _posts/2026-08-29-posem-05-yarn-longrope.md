@@ -2,8 +2,8 @@
 title: "大模型位置编码（05）：长度外推（下）——YaRN、LongRoPE 与生产配置实操"
 date: 2026-08-29 09:40:00 +0800
 categories:
-  - 位置编码
-tags: [llm, positional-encoding, rope, yarn, longrope, rope-scaling, huggingface]
+  - LLM算法
+tags: [llm, 位置编码, rope, yarn, longrope, rope-scaling, huggingface]
 layout: post
 mathjax: true
 ---

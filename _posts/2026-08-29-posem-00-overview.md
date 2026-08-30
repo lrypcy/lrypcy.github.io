@@ -2,8 +2,8 @@
 title: "大模型位置编码（00）：位置信息、排列不变性与分类学总览"
 date: 2026-08-29 08:00:00 +0800
 categories:
-  - 位置编码
-tags: [llm, positional-encoding, attention, rope, overview]
+  - LLM算法
+tags: [llm, 位置编码, attention, rope, overview]
 layout: post
 mathjax: true
 ---
