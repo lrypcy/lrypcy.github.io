@@ -10,7 +10,7 @@ mathjax: true
 
 > **TL;DR 三连**
 >
-> - **核心论点**：SFT、（on-policy）蒸馏、RLVR 不是四个方法，是同一个 REINFORCE 家族目标 \(\mathcal{L}(\theta)=\lambda\mathcal L_{SFT}+(1-\lambda)\mathcal L_{OPD}+\mu\mathcal L_{RL}\) 在两个坐标轴——**采样分布**（老师分布 → 学生分布）与**信号密度**（逐 token 稠密 → 整条稀疏）——上的插值点。OPD 端点的本质是"教师 logp 当稠密奖励的策略梯度"（《On-Policy Distillation 深度剖析》§2.4 已证：反向 KL 的梯度 = REINFORCE，log-ratio 即逐 token 奖励）。
+> - **核心论点**：SFT、（on-policy）蒸馏、RLVR 不是四个方法，是同一个 REINFORCE 家族目标 $$\mathcal{L}(\theta)=\lambda\mathcal L_{SFT}+(1-\lambda)\mathcal L_{OPD}+\mu\mathcal L_{RL}$$ 在两个坐标轴——**采样分布**（老师分布 → 学生分布）与**信号密度**（逐 token 稠密 → 整条稀疏）——上的插值点。OPD 端点的本质是"教师 logp 当稠密奖励的策略梯度"（《On-Policy Distillation 深度剖析》§2.4 已证：反向 KL 的梯度 = REINFORCE，log-ratio 即逐 token 奖励）。
 > - **反直觉发现**：光谱两端点的统计性质几乎处处互换——SFT 梯度方差最低但模式覆盖最差（exposure bias 随长度平方放大）；RLVR 模式覆盖最自由但方差最高、每条轨迹只教 O(1) bit。OPD 在两轴各取中间不是修辞而是测量事实：参数空间诊断显示三者的更新稀疏度分别为 8.1% / 51.6% / 77.2%，恰好单调排列。
 > - **定位**：本篇是四象限地图的"统一场论"篇，把象限Ⅰ（蒸馏）与象限Ⅲ（RLVR）焊在同一个损失函数上；Step-Level OPD 给出光谱内部新点的第一个系统构造，AwesomeOPD 收录的 50 条 OPD-RL 混合（TGPO、OPD+、ATOD……）则是工程界自发长出的连续插值器。
 
@@ -35,14 +35,14 @@ flowchart LR
 
 回忆三条已有结论：
 
-1. **off-policy SFT 蒸馏 = 老师分布上的最大似然**（《在线蒸馏方法全景》§2.2）：\(\nabla_\theta\mathcal L_{SFT}=-\mathbb E_{y\sim\pi_T}\big[\sum_t\nabla_\theta\log\pi_\theta(y_t\mid x,y_{<t})\big]\)——期望在老师分布 \(\pi_T\) 上，与 \(\theta\) 无关，所以没有策略梯度问题；
-2. **OPD = 反向 KL 的策略梯度形式**（OPD 篇 §2.4 两步证明）：score function 技巧拆出 \(\nabla_\theta\pi_\theta(y)=\pi_\theta(y)\nabla_\theta\log\pi_\theta(y)\)，另一项因 \(\sum_y\nabla_\theta\pi_\theta(y)=0\) 整项消零，只剩 \(\nabla_\theta\mathcal L_{OPD}=\mathbb E_{y\sim\pi_\theta}\big[\sum_t r_t\,\nabla_\theta\log\pi_\theta(y_t\mid\cdot)\big]\)，其中 \(r_t=\log\frac{\pi_\theta(y_t\mid\cdot)}{\pi_T(y_t\mid\cdot)}\) detach 后就是逐 token 奖励；
-3. **GRPO = 组内基线的 REINFORCE 加 PPO 壳**（GRPO 篇）：\(\nabla\) 的权重是整条回答共享的组相对优势 \(\hat A_i=(r_i-\mathrm{mean})/\mathrm{std}\)。
+1. **off-policy SFT 蒸馏 = 老师分布上的最大似然**（《在线蒸馏方法全景》§2.2）：$$\nabla_\theta\mathcal L_{SFT}=-\mathbb E_{y\sim\pi_T}\big[\sum_t\nabla_\theta\log\pi_\theta(y_t\mid x,y_{<t})\big]$$——期望在老师分布 $$\pi_T$$ 上，与 $$\theta$$ 无关，所以没有策略梯度问题；
+2. **OPD = 反向 KL 的策略梯度形式**（OPD 篇 §2.4 两步证明）：score function 技巧拆出 $$\nabla_\theta\pi_\theta(y)=\pi_\theta(y)\nabla_\theta\log\pi_\theta(y)$$，另一项因 $$\sum_y\nabla_\theta\pi_\theta(y)=0$$ 整项消零，只剩 $$\nabla_\theta\mathcal L_{OPD}=\mathbb E_{y\sim\pi_\theta}\big[\sum_t r_t\,\nabla_\theta\log\pi_\theta(y_t\mid\cdot)\big]$$，其中 $$r_t=\log\frac{\pi_\theta(y_t\mid\cdot)}{\pi_T(y_t\mid\cdot)}$$ detach 后就是逐 token 奖励；
+3. **GRPO = 组内基线的 REINFORCE 加 PPO 壳**（GRPO 篇）：$$\nabla$$ 的权重是整条回答共享的组相对优势 $$\hat A_i=(r_i-\mathrm{mean})/\mathrm{std}$$。
 
-三个梯度全部形如 \(\mathbb{E}\big[\sum_t w_t\,\nabla_\theta\log\pi_\theta(y_t\mid\cdot)\big]\)——**带权 score function**。差别只有两个自由度：
+三个梯度全部形如 $$\mathbb{E}\big[\sum_t w_t\,\nabla_\theta\log\pi_\theta(y_t\mid\cdot)\big]$$——**带权 score function**。差别只有两个自由度：
 
-- **期望放在哪个分布上**（\(\pi_T\) 还是 \(\pi_\theta\)）：采样分布轴；
-- **权重 \(w_t\) 长什么样**（常数 1 → 逐 token log-ratio → 整条一个标量）：信号密度轴。
+- **期望放在哪个分布上**（$$\pi_T$$ 还是 $$\pi_\theta$$）：采样分布轴；
+- **权重 $$w_t$$ 长什么样**（常数 1 → 逐 token log-ratio → 整条一个标量）：信号密度轴。
 
 于是可以写下贯穿全文的统一目标：
 
@@ -89,13 +89,13 @@ def spectrum_step(student, teacher, x, rewards, cfg, opt):
 
 | 数学符号 | 代码变量 | Shape / 类型 | 含义 |
 |---|---|---|---|
-| \(\lambda\) | `cfg.lam` | 标量 | SFT↔OPD 数据混合比（GKD 旋钮） |
-| \(\mu\) | `cfg.mu` | 标量 | RL 项权重 |
-| \(y_T\sim\pi_T(\cdot\mid x)\) | `y_t` | `(B,T)` | 老师轨迹（SFT 项的期望分布） |
-| \(y\sim\pi_\theta(\cdot\mid x)\) | `y_s` | `(B,T)` | 学生轨迹（on-policy 项的期望分布） |
-| \(r_t=\log\frac{\pi_\theta}{\pi_T}\) | `r_t` | `(B,T)` | token 级稠密奖励（detach 当常数） |
-| \(\hat A_i=\frac{r_i-\mathrm{mean}}{\mathrm{std}+\epsilon}\) | `adv` | `(B,)` 广播到 `(B,T)` | 组相对稀疏优势 |
-| \(\mathcal L_{SFT},\mathcal L_{OPD},\mathcal L_{RL}\) | `sft_loss` 等 | 标量 | 三个端点损失 |
+| $$\lambda$$ | `cfg.lam` | 标量 | SFT↔OPD 数据混合比（GKD 旋钮） |
+| $$\mu$$ | `cfg.mu` | 标量 | RL 项权重 |
+| $$y_T\sim\pi_T(\cdot\mid x)$$ | `y_t` | `(B,T)` | 老师轨迹（SFT 项的期望分布） |
+| $$y\sim\pi_\theta(\cdot\mid x)$$ | `y_s` | `(B,T)` | 学生轨迹（on-policy 项的期望分布） |
+| $$r_t=\log\frac{\pi_\theta}{\pi_T}$$ | `r_t` | `(B,T)` | token 级稠密奖励（detach 当常数） |
+| $$\hat A_i=\frac{r_i-\mathrm{mean}}{\mathrm{std}+\epsilon}$$ | `adv` | `(B,)` 广播到 `(B,T)` | 组相对稀疏优势 |
+| $$\mathcal L_{SFT},\mathcal L_{OPD},\mathcal L_{RL}$$ | `sft_loss` 等 | 标量 | 三个端点损失 |
 
 ### 2.2 极端点统计性质对比表
 
@@ -103,8 +103,8 @@ def spectrum_step(student, teacher, x, rewards, cfg, opt):
 
 | 统计性质 | SFT 端点 | OPD 端点 | RLVR 端点 |
 |---|---|---|---|
-| 采样分布 | \(\pi_T\)（固定，与 \(\theta\) 无关） | \(\pi_\theta\)（移动，on-policy） | \(\pi_\theta\)（移动，on-policy） |
-| 权重 \(w_t\) 形态 | 常数 1 | 逐 token log-ratio（稠密、有符号） | 整条一个组相对优势（稀疏） |
+| 采样分布 | $$\pi_T$$（固定，与 $$\theta$$ 无关） | $$\pi_\theta$$（移动，on-policy） | $$\pi_\theta$$（移动，on-policy） |
+| 权重 $$w_t$$ 形态 | 常数 1 | 逐 token log-ratio（稠密、有符号） | 整条一个组相对优势（稀疏） |
 | **梯度方差** | 最低——无策略梯度、无探索噪声 | 中——有 PG 但稠密奖励压低方差 | 最高——稀疏奖励叠加探索噪声 |
 | **模式覆盖** | mode-covering（摊开覆盖老师全部模式） | mode-seeking（向师生共识模式集中） | 无分布约束（奖励定义一切，自由度最大） |
 | **信用分配粒度** | 逐 token（但状态分布是老师的） | 逐 token（且状态分布是学生的） | 每条轨迹 O(1) bit |
@@ -116,14 +116,14 @@ def spectrum_step(student, teacher, x, rewards, cfg, opt):
 
 ### 2.3 插值旋钮盘点：λ 不是唯一的插值方式
 
-统一损失里有三个字面上的系数（\(\lambda,\mu\) 和隐含的 \(1-\lambda\)），但光谱上真实的插值机制至少有四种，互不可替代：
+统一损失里有三个字面上的系数（$$\lambda,\mu$$ 和隐含的 $$1-\lambda$$），但光谱上真实的插值机制至少有四种，互不可替代：
 
-1. **数据混合比 λ**（GKD）：\(\mathcal L_{GKD}=(1-\lambda)\mathbb E_{\mathcal D_T}+\lambda\mathbb E_{\pi_\theta}\)，在老师数据与学生自生成数据之间插值，实践中取 0.5–1.0 防止 on-policy 分布坍缩（[arXiv:2306.13649](https://arxiv.org/abs/2306.13649)）；
-2. **散度插值 JSD(β)**（同为 GKD）：\(\beta\to 0\) 逼近 forward KL、\(\beta\to 1\) 逼近 reverse KL——在"模式覆盖 vs 模式寻求"这条轴上连续滑动；
+1. **数据混合比 λ**（GKD）：$$\mathcal L_{GKD}=(1-\lambda)\mathbb E_{\mathcal D_T}+\lambda\mathbb E_{\pi_\theta}$$，在老师数据与学生自生成数据之间插值，实践中取 0.5–1.0 防止 on-policy 分布坍缩（[arXiv:2306.13649](https://arxiv.org/abs/2306.13649)）；
+2. **散度插值 JSD(β)**（同为 GKD）：$$\beta\to 0$$ 逼近 forward KL、$$\beta\to 1$$ 逼近 reverse KL——在"模式覆盖 vs 模式寻求"这条轴上连续滑动；
 3. **监督粒度 step length**（SOPD，§4）：token 级碎片修正 ↔ 序列级完整修复路径；
 4. **时间调度退火**（ATOD，§5）：训练早期 OPD 主导、后期 RL 主导——不是在空间一点取值，而是规划一条穿过光谱的路径。
 
-注意一个容易糊掉的区别：\(\mathcal{L}=\lambda\mathcal L_{SFT}+(1-\lambda)\mathcal L_{OPD}\) 里 λ 是**损失的凸组合**，而 GKD 的 λ 是**数据的混合比**——两者在随机mini-batch意义上近似等价，但语义不同：前者假设你可以同时算两项（两次前向、两个分布的样本），后者只是每个 batch 选一条数据流。工程实现几乎都是后者。
+注意一个容易糊掉的区别：$$\mathcal{L}=\lambda\mathcal L_{SFT}+(1-\lambda)\mathcal L_{OPD}$$ 里 λ 是**损失的凸组合**，而 GKD 的 λ 是**数据的混合比**——两者在随机mini-batch意义上近似等价，但语义不同：前者假设你可以同时算两项（两次前向、两个分布的样本），后者只是每个 batch 选一条数据流。工程实现几乎都是后者。
 
 ## 3. 光谱不是比喻：三组独立证据
 
@@ -154,7 +154,7 @@ def spectrum_step(student, teacher, x, rewards, cfg, opt):
 
 | 范式 | 教师信号进入 RL 的方式 | 代表工作 | 关键机制与数字 |
 |---|---|---|---|
-| **加性融合** | 蒸馏项与 RL 损失并列相加，配静态或退火权重 | KDRL、ATOD、HDPO、CADENCE、SDPG | ATOD：\(A_t=\kappa(s)\cdot A_t^{OPD}+\rho(s)\cdot A_t^{GRPO}\)，退火调度让稠密教师引导主导早期、奖励驱动主导后期，多轮 agent 上报告超过其自身教师 +2.16（[arXiv:2606.27814](https://arxiv.org/abs/2606.27814)）；KDRL 把反向 KL 与规则奖励装进一个联合目标（[arXiv:2506.02208](https://arxiv.org/abs/2506.02208)） |
+| **加性融合** | 蒸馏项与 RL 损失并列相加，配静态或退火权重 | KDRL、ATOD、HDPO、CADENCE、SDPG | ATOD：$$A_t=\kappa(s)\cdot A_t^{OPD}+\rho(s)\cdot A_t^{GRPO}$$，退火调度让稠密教师引导主导早期、奖励驱动主导后期，多轮 agent 上报告超过其自身教师 +2.16（[arXiv:2606.27814](https://arxiv.org/abs/2606.27814)）；KDRL 把反向 KL 与规则奖励装进一个联合目标（[arXiv:2506.02208](https://arxiv.org/abs/2506.02208)） |
 | **奖励化** | 教师散度本身被当作（稠密）奖励或过程奖励 | OPD+、TGPO、RG-OPD、PASS、Group-Calibrated OPD | OPD+ 把 OPD 形式化为 f-divergence 奖励的 RL，并证明常用的 stop-gradient 优势估计**有偏**、给出修正估计量（[arXiv:2606.01039](https://arxiv.org/abs/2606.01039)）；TGPO 专攻大师生差距场景——RL 探索产出落在教师分布外的轨迹时反馈全是无效负信号，改为教师条件在学生上下文上直接引导生成，再与 RLVR 轨迹奖励融合（[arXiv:2605.13230](https://arxiv.org/abs/2605.13230)）；RG-OPD 用验证器奖励做门控，仅当奖励与师生似然差方向一致时才保留蒸馏（[arXiv:2607.04037](https://arxiv.org/abs/2607.04037)）；PASS 把任意步级过程信号接进 GRPO 的优势流，其 OPD 实例化即稠密蒸馏信号（[arXiv:2606.29296](https://arxiv.org/abs/2606.29296)） |
 | **比率化 / 优势整形** | 教师信号作为乘性比率或权重作用在 RL 优势上 | Distilled RL、CPO、RLAD、LUFFY、NPO | Distilled RL 干脆删掉 KL 损失，把教师做成优势上的**反向重要性比率**，配负样本重置与序列级几何归一化防止教师重缩放整条回答（[arXiv:2607.17247](https://arxiv.org/abs/2607.17247)）；CPO 用对比分歧整形优势，并**证明 OPD 的反向 KL 是它的特例**（教师即后验）（[arXiv:2607.14614](https://arxiv.org/abs/2607.14614)）；LUFFY 把离策略教师轨迹混入 RLVR 的 rollout 突破初始能力（[arXiv:2504.14945](https://arxiv.org/abs/2504.14945)）；NPO 把教师换成"训练后期附近的自己"，兼顾足够强与分布够近（[arXiv:2604.20733](https://arxiv.org/abs/2604.20733)） |
 
@@ -186,7 +186,7 @@ flowchart TD
 
 ## 7. 批判与展望
 
-**批判一：统一损失是代数便利，不是几何定理。** \(\lambda\mathcal L_{SFT}+(1-\lambda)\mathcal L_{OPD}+\mu\mathcal L_{RL}\) 写起来漂亮，但三个端点的**采样分布不可凸组合**——你不能采样"半个老师半个学生"的轨迹。真实系统里的插值都是数据层面的离散混合（GKD 的 λ）或调度层面的时序路径（ATOD 的退火），没有任何结果保证凸组合损失的极小点是好的光谱中间点。统一框架的解释力远强于预测力。
+**批判一：统一损失是代数便利，不是几何定理。** $$\lambda\mathcal L_{SFT}+(1-\lambda)\mathcal L_{OPD}+\mu\mathcal L_{RL}$$ 写起来漂亮，但三个端点的**采样分布不可凸组合**——你不能采样"半个老师半个学生"的轨迹。真实系统里的插值都是数据层面的离散混合（GKD 的 λ）或调度层面的时序路径（ATOD 的退火），没有任何结果保证凸组合损失的极小点是好的光谱中间点。统一框架的解释力远强于预测力。
 
 **批判二：stop-gradient 之争悬而未决。** 光谱中段的核心技巧——把 log-ratio detach 成常数奖励——被 OPD+ 证明对一般 f-divergence 是有偏的优势估计，CASIA 又说有偏但方差界更紧。到底哪个估计器在哪个区域最优，目前只有拼图没有定论；这意味着 §2 的统一代码骨架在 OPD 端点附近仍是"经验最优"而非"原理最优"。
 
@@ -198,7 +198,7 @@ flowchart TD
 
 ## 8. Takeaway
 
-- **解决了什么**：把 SFT、OPD、RLVR 统一进一个带权 score function 家族（\(\mathcal{L}=\lambda\mathcal L_{SFT}+(1-\lambda)\mathcal L_{OPD}+\mu\mathcal L_{RL}\)），两个坐标轴（采样分布 × 信号密度）解释全部差异；用参数空间测量（8.1%/51.6%/77.2%）、信息论账本（O(N) vs O(1) bit）、realizability 判据三组证据把光谱钉成事实。
+- **解决了什么**：把 SFT、OPD、RLVR 统一进一个带权 score function 家族（$$\mathcal{L}=\lambda\mathcal L_{SFT}+(1-\lambda)\mathcal L_{OPD}+\mu\mathcal L_{RL}$$），两个坐标轴（采样分布 × 信号密度）解释全部差异；用参数空间测量（8.1%/51.6%/77.2%）、信息论账本（O(N) vs O(1) bit）、realizability 判据三组证据把光谱钉成事实。
 - **致命局限**：统一损失的插值语义混乱（损失凸组合 ≠ 数据混合 ≠ 分布插值）；stop-gradient 估计器的最优性未决；教师可靠性假设在学生逼近教师时系统性失效。
 - **如何引出下一篇**：光谱目前只画了半张——从示范到奖励的逆方向（象限Ⅱ）如何在同一框架下参数化，是四象限统一场论的最后一公里。
 
@@ -244,7 +244,7 @@ flowchart TD
 * Ouyang et al., "Training language models to follow instructions with human feedback" ([arXiv:2203.02155](https://arxiv.org/abs/2203.02155))
 * Shao et al., "DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models" ([arXiv:2402.03300](https://arxiv.org/abs/2402.03300)) —— GRPO 出处 · DeepSeek-AI, "DeepSeek-R1" ([arXiv:2501.12948](https://arxiv.org/abs/2501.12948))
 * Ho & Ermon, "Generative Adversarial Imitation Learning" ([arXiv:1606.03476](https://arxiv.org/abs/1606.03476))
-* "Inverse RL Helps Align AI by Imitating Humans" (PARED) ([arXiv:2607.24900](https://arxiv.org/abs/2607.24900)) · "Escaping the Verifier: Learning to Reason via Demonstrations" (RARO) ([arXiv:2511.21667](https://arxiv.org/abs/2511.21667)) · "\(\mathcal{X}\)-KD: General Experiential Knowledge Distillation for Large Language Models" ([arXiv:2602.12674](https://arxiv.org/abs/2602.12674))
+* "Inverse RL Helps Align AI by Imitating Humans" (PARED) ([arXiv:2607.24900](https://arxiv.org/abs/2607.24900)) · "Escaping the Verifier: Learning to Reason via Demonstrations" (RARO) ([arXiv:2511.21667](https://arxiv.org/abs/2511.21667)) · "$$\mathcal{X}$$-KD: General Experiential Knowledge Distillation for Large Language Models" ([arXiv:2602.12674](https://arxiv.org/abs/2602.12674))
 * "Rethinking On-Policy Self-Distillation for Thinking Models" ([arXiv:2607.05184](https://arxiv.org/abs/2607.05184)) —— fork suppression · "CriPO: Enhancing Rubric-based RL via Self-Distillation" ([arXiv:2607.18082](https://arxiv.org/abs/2607.18082))
 
 **非论文资源（工业产品与生态）**
@@ -256,4 +256,4 @@ flowchart TD
 
 * 本站系列互引：《[On-Policy Distillation 深度剖析](/2026/08/11/on-policy-distillation-deepdive/)》（OPD 篇 §2.4 的证明是本文地基） · 《[在线蒸馏方法全景](/2026/08/11/online-distillation-methods/)》 · 《[GRPO：组相对优势与大模型时代的 RL](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/)》 · 《[PPO：用一阶方法驯服策略更新](/2026/08/21/mdp-to-grpo-04-ppo-clipped-surrogate/)》 · 《[逆强化学习五十年](/2026/08/22/irl-fifty-years-from-demonstrations/)》 · 《[正向学策略，反向学奖励：IRL 在 LLM 对齐里的复活](/2026/08/22/irl-renaissance-in-llm-alignment/)》
 
-> 🧪 **动手练习**：① 把 §2.1 的 `spectrum.py` 骨架接到任意 toy 任务上，固定总预算扫 \((\lambda,\mu)\in\{0,0.5,1\}\times\{0,0.5,1\}\) 九宫格，记录每个格点的梯度方差（对同一 batch 做 100 次重复采样的 loss 标准差）与最终成绩——验证 §2.2 表格里"方差随 μ 上升、样本效率峰值在中段"的排序；② 复现 SOPD 的插值思想：把现有 OPD 训练循环的监督粒度从逐 token 改为每 k∈{1,8,64} 个 token 补全一次，画出成绩-k 曲线的两个极限端，确认 k→∞ 时行为趋近 SFT、k=1 时趋近 OPD。
+> 🧪 **动手练习**：① 把 §2.1 的 `spectrum.py` 骨架接到任意 toy 任务上，固定总预算扫 $$(\lambda,\mu)\in\{0,0.5,1\}\times\{0,0.5,1\}$$ 九宫格，记录每个格点的梯度方差（对同一 batch 做 100 次重复采样的 loss 标准差）与最终成绩——验证 §2.2 表格里"方差随 μ 上升、样本效率峰值在中段"的排序；② 复现 SOPD 的插值思想：把现有 OPD 训练循环的监督粒度从逐 token 改为每 k∈{1,8,64} 个 token 补全一次，画出成绩-k 曲线的两个极限端，确认 k→∞ 时行为趋近 SFT、k=1 时趋近 OPD。

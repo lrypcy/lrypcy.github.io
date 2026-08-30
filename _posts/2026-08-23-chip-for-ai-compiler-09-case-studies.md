@@ -67,7 +67,7 @@ Ampere 在 H100 的光环下常被低估，但回望过去五年 kernel 形态�
 
 **其三，2:4 结构化稀疏：稀疏第一次写进 ISA 契约。** 每 4 个权重剪掉 2 个、硬件跳过零值、吞吐翻倍（Ampere 白皮书口径）——这就是 01 篇说峰值算力要区分「稠密/稀疏两种口径」的出处。代价是 pattern 合法性成了硬约束：剪枝必须满足 2:4 形状（工业界标准流程是先按重要性剪、再重排列满足 pattern 的两步法，NVIDIA ASP 工具链口径），压缩后的索引布局也要专门排布。通用编译器大多选择把这一步交给 cuSPARSELt 一类专家库——**ISA 给了折扣，兑现折扣的人力成本留给了软件**。
 
-**其四，cp.async：把 load 摘出指令流的第一步。** 06 篇 §6 已经拆完电路：全局内存数据直达 SMEM、不过 RF、不占目的寄存器，配套 `commit_group`/`wait_group` 两级语义（PTX ISA 官方口径；SASS 名 LDGSTS 为社区口径，06 篇 Lab 可自验）。产品视角只需钉住一件事：**`num_stages` 多级流水从此有了硬件抓手**——06 篇那条下界公式 \(N_{stages} \geq 1+\lceil BW_{share}\cdot L_{mem}/B_{stage}\rceil\) 从 A100 开始才真正可执行，Little 定律（03 篇）要求的在飞字节第一次可以由后台队列而非驻留 warp 来凑。
+**其四，cp.async：把 load 摘出指令流的第一步。** 06 篇 §6 已经拆完电路：全局内存数据直达 SMEM、不过 RF、不占目的寄存器，配套 `commit_group`/`wait_group` 两级语义（PTX ISA 官方口径；SASS 名 LDGSTS 为社区口径，06 篇 Lab 可自验）。产品视角只需钉住一件事：**`num_stages` 多级流水从此有了硬件抓手**——06 篇那条下界公式 $$N_{stages} \geq 1+\lceil BW_{share}\cdot L_{mem}/B_{stage}\rceil$$ 从 A100 开始才真正可执行，Little 定律（03 篇）要求的在飞字节第一次可以由后台队列而非驻留 warp 来凑。
 
 ### 2.3 Hopper（2022）：异步化完成，并行层级＋1
 
@@ -85,7 +85,7 @@ flowchart LR
 
 这圈反馈环的意义远超一个库：**量化决策从编译期常量变成了运行时变量**。图 IR 里从此必须能表达 cast/amax 统计/scale 更新这类带状态的节点，融合 pass 不能跨越它们乱合并，autotuner 的精度维度也从静态枚举变成动态策略空间。
 
-**其二，TMA：异步拷贝的第二形态。** 06 篇 §6.3 的伏笔在此兑现：一张 tensormap 描述张量的形状、步长、box，单线程即可发射整块 bulk 拷贝，完成后经 mbarrier 通知（官方 CUDA 文档口径）。对比 cp.async 的进步有三处（06 篇已列）：发射开销从「32 线程各发一条」降到「1 线程发一张单子」；边界越界由硬件按 map 自动处理；完成通知从轮询 wait_group 升级为屏障事件。编译器侧的新义务随之升级：构建 tensormap 描述符、编排 producer/consumer warp 特化、证明 mbarrier 序列的死锁自由。06 篇 §7 的 occupancy 三约束公式本身没变，但记账方式变了——\(s_b\) 与 \(r_t\) 要按角色分开算：producer warp 吃 SMEM buffer 预算但不吃多少寄存器，consumer warp 反之，**角色化 occupancy 成为 Hopper kernel 的标准算法**（CUTLASS Hopper pipeline 口径）。
+**其二，TMA：异步拷贝的第二形态。** 06 篇 §6.3 的伏笔在此兑现：一张 tensormap 描述张量的形状、步长、box，单线程即可发射整块 bulk 拷贝，完成后经 mbarrier 通知（官方 CUDA 文档口径）。对比 cp.async 的进步有三处（06 篇已列）：发射开销从「32 线程各发一条」降到「1 线程发一张单子」；边界越界由硬件按 map 自动处理；完成通知从轮询 wait_group 升级为屏障事件。编译器侧的新义务随之升级：构建 tensormap 描述符、编排 producer/consumer warp 特化、证明 mbarrier 序列的死锁自由。06 篇 §7 的 occupancy 三约束公式本身没变，但记账方式变了——$$s_b$$ 与 $$r_t$$ 要按角色分开算：producer warp 吃 SMEM buffer 预算但不吃多少寄存器，consumer warp 反之，**角色化 occupancy 成为 Hopper kernel 的标准算法**（CUTLASS Hopper pipeline 口径）。
 
 **其三，wgmma：tensorize 的单位从 warp 升级为 warpgroup。** 06 篇 §5.3 明确留过话：「Hopper 把这条路走到了下一个台阶……案例对比留待第 09 篇」。现在兑现：wgmma 让 4 个 warp 成组协作执行一条矩阵乘（sm_90a 特性，PTX ISA 官方口径），操作数 A 可以直接从 SMEM 流入阵列、跳过寄存器 fragment 中转，累加器仍可留在寄存器或 SMEM。两笔连锁账：其一，fragment 契约搬家——从「每个线程抱哪几个寄存器」变成「SMEM 里这块矩阵按什么 swizzle 摆放」（03 篇 gcd 公式的主战场扩大），ldmatrix 往返被消掉；其二，注意那个后缀 **a**——sm_90a 表示该特性属于特定架构实现、不保证向前兼容（PTX ISA 口径），下一代可能改语义。这是 ISA 契约观的一次微妙变化：**当硬件迭代快到 ISA 都来不及稳定时，编译器必须在「追新特性」与「保持可移植」之间做显式取舍**（04 篇契约论的续篇）。累加依赖环依旧且常数更大，05 篇拆多份累加器的结论原样适用。
 
@@ -103,7 +103,7 @@ flowchart TD
     TM --> B1
 ```
 
-这正是 08 篇 NoC locality 数学（二分带宽 \(1/k\)、平均跳数 \(2k/3\)）的编程模型化：**「把通信重的 tile 放成近邻」从编译器的祈祷升级成了 API 保证**。编译器侧的变化：并行层级从 grid/block/warp/thread 四层变五层；K 维切片的 multicast 复用成为新的 tiling 决策维度（多个 block 共享同一份激活，07 篇权重复用的近亲）；同步分析新增 cluster 级死锁检查；autotuner 的搜索空间多了 cluster dims 这根轴。
+这正是 08 篇 NoC locality 数学（二分带宽 $$1/k$$、平均跳数 $$2k/3$$）的编程模型化：**「把通信重的 tile 放成近邻」从编译器的祈祷升级成了 API 保证**。编译器侧的变化：并行层级从 grid/block/warp/thread 四层变五层；K 维切片的 multicast 复用成为新的 tiling 决策维度（多个 block 共享同一份激活，07 篇权重复用的近亲）；同步分析新增 cluster 级死锁检查；autotuner 的搜索空间多了 cluster dims 这根轴。
 
 > 💡 **编译器关联**：Hopper 四连击合起来是一次 kernel 架构范式转移——producer/consumer warp 特化＋TMA 队列＋wgmma 直供＋cluster multicast，四个特性互相咬合成一套「流水线工厂」模板（CUTLASS Hopper GEMM 是它的参考实现）。通用编译器逐步把这些特性吸收为自动生成目标，但**吸收的速度差就是手写库的性能窗口**——这个窗口在每一代新卡发布时都会重新打开一次。
 
@@ -119,14 +119,14 @@ $$b_{eff} = b_{x} + \frac{b_{s}}{k}$$
 
 | 符号 | 含义 | FP4＋MX 取值 | 维度/单位 |
 |:---:|:---|:---|:---|
-| \(b_{x}\) | 数据元素位宽 | 4（E2M1） | bit |
-| \(b_{s}\) | 共享 scale 位宽 | 8（E8M0 纯指数量纲） | bit |
-| \(k\) | 每 scale 覆盖的元素数 | 32（MX 口径） | 个 |
-| \(b_{eff}\) | 每元素有效均摊位宽 | \(4+8/32=4.25\) | bit |
+| $$b_{x}$$ | 数据元素位宽 | 4（E2M1） | bit |
+| $$b_{s}$$ | 共享 scale 位宽 | 8（E8M0 纯指数量纲） | bit |
+| $$k$$ | 每 scale 覆盖的元素数 | 32（MX 口径） | 个 |
+| $$b_{eff}$$ | 每元素有效均摊位宽 | $$4+8/32=4.25$$ | bit |
 
 妙处在动态范围：scale 是纯指数量纲，覆盖的数值范围几乎等于 FP32——**用约 4.25 bit 的均摊宽度买到 FP16 级的动态范围**。这是 04 篇「位宽预算怎么切」的第三代答案：第一代砍尾数即 BF16，第二代按阶段分工双格式即 FP8，第三代把 scale 从张量级降到块级。编译器义务随之质变：量化 pass 的输出不再是显式 dequant 算子序列，而是带 scale 操作数的特殊 mma 调用——scale 成为 GEMM ABI 的一部分，scale 张量自己的 layout 也成了新的 layout 问题，KV cache 量化与权重量化的粒度可以解耦配置。
 
-**其三，tcgen05/TMEM：累加器离开寄存器堆。** 第五代 Tensor Core 的公开形态（PTX ISA 新增指令族与 CUDA 文档口径）：mma 由单线程发出、异步执行，累加结果落入专用的 Tensor Memory 而非寄存器 fragment。这是对 03 篇 RF 地皮模型的又一次松绑——acc 不占寄存器堆，同样的 \(r_t\) 预算能养更深的流水或更多在飞 warp；同时「单线程发射」意味着 warp 特化进一步加深。生态现状是这套指令族主要由 CUTLASS/CuDNN 一类专家库先行消费，主流编译器正在跟进——**从新 ISA 出现到编译器普遍消化之间的时间差，本身就是这个职业存在的理由**。
+**其三，tcgen05/TMEM：累加器离开寄存器堆。** 第五代 Tensor Core 的公开形态（PTX ISA 新增指令族与 CUDA 文档口径）：mma 由单线程发出、异步执行，累加结果落入专用的 Tensor Memory 而非寄存器 fragment。这是对 03 篇 RF 地皮模型的又一次松绑——acc 不占寄存器堆，同样的 $$r_t$$ 预算能养更深的流水或更多在飞 warp；同时「单线程发射」意味着 warp 特化进一步加深。生态现状是这套指令族主要由 CUTLASS/CuDNN 一类专家库先行消费，主流编译器正在跟进——**从新 ISA 出现到编译器普遍消化之间的时间差，本身就是这个职业存在的理由**。
 
 **其四，NVL72：机柜级单一 NVLink 域。** 72 卡经第五代 NVSwitch 连成一个域（08 篇 §3.4 的延伸），MoE 的 all-to-all 与专家并行的放置空间从 8 卡扩大到 72 卡——08 篇那张「并行维度 × 拓扑层级」映射表的行数又长了一行。
 

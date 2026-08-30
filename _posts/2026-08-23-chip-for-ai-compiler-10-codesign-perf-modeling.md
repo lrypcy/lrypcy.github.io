@@ -61,13 +61,13 @@ flowchart TD
 | compute capability 特性表（warp 尺寸、线程槽位上限） | cache 命中行为、DRAM row buffer 表现 |
 | 异步原语的语义（cp.async／TMA 的 PTX ISA 定义） | `num_stages` 该取几（下界可以推导，最优点靠实测） |
 
-C 级参数的正确用法是**当下界约束和合法性判据**：SMEM 容量决定 tile 的硬上限（06 篇 occupancy 公式的 \(C_{smem}\) 项），特性表决定 tensorize 合法性检查查哪张表——而不是当预测值用。
+C 级参数的正确用法是**当下界约束和合法性判据**：SMEM 容量决定 tile 的硬上限（06 篇 occupancy 公式的 $$C_{smem}$$ 项），特性表决定 tensorize 合法性检查查哪张表——而不是当预测值用。
 
 ### 2.2 来源二：微基准（B 级：延迟与真实带宽）
 
 ISA 只承诺语义不承诺时序（04 篇第一张表），所以延迟与吞吐必须自己测。方法在 05 篇拆 II 公式时已经用过，这里把它正式化为两个标准实验：
 
-**测延迟用依赖链法。** 让 n 条同种指令首尾依赖（\(r_1 \leftarrow f(r_1)\) 循环），流水线无法重叠，总时间就是纯链长：
+**测延迟用依赖链法。** 让 n 条同种指令首尾依赖（$$r_1 \leftarrow f(r_1)$$ 循环），流水线无法重叠，总时间就是纯链长：
 
 $$T(n) \approx T_0 + n \cdot lat \quad\Rightarrow\quad lat = \frac{T(n_2) - T(n_1)}{n_2 - n_1}$$
 
@@ -75,12 +75,12 @@ $$T(n) \approx T_0 + n \cdot lat \quad\Rightarrow\quad lat = \frac{T(n_2) - T(n_
 
 | 符号 | 含义 | 示例取值 | 维度/单位 |
 |:---:|:---|:---|:---|
-| \(T(n)\) | n 条依赖指令的总耗时 | 由计时循环测得 | cycle 或 ns |
-| \(T_0\) | 固定开销（循环维护、取指） | 与 n 无关的截距 | 同上 |
-| \(lat\) | 单条指令延迟（回归斜率） | FFMA 实测约 4 | cycle/条 |
-| \(n_1, n_2\) | 两次链长（差分消掉 \(T_0\)） | 如 1000 与 2000 | 条 |
+| $$T(n)$$ | n 条依赖指令的总耗时 | 由计时循环测得 | cycle 或 ns |
+| $$T_0$$ | 固定开销（循环维护、取指） | 与 n 无关的截距 | 同上 |
+| $$lat$$ | 单条指令延迟（回归斜率） | FFMA 实测约 4 | cycle/条 |
+| $$n_1, n_2$$ | 两次链长（差分消掉 $$T_0$$） | 如 1000 与 2000 | 条 |
 
-**测吞吐用独立链交织法。** 发射 c 条互不依赖的链轮转执行，当 \(c \geq lat/II\) 时每条链的推进斜率就是 II——这正是 05 篇「喂饱 FP32 流水线只需 \(\lceil 4/2 \rceil = 2\) 条独立链」的测量版。FFMA 延迟约 4 cycle、吞吐每分区每拍 16 lane 这些前文引用的数字，全部出自这类微基准的系统测量（[arXiv:1804.06826](https://arxiv.org/abs/1804.06826) 的 Volta 实证与 [arXiv:2208.11174](https://arxiv.org/abs/2208.11174) 的 Ampere 实证是两份范本）。
+**测吞吐用独立链交织法。** 发射 c 条互不依赖的链轮转执行，当 $$c \geq lat/II$$ 时每条链的推进斜率就是 II——这正是 05 篇「喂饱 FP32 流水线只需 $$\lceil 4/2 \rceil = 2$$ 条独立链」的测量版。FFMA 延迟约 4 cycle、吞吐每分区每拍 16 lane 这些前文引用的数字，全部出自这类微基准的系统测量（[arXiv:1804.06826](https://arxiv.org/abs/1804.06826) 的 Volta 实证与 [arXiv:2208.11174](https://arxiv.org/abs/2208.11174) 的 Ampere 实证是两份范本）。
 
 **测带宽要注意 Little 定律的下限。** 03 篇算过：A100 上要把 HBM 喂到满速，任意时刻需约 1 MB 数据在飞——所以 stream 类 kernel 必须数组足够大、grid 打满全部 SM，否则测出来的是延迟不是带宽。测出的「真实带宽 ÷ datasheet 标称带宽」这个比值本身就是一条 B 级参数（典型在八成上下浮动，具体以实测为准），cost model 里应该用它而非标称值。
 
@@ -134,7 +134,7 @@ $$P_{achieved} = \min\big(P_{peak},\ AI \times BW\big), \qquad AI^* = \frac{P_{p
 
 ### 3.2 算子的 AI 账本：从公式到四个真实算子
 
-GEMM 的 AI 有通式。设元素宽 \(w\) 字节，三个矩阵各至少读写一遍：
+GEMM 的 AI 有通式。设元素宽 $$w$$ 字节，三个矩阵各至少读写一遍：
 
 $$AI_{GEMM} = \frac{2mnk}{w\,(mk + kn + mn)} \;\xrightarrow{\;m=n=k=L\;}\; \frac{2L}{3w}$$
 
@@ -142,23 +142,23 @@ $$AI_{GEMM} = \frac{2mnk}{w\,(mk + kn + mn)} \;\xrightarrow{\;m=n=k=L\;}\; \frac
 
 | 符号 | 含义 | 示例取值 | 维度/单位 |
 |:---:|:---|:---|:---|
-| \(m, n, k\) | GEMM 三维尺寸 | 4096 | 个 |
-| \(w\) | 单元素字节数（FP16 取 2） | 2 | 字节/元素 |
-| \(2mnk\) | 总浮点运算数（乘加各计一次） | \(1.37\times10^{11}\) | FLOP |
-| \(w(mk+kn+mn)\) | compulsory 流量下限 | 约 \(1.0\times10^{8}\) 字节 | 字节 |
-| \(AI\) | 算术强度 | FP16 下 \(\frac{2L}{3w}\approx 1365\) | FLOP/byte |
+| $$m, n, k$$ | GEMM 三维尺寸 | 4096 | 个 |
+| $$w$$ | 单元素字节数（FP16 取 2） | 2 | 字节/元素 |
+| $$2mnk$$ | 总浮点运算数（乘加各计一次） | $$1.37\times10^{11}$$ | FLOP |
+| $$w(mk+kn+mn)$$ | compulsory 流量下限 | 约 $$1.0\times10^{8}$$ 字节 | 字节 |
+| $$AI$$ | 算术强度 | FP16 下 $$\frac{2L}{3w}\approx 1365$$ | FLOP/byte |
 
 四个算子当场分类（A100 FP16 拐点 153 为参照；attention 为教学近似，忽略 softmax 内部多趟扫描）：
 
 | 算子 | FLOPs | 流量账 | AI | 判定与方向 |
 |:---|:---|:---|:---:|:---|
-| saxpy（FP32，n 元素） | \(2n\) | \(12n\) 字节 | 1/6 | 深度内存受限——只值得做访存合并 |
-| naive softmax（FP32 四趟） | ~\(5n\) | ~\(20n\) 字节 | ~1/4 | 融合成单趟后流量减半以上（03 篇结论） |
-| GEMM 4096³ FP16 | \(2n^3\) | \(6n^2 w\) 字节 | ≈1365 | 远超拐点——tensorize 与降精度才有钱赚 |
-| attention n=4096，d=128，naive | \(4n^2 d\) | \(w(4nd+4n^2)\) ≈138 MB | ≈62 | **低于拐点**——内存受限 |
-| 同上，FlashAttention 化 | \(4n^2 d\) | \(cw\cdot 3nd\)（c 为分块重读系数，取 2）≈6 MB | ≈1365 | **翻越拐点**——计算受限 |
+| saxpy（FP32，n 元素） | $$2n$$ | $$12n$$ 字节 | 1/6 | 深度内存受限——只值得做访存合并 |
+| naive softmax（FP32 四趟） | ~$$5n$$ | ~$$20n$$ 字节 | ~1/4 | 融合成单趟后流量减半以上（03 篇结论） |
+| GEMM 4096³ FP16 | $$2n^3$$ | $$6n^2 w$$ 字节 | ≈1365 | 远超拐点——tensorize 与降精度才有钱赚 |
+| attention n=4096，d=128，naive | $$4n^2 d$$ | $$w(4nd+4n^2)$$ ≈138 MB | ≈62 | **低于拐点**——内存受限 |
+| 同上，FlashAttention 化 | $$4n^2 d$$ | $$cw\cdot 3nd$$（c 为分块重读系数，取 2）≈6 MB | ≈1365 | **翻越拐点**——计算受限 |
 
-最后一行是全系列最有戏剧性的一笔账：**同一个注意力数学，fusion 把它从墙的这一边搬到那一边**——naive 版喂不满 Tensor Core 不是算得不够快，而是中间张量 \(n^2\) 矩阵把带宽吃光了（[FlashAttention 论文](https://arxiv.org/abs/2205.14135)的 IO 视角）。这也再次验证 03 篇那句话：实测 AI 与算法下限的差额，就是编译器的盈利空间。
+最后一行是全系列最有戏剧性的一笔账：**同一个注意力数学，fusion 把它从墙的这一边搬到那一边**——naive 版喂不满 Tensor Core 不是算得不够快，而是中间张量 $$n^2$$ 矩阵把带宽吃光了（[FlashAttention 论文](https://arxiv.org/abs/2205.14135)的 IO 视角）。这也再次验证 03 篇那句话：实测 AI 与算法下限的差额，就是编译器的盈利空间。
 
 ### 3.3 多层 Roofline：把供价画成阶梯
 
@@ -166,11 +166,11 @@ $$AI_{GEMM} = \frac{2mnk}{w\,(mk + kn + mn)} \;\xrightarrow{\;m=n=k=L\;}\; \frac
 
 $$P \leq \min\Big(P_{peak},\ \min_\ell \; AI_\ell \times BW_\ell\Big), \qquad AI_\ell = \frac{\text{总 FLOPs}}{\text{第 } \ell \text{ 层实际搬运的字节数}}$$
 
-关键在于 \(AI_\ell\) 由 tile 配置决定。教学版的分块流量账（方 tile 边长 b）：数据每换一层存储，就要按该层的复用粒度重新付一遍搬运费：
+关键在于 $$AI_\ell$$ 由 tile 配置决定。教学版的分块流量账（方 tile 边长 b）：数据每换一层存储，就要按该层的复用粒度重新付一遍搬运费：
 
 $$B_{smem} \approx \frac{2mnk\,w}{b}, \qquad B_{l2} \approx \frac{2mnk\,w}{b}, \qquad B_{hbm} \approx w\,(mk+kn+mn)$$
 
-即 **SMEM/L2 流量随 tile 边长线性下降、HBM 只付 compulsory 下限**——这就是「tile 越大越省供数」的定量出处，也是 07 篇 MXU 复用论证的 GPU 版。把三层各自的 \(AI_\ell\) 与各自拐点比较，就能定位 kernel 到底贴着哪堵墙：
+即 **SMEM/L2 流量随 tile 边长线性下降、HBM 只付 compulsory 下限**——这就是「tile 越大越省供数」的定量出处，也是 07 篇 MXU 复用论证的 GPU 版。把三层各自的 $$AI_\ell$$ 与各自拐点比较，就能定位 kernel 到底贴着哪堵墙：
 
 ```mermaid
 flowchart TD
@@ -210,33 +210,33 @@ $$T \gtrsim \max\Big(T_{comp},\ T_{smem},\ T_{l2},\ T_{hbm}\Big), \qquad T_{comp
 
 | 符号 | 含义 | A100 示例取值 | 维度/单位 |
 |:---:|:---|:---|:---|
-| \(f\) | 核心频率（锁频后的实测值） | 1.41 GHz | 周期/秒 |
-| \(P_{pc}\) | 每 cycle 峰值 FLOPs（按精度取表） | CUDA Core 约 1.38 万；TC 场景每 SM 约 2048 | FLOP/cycle |
-| \(U\) | 阵列利用率（tile 形状决定） | 见下方公式 | 无量纲 |
-| \(BW_\ell^{cyc}\) | 第 ℓ 层每周期供给字节（标称×实测折扣） | HBM≈1450；L2≈3200；SMEM≈13500（聚合÷频率的示意换算） | 字节/cycle |
-| \(B_\ell\) | 第 ℓ 层流量（§3.3 分块账） | 随 b 变化 | 字节 |
+| $$f$$ | 核心频率（锁频后的实测值） | 1.41 GHz | 周期/秒 |
+| $$P_{pc}$$ | 每 cycle 峰值 FLOPs（按精度取表） | CUDA Core 约 1.38 万；TC 场景每 SM 约 2048 | FLOP/cycle |
+| $$U$$ | 阵列利用率（tile 形状决定） | 见下方公式 | 无量纲 |
+| $$BW_\ell^{cyc}$$ | 第 ℓ 层每周期供给字节（标称×实测折扣） | HBM≈1450；L2≈3200；SMEM≈13500（聚合÷频率的示意换算） | 字节/cycle |
+| $$B_\ell$$ | 第 ℓ 层流量（§3.3 分块账） | 随 b 变化 | 字节 |
 
-利用率项 \(U\) 是 07 篇 MXU 公式的直接推广，decode 小矩阵的悬崖在这里进模型：
+利用率项 $$U$$ 是 07 篇 MXU 公式的直接推广，decode 小矩阵的悬崖在这里进模型：
 
 $$U = \frac{m \cdot n}{\lceil m/b_m \rceil \cdot \lceil n/b_n \rceil \cdot b_m \cdot b_n}$$
 
-这个骨架的价值不在精度而在**可解释性**：每一项都能追溯到一个物理部件，预测偏差大的时候能定位到「哪一项算错了」——是 \(BW_\ell^{cyc}\) 的折扣系数没校准，还是 \(U\) 被 padding 吃掉了，或是同步开销没建模。对 scratchpad 确定性架构（07 篇），这套骨架进一步退化为精确求和：没有 AMAT 期望、没有 cache 干扰，max 变成排好的时刻表，**cost model 从估计变成恒等式**——这正是确定性硬件给性能建模的最大红利。
+这个骨架的价值不在精度而在**可解释性**：每一项都能追溯到一个物理部件，预测偏差大的时候能定位到「哪一项算错了」——是 $$BW_\ell^{cyc}$$ 的折扣系数没校准，还是 $$U$$ 被 padding 吃掉了，或是同步开销没建模。对 scratchpad 确定性架构（07 篇），这套骨架进一步退化为精确求和：没有 AMAT 期望、没有 cache 干扰，max 变成排好的时刻表，**cost model 从估计变成恒等式**——这正是确定性硬件给性能建模的最大红利。
 
 ### 4.3 归一化：让同一组参数跨芯片可用
 
 学习式 cost model（AutoTVN/MetaSchedule 用 XGBoost 吃提取特征，[Ansor](https://arxiv.org/abs/2006.06762) 用代价模型剪枝搜索空间，均见 [TVM 官方文档](https://tvm.apache.org/docs/)）要在不同芯片间迁移，特征必须无量纲化。实用原则是把每个绝对量除以它的同类容量，变成「比例」：
 
-* 吞吐类：\(\text{FLOPs}/(f \cdot P_{pc})\) —— 占峰值的比例，A100 和 H100 可比；
-* 强度类：\(AI / AI^*\) —— 相对拐点的位置，直接编码「该做融合还是做 tensorize」（03 篇分流判据）；
-* 地皮类：\(s_b/C_{smem}\)、\(32 r_t/W_{slot}\)、stages×\(B_{stage}/C_{smem}\) —— 06 篇三约束的逐项占比；
-* 几何类：\(U(M,N)\)、\(\lceil m/b\rceil b - m\) 的 padding 比例 —— 07 篇阵列契约的对齐损耗；
+* 吞吐类：$$\text{FLOPs}/(f \cdot P_{pc})$$ —— 占峰值的比例，A100 和 H100 可比；
+* 强度类：$$AI / AI^*$$ —— 相对拐点的位置，直接编码「该做融合还是做 tensorize」（03 篇分流判据）；
+* 地皮类：$$s_b/C_{smem}$$、$$32 r_t/W_{slot}$$、stages×$$B_{stage}/C_{smem}$$ —— 06 篇三约束的逐项占比；
+* 几何类：$$U(M,N)$$、$$\lceil m/b\rceil b - m$$ 的 padding 比例 —— 07 篇阵列契约的对齐损耗；
 * 拓扑类：边通信量 × 链路单价 —— 08 篇价目表的直接乘积。
 
 相对特征的另一个好处是对「未验证」参数鲁棒：折扣系数错了只会整体缩放，排序往往不变——autotuner 关心排序远胜于绝对值。
 
 ### 4.4 校准闭环与已知失效模式
 
-解析骨架给形状，少量实测点修系数：跑 K 个代表性配置 → 实测时间 → 对 \(BW^{cyc}\) 折扣与固定开销做最小二乘 → 回归测试守护。校准数据本身用 §5 的计数器做归因（比如实测低于预测时，先看是 dram 吞吐没到还是 tensor pipe 没到）。已知失效模式清单，每条都能在前文找到根源：锁频失败引入 DVFS 噪声（02 篇）；PTX 层估算与 SASS 实际发射的系统性偏差（04／06 篇双发射不可见）；L2 在多 block 间的干扰使分块流量账失真（03 篇，干扰幅度未验证）；wave quantization 在 grid 不整除时的尾波损失（06 篇 tail effect，量级随 shape 浮动）。
+解析骨架给形状，少量实测点修系数：跑 K 个代表性配置 → 实测时间 → 对 $$BW^{cyc}$$ 折扣与固定开销做最小二乘 → 回归测试守护。校准数据本身用 §5 的计数器做归因（比如实测低于预测时，先看是 dram 吞吐没到还是 tensor pipe 没到）。已知失效模式清单，每条都能在前文找到根源：锁频失败引入 DVFS 噪声（02 篇）；PTX 层估算与 SASS 实际发射的系统性偏差（04／06 篇双发射不可见）；L2 在多 block 间的干扰使分块流量账失真（03 篇，干扰幅度未验证）；wave quantization 在 grid 不整除时的尾波损失（06 篇 tail effect，量级随 shape 浮动）。
 
 ## 5. ncu 计数器 ↔ 硬件单元映射表
 
@@ -246,7 +246,7 @@ $$U = \frac{m \cdot n}{\lceil m/b_m \rceil \cdot \lceil n/b_n \rceil \cdot b_m \
 
 | ncu 指标（常用名） | 读数含义 | 对应硬件单元／机制 | 低值或高值的修复路径 |
 |:---|:---|:---|:---|
-| sm__warps_active.avg.pct_of_peak_sustained_active | achieved occupancy：实际驻留 warp ÷ 槽位 | 06 篇三座 SRAM 最小值函数 | 低则查 \(r_t\)/spill、\(s_b\)、block 数三约束谁封顶 |
+| sm__warps_active.avg.pct_of_peak_sustained_active | achieved occupancy：实际驻留 warp ÷ 槽位 | 06 篇三座 SRAM 最小值函数 | 低则查 $$r_t$$/spill、$$s_b$$、block 数三约束谁封顶 |
 | smsp__issue_active.avg.pct_of_peak_sustained_active | 发射口每拍选出就绪 warp 的比例 | 06 篇优先编码器 | 低且 occupancy 高：依赖链过深，指令重排 |
 | smsp__average_warps_issue_stalled_long_scoreboard_* | 停顿原因：等 global load 返回 | 05 篇 load-use 死角、03 篇在飞不足 | load 提前发射、加深 num_stages、异步拷贝 |
 | smsp__average_warps_issue_stalled_short_scoreboard_* | 停顿原因：等 SMEM／短依赖 | 05 篇 forwarding 视角的短缝 | 依赖拆分、累加器轮转 |
@@ -278,7 +278,7 @@ flowchart TD
 
 **病例一：DRAM 吞吐低 ＋ occupancy 正常 ＋ sector/request 偏高。** 访存请求在打碎成零散 sector（03 篇：跳着读时有效带宽最多跌到 1/32），修复在线程映射与向量化宽度——这是 layout 问题不是并行度问题。
 
-**病例二：tensor pipe 利用率低 ＋ long_scoreboard 停顿高。** 喂数断流：K 切片的异步预取深度不够（06 篇 \(N_{stages} \geq 1+\lceil BW_{share}\cdot L_{mem}/B_{stage}\rceil\) 的下界没达到），或者 swizzle 缺失导致 ldmatrix 前 bank 排队。先验 stages 是否撞 SMEM 容量天花板，再验 layout。
+**病例二：tensor pipe 利用率低 ＋ long_scoreboard 停顿高。** 喂数断流：K 切片的异步预取深度不够（06 篇 $$N_{stages} \geq 1+\lceil BW_{share}\cdot L_{mem}/B_{stage}\rceil$$ 的下界没达到），或者 swizzle 缺失导致 ldmatrix 前 bank 排队。先验 stages 是否撞 SMEM 容量天花板，再验 layout。
 
 **病例三：issue_active 低 ＋ achieved occupancy 低 ＋ launch__registers_per_thread 贴近 255。** 寄存器地皮封顶（03 篇平方诅咒），unroll 与 stages 推高的寄存器压力反噬了驻留 warp 数。解法是三旋钮联动收缩（`__launch_bounds__`、减 stage、减 tile），必要时接受 spill 换 occupancy 并用计数器验证哪种更亏。
 
@@ -349,7 +349,7 @@ co-design 的最后一课是知道**什么能通过 flag 交给用户，什么�
 3. cost model 的特征工程是无量纲化：占峰值的比例、相对拐点的位置、三块地皮的占比、padding 的损耗率——跨芯片可迁移的从来不是周期数，而是比例。
 4. ncu 判读树的每个叶子都通向前文某节课：低 occupancy 查三座 SRAM、高冲突查 gcd、断流查 stages 下界——**性能调优在这个系列里的终极形态，是拿着计数器词典做电路级归因**。
 
-**全系列收口**：十篇走完，那条主线可以最后一次复述——编译器几乎不改变计算量，它改变的是数据移动的距离和等待的时间（01 篇开篇）；而这个「距离×时间」的价目表，从晶体管的 \(CV^2\)（02 篇）一路铺到机柜间的光与铜（08 篇），被真实产品验收（09 篇），最终在本篇收拢成一套可执行的建模方法论。拿到下一块陌生芯片时，愿你做的第一件事，是想起这份五步清单。
+**全系列收口**：十篇走完，那条主线可以最后一次复述——编译器几乎不改变计算量，它改变的是数据移动的距离和等待的时间（01 篇开篇）；而这个「距离×时间」的价目表，从晶体管的 $$CV^2$$（02 篇）一路铺到机柜间的光与铜（08 篇），被真实产品验收（09 篇），最终在本篇收拢成一套可执行的建模方法论。拿到下一块陌生芯片时，愿你做的第一件事，是想起这份五步清单。
 
 **本篇的局限**：文中所有带宽/延迟/利用率的示例数字均为公开资料的量级示意（A100 口径为主），不同 SKU 与频率档差异显著，引用前以官方 datasheet 为准；分块流量账忽略替换策略干扰、多 kernel 共享 L2 的争用与 wave quantization 的精确刻画（干扰幅度未验证）；学习式 cost model 的工程细节（特征抽取实现、回归策略）以 TVM/MLIR 各自文档为准；Triton 后端移植步骤基于其公开架构文档的通用流程，具体接口随版本快速演进。计数器名称均为常用写法，实际采集以目标机器 `--query-metrics` 输出为准。
 

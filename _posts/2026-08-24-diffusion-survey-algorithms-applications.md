@@ -44,29 +44,29 @@ $$
 q(x_t \mid x_{t-1}) = \mathcal{N}(x_t;\, \sqrt{1-\beta_t}\, x_{t-1},\, \beta_t I), \quad t = 1,\dots,T
 $$
 
-令 \(\alpha_t = 1-\beta_t\)、\(\bar\alpha_t = \prod_{s=1}^t \alpha_s\)，利用高斯分布的可加性可以把任意步长的边缘分布写成**一步闭式解**——这是整座大厦最重要的工程性质：
+令 $$\alpha_t = 1-\beta_t$$、$$\bar\alpha_t = \prod_{s=1}^t \alpha_s$$，利用高斯分布的可加性可以把任意步长的边缘分布写成**一步闭式解**——这是整座大厦最重要的工程性质：
 
 $$
 q(x_t \mid x_0) = \mathcal{N}(x_t;\, \sqrt{\bar\alpha_t}\, x_0,\, (1-\bar\alpha_t) I), \qquad x_t = \sqrt{\bar\alpha_t}\, x_0 + \sqrt{1-\bar\alpha_t}\, \epsilon, \; \epsilon \sim \mathcal{N}(0, I)
 $$
 
-训练时随机抽一个时刻 \(t\) 就能直接跳到 \(x_t\)，完全不必沿链模拟 \(T=1000\) 步。
+训练时随机抽一个时刻 $$t$$ 就能直接跳到 $$x_t$$，完全不必沿链模拟 $$T=1000$$ 步。
 
 ### 2.2 反向过程与 ELBO 塌缩成 MSE
 
-反向 \(p_\theta(x_{t-1}\mid x_t)=\mathcal{N}(\mu_\theta(x_t,t),\Sigma_\theta(x_t,t))\) 无法直接解析，但当前向固定时存在精确后验：
+反向 $$p_\theta(x_{t-1}\mid x_t)=\mathcal{N}(\mu_\theta(x_t,t),\Sigma_\theta(x_t,t))$$ 无法直接解析，但当前向固定时存在精确后验：
 
 $$
 q(x_{t-1}\mid x_t, x_0) = \mathcal{N}\!\left(\tilde\mu_t(x_t,x_0),\, \tilde\beta_t I\right), \quad \tilde\mu_t = \frac{\sqrt{\bar\alpha_{t-1}}\,\beta_t}{1-\bar\alpha_t} x_0 + \frac{\sqrt{\alpha_t}\,(1-\bar\alpha_{t-1})}{1-\bar\alpha_t} x_t
 $$
 
-对 \(\log p_\theta(x_0)\) 做 ELBO 分解，得到三项结构——重构项、各步去噪 KL、以及先验匹配项：
+对 $$\log p_\theta(x_0)$$ 做 ELBO 分解，得到三项结构——重构项、各步去噪 KL、以及先验匹配项：
 
 $$
 -\log p_\theta(x_0) \leq \underbrace{\mathbb E_q\big[-\log p_\theta(x_0 \mid x_1)\big]}_{L_0} + \sum_{t=2}^{T} \underbrace{\mathbb E_q\big[D_{KL}\big(q(x_{t-1} \mid x_t, x_0)\,\|\,p_\theta(x_{t-1} \mid x_t)\big)\big]}_{L_{t-1}} + \underbrace{D_{KL}\big(q(x_T \mid x_0)\,\|\,\mathcal N(0,I)\big)}_{L_T}
 $$
 
-每一项都是两个高斯之间的 KL，全部可解析写出。关键操作是**重参数化**：由 \(x_0 = (x_t - \sqrt{1-\bar\alpha_t}\,\epsilon)/\sqrt{\bar\alpha_t}\) 把均值改写为噪声预测形式 \(\mu_\theta = \frac{1}{\sqrt{\alpha_t}}\big(x_t - \frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\epsilon_\theta(x_t,t)\big)\)，代入后所有系数相消，损失塌缩成一个不带权重的朴素 MSE：
+每一项都是两个高斯之间的 KL，全部可解析写出。关键操作是**重参数化**：由 $$x_0 = (x_t - \sqrt{1-\bar\alpha_t}\,\epsilon)/\sqrt{\bar\alpha_t}$$ 把均值改写为噪声预测形式 $$\mu_\theta = \frac{1}{\sqrt{\alpha_t}}\big(x_t - \frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\epsilon_\theta(x_t,t)\big)$$，代入后所有系数相消，损失塌缩成一个不带权重的朴素 MSE：
 
 $$
 L_{\text{simple}}(\theta) = \mathbb{E}_{t,\,x_0,\,\epsilon}\Big[\big\|\epsilon - \epsilon_\theta\big(\sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon,\; t\big)\big\|^2\Big]
@@ -103,34 +103,34 @@ def train_step(model, x0, opt):
 
 | 数学符号 | 代码变量 | Shape / 类型 | 含义 |
 |---|---|---|---|
-| \(\beta_t,\ \bar\alpha_t\) | `betas`, `alphas_bar` | `(T,)` | 噪声强度与其累积乘积 |
-| \(x_t\) | `xt` | `(B,C,H,W)` | 加噪后的样本 |
-| \(\epsilon \sim \mathcal N(0,I)\) | `eps` | `(B,C,H,W)` | 被预测的目标噪声 |
-| \(t \sim U[1,T]\) | `t` | `(B,)` | 随机时间步索引 |
-| \(\epsilon_\theta(x_t,t)\) | `model(xt, t)` | `(B,C,H,W)` | 网络输出的噪声估计 |
-| \(L_{\text{simple}}\) | `F.mse_loss(...)` | 标量 | 简化后的训练目标 |
+| $$\beta_t,\ \bar\alpha_t$$ | `betas`, `alphas_bar` | `(T,)` | 噪声强度与其累积乘积 |
+| $$x_t$$ | `xt` | `(B,C,H,W)` | 加噪后的样本 |
+| $$\epsilon \sim \mathcal N(0,I)$$ | `eps` | `(B,C,H,W)` | 被预测的目标噪声 |
+| $$t \sim U[1,T]$$ | `t` | `(B,)` | 随机时间步索引 |
+| $$\epsilon_\theta(x_t,t)$$ | `model(xt, t)` | `(B,C,H,W)` | 网络输出的噪声估计 |
+| $$L_{\text{simple}}$$ | `F.mse_loss(...)` | 标量 | 简化后的训练目标 |
 
 ### 2.4 另一条路：NCSN 的分数匹配与退火朗之万
 
-几乎同时， score-based 路线完全不谈变分推断：学数据分布对数梯度（score）\(\nabla_x \log p(x)\)，再用朗之万动力学沿分数爬回数据流形（[arXiv:1907.05600](https://arxiv.org/abs/1907.05600)）。直接在真实数据上做分数匹配会因低维流形问题失准，NCSN 的解法是用多档高斯噪声扰动数据，再联合估计各噪声水平下的分数。Denoising Score Matching 给出了可回归的目标：若 \(p_\sigma(\tilde x) = \int p(x)\,\mathcal N(\tilde x; x, \sigma^2 I)\,dx\)，则
+几乎同时， score-based 路线完全不谈变分推断：学数据分布对数梯度（score）$$\nabla_x \log p(x)$$，再用朗之万动力学沿分数爬回数据流形（[arXiv:1907.05600](https://arxiv.org/abs/1907.05600)）。直接在真实数据上做分数匹配会因低维流形问题失准，NCSN 的解法是用多档高斯噪声扰动数据，再联合估计各噪声水平下的分数。Denoising Score Matching 给出了可回归的目标：若 $$p_\sigma(\tilde x) = \int p(x)\,\mathcal N(\tilde x; x, \sigma^2 I)\,dx$$，则
 
 $$
-\nabla_{\tilde x}\log p_\sigma(\tilde x)\Big|_{\tilde x = x + \sigma z} = -\frac{z}{\sigma}
+\nabla_{\tilde x}\log p_\sigma(\tilde x)\Big\vert_{\tilde x = x + \sigma z} = -\frac{z}{\sigma}
 \;\Longrightarrow\;
 L = \sum_{i=1}^L \lambda(\sigma_i)\,\mathbb E\Big[\big\| s_\theta(x + \sigma_i z,\; i) + \tfrac{z}{\sigma_i} \big\|^2\Big]
 $$
 
-采样用退火朗之万动力学：从最大噪声档开始，每档迭代 \(x_k \leftarrow x_k + \eta_i\, s_\theta(x_k, i) + \sqrt{2\eta_i}\,z\)，逐档降低 \(\sigma_i\) 直到逼近数据流形。NCSN 在 CIFAR-10 上拿到当时最优的 Inception Score 8.87，且不需要对抗训练（[arXiv:1907.05600](https://arxiv.org/abs/1907.05600)）。
+采样用退火朗之万动力学：从最大噪声档开始，每档迭代 $$x_k \leftarrow x_k + \eta_i\, s_\theta(x_k, i) + \sqrt{2\eta_i}\,z$$，逐档降低 $$\sigma_i$$ 直到逼近数据流形。NCSN 在 CIFAR-10 上拿到当时最优的 Inception Score 8.87，且不需要对抗训练（[arXiv:1907.05600](https://arxiv.org/abs/1907.05600)）。
 
-两条路线表面无关，实则同源：把 DDPM 的 \(\epsilon_\theta\) 除以 \(-\sqrt{1-\bar\alpha_t}\) 就是该噪声水平下的 score 估计。**DDPM 是离散时间的 VP-SDE，NCSN 是 VE-SDE 的特例**——这层窗户纸由 Score-SDE 捅破。
+两条路线表面无关，实则同源：把 DDPM 的 $$\epsilon_\theta$$ 除以 $$-\sqrt{1-\bar\alpha_t}$$ 就是该噪声水平下的 score 估计。**DDPM 是离散时间的 VP-SDE，NCSN 是 VE-SDE 的特例**——这层窗户纸由 Score-SDE 捅破。
 
 | 维度 | DDPM 视角 | NCSN 视角 |
 |---|---|---|
 | 理论框架 | 变分自编码器 / ELBO | 分数匹配 + 朗之万动力学 |
-| 学习目标 | 预测加入的噪声 \(\epsilon\) | 估计 \(\nabla_x \log p_\sigma(x)\) |
+| 学习目标 | 预测加入的噪声 $$\epsilon$$ | 估计 $$\nabla_x \log p_\sigma(x)$$ |
 | 采样方式 | 反向马尔可夫链逐步解码 | 多噪声档退火朗之万迭代 |
-| 噪声参数化 | 离散 \(t=1..T\) 固定调度 | 连续多档 \(\sigma_1>\dots>\sigma_L\) |
-| 缺点 | 采样需完整 \(T\) 步、似然不可算 | 超参敏感、无精确似然 |
+| 噪声参数化 | 离散 $$t=1..T$$ 固定调度 | 连续多档 $$\sigma_1>\dots>\sigma_L$$ |
+| 缺点 | 采样需完整 $$T$$ 步、似然不可算 | 超参敏感、无精确似然 |
 
 ## 3. 统一：Score-SDE 的 SDE / ODE 双视角
 
@@ -142,13 +142,13 @@ $$
 dx = f(x, t)\,dt + g(t)\,dw
 $$
 
-VE 与 VP 只是漂移项 \(f\) 的两种取法：VP 对应 DDPM（\(f=-\tfrac12\beta(t)x\)），VE 对应 NCSN（\(f=0,\ g=\sqrt{d\sigma^2/dt}\)）。Anderson 1982 的经典结论给出**反向时间 SDE**：
+VE 与 VP 只是漂移项 $$f$$ 的两种取法：VP 对应 DDPM（$$f=-\tfrac12\beta(t)x$$），VE 对应 NCSN（$$f=0,\ g=\sqrt{d\sigma^2/dt}$$）。Anderson 1982 的经典结论给出**反向时间 SDE**：
 
 $$
 dx = \big[f(x,t) - g(t)^2\, \nabla_x \log p_t(x)\big]\,d\bar t + g(t)\,d\bar w
 $$
 
-注意反向漂移只依赖未知量 \(\nabla_x \log p_t(x)\)——恰好就是 score。于是"生成 = 学好分数 = 解反向 SDE"，DDPM 与 NCSN 从此成为同一框架的离散化特例，论文原话是"creating data from noise is generative modeling"，并用 predictor-corrector 采样器纠正数值误差（[arXiv:2011.13456](https://arxiv.org/abs/2011.13456)）。
+注意反向漂移只依赖未知量 $$\nabla_x \log p_t(x)$$——恰好就是 score。于是"生成 = 学好分数 = 解反向 SDE"，DDPM 与 NCSN 从此成为同一框架的离散化特例，论文原话是"creating data from noise is generative modeling"，并用 predictor-corrector 采样器纠正数值误差（[arXiv:2011.13456](https://arxiv.org/abs/2011.13456)）。
 
 ```mermaid
 graph TD
@@ -175,19 +175,19 @@ $$
 \frac{d}{dt}\log p_t(x_t) = -\nabla_x \cdot v(x, t), \qquad v(x,t) = f(x,t) - \tfrac12 g(t)^2 \nabla_x \log p_t(x)
 $$
 
-于是 \(\log p_0(x_0) = \log p_T(x_T) + \int_0^T \nabla_x \cdot v(x_t, t)\, dt\)，高维下散度用 Hutchinson 随机投影估计即可，无需构造雅可比矩阵——这让扩散模型第一次拥有了可与自回归模型对表的 bits/dim 指标。
+于是 $$\log p_0(x_0) = \log p_T(x_T) + \int_0^T \nabla_x \cdot v(x_t, t)\, dt$$，高维下散度用 Hutchinson 随机投影估计即可，无需构造雅可比矩阵——这让扩散模型第一次拥有了可与自回归模型对表的 bits/dim 指标。
 
 ## 4. 加速：DDIM 的非马尔可夫采样
 
-DDPM 的痛点是采样必须走完整条马尔可夫链（CIFAR-10 上 20 小时才出一个 batch）。DDIM 的洞察是：**训练目标只依赖每一步的边缘分布 \(q_\sigma(x_t \mid x_0)\)，不依赖条件路径的马尔可夫性**。于是可以构造一族非马尔可夫前向过程——只要边缘分布保持 \(\mathcal N(\sqrt{\bar\alpha_t}x_0, (1-\bar\alpha_t)I)\) 不变，同一个训好的模型就能直接服务于一族新的推理过程（[arXiv:2010.02502](https://arxiv.org/abs/2010.02502)）。
+DDPM 的痛点是采样必须走完整条马尔可夫链（CIFAR-10 上 20 小时才出一个 batch）。DDIM 的洞察是：**训练目标只依赖每一步的边缘分布 $$q_\sigma(x_t \mid x_0)$$，不依赖条件路径的马尔可夫性**。于是可以构造一族非马尔可夫前向过程——只要边缘分布保持 $$\mathcal N(\sqrt{\bar\alpha_t}x_0, (1-\bar\alpha_t)I)$$ 不变，同一个训好的模型就能直接服务于一族新的推理过程（[arXiv:2010.02502](https://arxiv.org/abs/2010.02502)）。
 
-在这族过程中取 \(\sigma_t = 0\) 得到确定性采样规则：
+在这族过程中取 $$\sigma_t = 0$$ 得到确定性采样规则：
 
 $$
 x_{t-1} = \underbrace{\frac{\sqrt{\bar\alpha_{t-1}}}{\sqrt{\bar\alpha_t}}}_{\text{指向 } x_0 \text{ 的分量}}\, x_t \;+\; \sqrt{\bar\alpha_{t-1}\left(\tfrac{1}{\bar\alpha_t}-1\right) - 0}\; \epsilon_\theta(x_t, t) + \sigma_t z
 $$
 
-它的几何解释非常干净：把 \(x_t\) 投影到"预测的 \(x_0\)"方向再重新加噪到 \(t-1\) 时刻。由此获得三个能力：其一，**时间步跳跃**——只在子序列 \(\{\tau_1, ..., \tau_S\}\) 上迭代，10 到 50 倍墙钟提速且质量几乎不掉；其二，计算量与质量的显式权衡旋钮；其三，因为轨迹确定，不同初始噪声之间的插值具有语义连贯性（[arXiv:2010.02502](https://arxiv.org/abs/2010.02502)）。DDIM 是后来一切少步数蒸馏（渐进蒸馏、Consistency Models）的直接前身。
+它的几何解释非常干净：把 $$x_t$$ 投影到"预测的 $$x_0$$"方向再重新加噪到 $$t-1$$ 时刻。由此获得三个能力：其一，**时间步跳跃**——只在子序列 $$\{\tau_1, ..., \tau_S\}$$ 上迭代，10 到 50 倍墙钟提速且质量几乎不掉；其二，计算量与质量的显式权衡旋钮；其三，因为轨迹确定，不同初始噪声之间的插值具有语义连贯性（[arXiv:2010.02502](https://arxiv.org/abs/2010.02502)）。DDIM 是后来一切少步数蒸馏（渐进蒸馏、Consistency Models）的直接前身。
 
 确定性 DDIM 采样循环只需十几行，与 §2.3 的训练骨架共享同一组 `alphas_bar`：
 
@@ -219,17 +219,17 @@ $$
 \nabla_{x_t} \log p(x_t \mid y) = \nabla_{x_t} \log p(x_t) + \nabla_{x_t} \log p(y \mid x_t)
 $$
 
-第一项是训练好的无条件 score，第二项用一个额外训练的噪声感知分类器 \(p_\phi(y\mid x_t)\) 提供梯度，并引入缩放系数 \(\gamma\) 控制引导强度：\(\tilde s = s_\theta + \gamma\, \nabla_{x_t}\log p_\phi(y \mid x_t)\)。\(\gamma>1\) 时相当于在分数场上做"外推"，用多样性换保真度——这是生成模型里第一次出现如此干净的"温度旋钮"等价物。
+第一项是训练好的无条件 score，第二项用一个额外训练的噪声感知分类器 $$p_\phi(y\mid x_t)$$ 提供梯度，并引入缩放系数 $$\gamma$$ 控制引导强度：$$\tilde s = s_\theta + \gamma\, \nabla_{x_t}\log p_\phi(y \mid x_t)$$。$$\gamma>1$$ 时相当于在分数场上做"外推"，用多样性换保真度——这是生成模型里第一次出现如此干净的"温度旋钮"等价物。
 
 ### 5.2 CFG：把分类器塞回生成模型自己
 
-classifier guidance 的麻烦显而易见：要额外训练一个必须在带噪数据上鲁棒的分类器，且引导与生成两套网络互相牵制。Ho & Salimans 的解法堪称化繁为简的典范（[arXiv:2207.12598](https://arxiv.org/abs/2207.12598)）：训练时以概率 \(p_{\text{uncond}}\) 把条件 \(y\) 替换成空标记 \(\varnothing\)，让**同一个网络同时学会条件与无条件两种 score**；推理时对两者做线性外推：
+classifier guidance 的麻烦显而易见：要额外训练一个必须在带噪数据上鲁棒的分类器，且引导与生成两套网络互相牵制。Ho & Salimans 的解法堪称化繁为简的典范（[arXiv:2207.12598](https://arxiv.org/abs/2207.12598)）：训练时以概率 $$p_{\text{uncond}}$$ 把条件 $$y$$ 替换成空标记 $$\varnothing$$，让**同一个网络同时学会条件与无条件两种 score**；推理时对两者做线性外推：
 
 $$
 \tilde\epsilon_\theta(x_t, y) = \epsilon_\theta(x_t, \varnothing) + w\,\big(\epsilon_\theta(x_t, y) - \epsilon_\theta(x_t, \varnothing)\big), \quad w \geq 1
 $$
 
-当 \(w=1\) 退化为标准条件生成；\(w>1\) 则放大"条件减无条件"的方向，效果等价于一个隐式的、由生成模型自身充当的分类器梯度。CFG 免掉外挂分类器后立刻成为文生图的默认配置——Imagen、Stable Diffusion、DiT 全系标配，直到今天所有主流产品的 prompt 遵循度都建立在它之上。
+当 $$w=1$$ 退化为标准条件生成；$$w>1$$ 则放大"条件减无条件"的方向，效果等价于一个隐式的、由生成模型自身充当的分类器梯度。CFG 免掉外挂分类器后立刻成为文生图的默认配置——Imagen、Stable Diffusion、DiT 全系标配，直到今天所有主流产品的 prompt 遵循度都建立在它之上。
 
 ```python
 # CFG 只需三行：一次无条件前向 + 一次条件前向 + 线性外推
@@ -255,7 +255,7 @@ $$
 z = \mathcal E(x), \quad \hat x = \mathcal D(z), \qquad L_{LDM} = \mathbb E_{\mathcal E(x),\, \epsilon,\, t}\Big[\big\|\epsilon - \epsilon_\theta(z_t, t, c)\big\|^2\Big]
 $$
 
-感知压缩（细节纹理）交给自编码器，语义组合（画什么）交给扩散模型——各干各的擅长事。条件注入通过 **cross-attention** 完成：query 来自隐特征展平，key 和 value 来自文本编码等条件序列 \(c\)，这让模型天然支持任意序列型条件而不必改架构。效果上 LDM 在大幅降低算力的同时保持质量，其开源版本就是 Stable Diffusion，直接引爆了开源文生图生态（[arXiv:2112.10752](https://arxiv.org/abs/2112.10752)）。
+感知压缩（细节纹理）交给自编码器，语义组合（画什么）交给扩散模型——各干各的擅长事。条件注入通过 **cross-attention** 完成：query 来自隐特征展平，key 和 value 来自文本编码等条件序列 $$c$$，这让模型天然支持任意序列型条件而不必改架构。效果上 LDM 在大幅降低算力的同时保持质量，其开源版本就是 Stable Diffusion，直接引爆了开源文生图生态（[arXiv:2112.10752](https://arxiv.org/abs/2112.10752)）。
 
 ## 7. 理清：EDM 把设计空间摊开成旋钮
 
@@ -265,26 +265,26 @@ $$
 D_\theta(x;\sigma) = c_{\text{skip}}(\sigma)\, x + c_{\text{out}}(\sigma)\, F_\theta\big(c_{\text{in}}(\sigma)\, x;\; c_{\text{noise}}(\sigma)\big)
 $$
 
-\(c_{\text{skip}}, c_{\text{out}}, c_{\text{in}}, c_{\text{noise}}\) 四个函数把"输入输出该有什么尺度、噪声水平该怎么喂给网络"变成显式设计项，例如取 \(c_{\text{in}}(\sigma)=1/\sqrt{\sigma^2+\sigma_d^2}\) 保证输入方差与噪声无关。论文给出的参考取法（\(\sigma_d\) 为数据标准差）：
+$$c_{\text{skip}}, c_{\text{out}}, c_{\text{in}}, c_{\text{noise}}$$ 四个函数把"输入输出该有什么尺度、噪声水平该怎么喂给网络"变成显式设计项，例如取 $$c_{\text{in}}(\sigma)=1/\sqrt{\sigma^2+\sigma_d^2}$$ 保证输入方差与噪声无关。论文给出的参考取法（$$\sigma_d$$ 为数据标准差）：
 
 | 预处理函数 | 参考取法 | 设计意图 |
 |---|---|---|
-| \(c_{\text{skip}}(\sigma)\) | \(\sigma_d^2 / (\sigma^2 + \sigma_d^2)\) | 低噪声时输出趋近恒等，稳定小 σ 区间 |
-| \(c_{\text{out}}(\sigma)\) | \(\sigma \cdot \sigma_d / \sqrt{\sigma^2 + \sigma_d^2}\) | 输出幅度随噪声水平缩放 |
-| \(c_{\text{in}}(\sigma)\) | \(1 / \sqrt{\sigma^2 + \sigma_d^2}\) | 归一化网络输入方差 |
-| \(c_{\text{noise}}(\sigma)\) | \(\ln(\sigma) / 4\) | 噪声条件压缩到 O(1) 尺度 |
+| $$c_{\text{skip}}(\sigma)$$ | $$\sigma_d^2 / (\sigma^2 + \sigma_d^2)$$ | 低噪声时输出趋近恒等，稳定小 σ 区间 |
+| $$c_{\text{out}}(\sigma)$$ | $$\sigma \cdot \sigma_d / \sqrt{\sigma^2 + \sigma_d^2}$$ | 输出幅度随噪声水平缩放 |
+| $$c_{\text{in}}(\sigma)$$ | $$1 / \sqrt{\sigma^2 + \sigma_d^2}$$ | 归一化网络输入方差 |
+| $$c_{\text{noise}}(\sigma)$$ | $$\ln(\sigma) / 4$$ | 噪声条件压缩到 O(1) 尺度 |
 
-训练损失相应变为按信噪比加权的去噪误差；采样侧改用 \(\sigma\) 单调调度配合二阶 Heun 修正，每步只需两次网络评估——先走一步欧拉预测，再用同一时间步长做一次校正评估取平均。合计改进后：CIFAR-10 条件生成 FID 1.79（35 次网络评估），ImageNet 64 重训后 FID 1.36，全部 SOTA（[arXiv:2206.00364](https://arxiv.org/abs/2206.00364)）。EDM 的最大遗产是思维方式：**别再发明新公式了，先说清楚你拧的是哪个旋钮。**
+训练损失相应变为按信噪比加权的去噪误差；采样侧改用 $$\sigma$$ 单调调度配合二阶 Heun 修正，每步只需两次网络评估——先走一步欧拉预测，再用同一时间步长做一次校正评估取平均。合计改进后：CIFAR-10 条件生成 FID 1.79（35 次网络评估），ImageNet 64 重训后 FID 1.36，全部 SOTA（[arXiv:2206.00364](https://arxiv.org/abs/2206.00364)）。EDM 的最大遗产是思维方式：**别再发明新公式了，先说清楚你拧的是哪个旋钮。**
 
 ## 8. 提速到一步：Consistency Models
 
-即便 DDIM 跳步，高质量生成仍要几十次网络评估。Song et al. 的 Consistency Models 直接攻击 NFE 下限（[arXiv:2303.01469](https://arxiv.org/abs/2303.01469)）。利用概率流 ODE 的性质——同一条轨迹上任意点 \((x_t, t)\) 沿 ODE 都汇到同一个起点 \(x_\epsilon\)——定义自洽性约束：
+即便 DDIM 跳步，高质量生成仍要几十次网络评估。Song et al. 的 Consistency Models 直接攻击 NFE 下限（[arXiv:2303.01469](https://arxiv.org/abs/2303.01469)）。利用概率流 ODE 的性质——同一条轨迹上任意点 $$(x_t, t)$$ 沿 ODE 都汇到同一个起点 $$x_\epsilon$$——定义自洽性约束：
 
 $$
 f_\theta(x_t, t) = x_\epsilon \quad \text{对轨迹上所有 } t \in [\epsilon, T] \text{ 成立}
 $$
 
-满足约束的 \(f_\theta\) 就是一张"任意时刻一步跳回数据"的地图，天然支持一步生成。实现上有两个难点：边界条件用可微的外壳 \(f_\theta(x,t) = c_{\text{skip}}(t)\,x + c_{\text{out}}(t)\,F_\theta(x,t)\) 处理；训练分两种模式——一致性蒸馏（CD）用预训练扩散模型的 ODE 单步解 \(\hat x^\phi_{t_n}\) 作目标，一致性训练（CT）则靠自动微分估计 ODE 切向（省教师但更吃内存）。结果：一步生成 FID 3.55（CIFAR-10）、6.20（ImageNet 64），显著超过此前所有一步非对抗生成模型，还免费支持修复、上色、超分等零样本编辑（[arXiv:2303.01469](https://arxiv.org/abs/2303.01469)）。它宣告了扩散家族的终点形态：训练像扩散一样稳定，采样像 GAN 一样一步到位。
+满足约束的 $$f_\theta$$ 就是一张"任意时刻一步跳回数据"的地图，天然支持一步生成。实现上有两个难点：边界条件用可微的外壳 $$f_\theta(x,t) = c_{\text{skip}}(t)\,x + c_{\text{out}}(t)\,F_\theta(x,t)$$ 处理；训练分两种模式——一致性蒸馏（CD）用预训练扩散模型的 ODE 单步解 $$\hat x^\phi_{t_n}$$ 作目标，一致性训练（CT）则靠自动微分估计 ODE 切向（省教师但更吃内存）。结果：一步生成 FID 3.55（CIFAR-10）、6.20（ImageNet 64），显著超过此前所有一步非对抗生成模型，还免费支持修复、上色、超分等零样本编辑（[arXiv:2303.01469](https://arxiv.org/abs/2303.01469)）。它宣告了扩散家族的终点形态：训练像扩散一样稳定，采样像 GAN 一样一步到位。
 
 ## 9. 应用一：图像生成——从骨干网革命到产品级闭环
 
@@ -325,7 +325,7 @@ Sora（OpenAI，2024 年 2 月）必须单独说明：它是**技术报告而非
 
 ### 13.1 流匹配在学什么
 
-Flow Matching 从连续归一化流（CNF）出发，但绕开了模拟训练的昂贵瓶颈：直接回归**固定条件概率路径的向量场**。取高斯路径 \(x_t = (1-t)\,x_0 + t\,\epsilon\)，最优速度场就是两端点之差，于是训练目标退化为又一个 MSE：
+Flow Matching 从连续归一化流（CNF）出发，但绕开了模拟训练的昂贵瓶颈：直接回归**固定条件概率路径的向量场**。取高斯路径 $$x_t = (1-t)\,x_0 + t\,\epsilon$$，最优速度场就是两端点之差，于是训练目标退化为又一个 MSE：
 
 $$
 L_{FM} = \mathbb E_{t,\,x_0,\,\epsilon}\Big[\big\| v_\theta(x_t, t) - (\epsilon - x_0) \big\|^2\Big], \qquad x_t = (1-t)\,x_0 + t\,\epsilon
@@ -333,13 +333,13 @@ $$
 
 它证明这样训练的 CNF 与扩散路径兼容——扩散只是其路径族的一个子集，而最优传输（OT）位移插值等非扩散路径能带来更快的训练与采样、更好的泛化，ImageNet 上似然与样本质量全面占优（[arXiv:2210.02747](https://arxiv.org/abs/2210.02747)）。Rectified Flow 用几乎相同的公式从"拉直路径"角度切入：学习连接两分布的最直 ODE，递归地做 reflow 可以让少步甚至一步采样成为可能（[arXiv:2209.03003](https://arxiv.org/abs/2209.03003)）。
 
-参数化之间的互换也只是一行线性代数。一般路径写成 \(x_t = \alpha_t x_0 + \sigma_t \epsilon\)，则速度目标为 \(\dot\alpha_t x_0 + \dot\sigma_t \epsilon\)；rectified flow 取 \(\alpha_t = 1-t,\ \sigma_t = t\) 就退化为 \(\epsilon - x_0\)；Imagen Video 采用的 v-prediction 则定义 \(v = \alpha_t \epsilon - \sigma_t x_0\)，三者都是 \(x_0, \epsilon\) 的线性组合、已知其一即可换算——**公式之争从来是路径与数值稳定性的争论，不是目标的争论**。工业界的裁决来自 Stable Diffusion 3：大规模对照实验表明对时间步分布做感知相关的偏置（logit-normal）后，rectified flow 公式在高分辨率文生图上稳定优于既有扩散参数化，配套的 MM-DiT 双权重架构呈现可预测的 scaling 曲线（[arXiv:2403.03206](https://arxiv.org/abs/2403.03206)）。
+参数化之间的互换也只是一行线性代数。一般路径写成 $$x_t = \alpha_t x_0 + \sigma_t \epsilon$$，则速度目标为 $$\dot\alpha_t x_0 + \dot\sigma_t \epsilon$$；rectified flow 取 $$\alpha_t = 1-t,\ \sigma_t = t$$ 就退化为 $$\epsilon - x_0$$；Imagen Video 采用的 v-prediction 则定义 $$v = \alpha_t \epsilon - \sigma_t x_0$$，三者都是 $$x_0, \epsilon$$ 的线性组合、已知其一即可换算——**公式之争从来是路径与数值稳定性的争论，不是目标的争论**。工业界的裁决来自 Stable Diffusion 3：大规模对照实验表明对时间步分布做感知相关的偏置（logit-normal）后，rectified flow 公式在高分辨率文生图上稳定优于既有扩散参数化，配套的 MM-DiT 双权重架构呈现可预测的 scaling 曲线（[arXiv:2403.03206](https://arxiv.org/abs/2403.03206)）。
 
 ### 13.2 对峙表：同一枚硬币的两面
 
 | 维度 | 扩散模型（DDPM 谱系） | 流匹配 / Rectified Flow |
 |---|---|---|
-| 回归目标 | 噪声 \(\epsilon\) 或速度 \(v\)（等价参数化之一） | 条件速度场 \(\epsilon - x_0\) |
+| 回归目标 | 噪声 $$\epsilon$$ 或速度 $$v$$（等价参数化之一） | 条件速度场 $$\epsilon - x_0$$ |
 | 训练理论 | 变分推断 ELBO / score matching | CNF 向量场回归（免模拟） |
 | 概率路径 | VP/VE 固定加噪路径，曲率大 | 可选直线、OT 位移插值等 |
 | 采样动力学 | 反向 SDE（随机）+ 概率流 ODE（确定） | 纯 ODE（也可加随机性扩展） |
@@ -368,9 +368,9 @@ $$
 
 ## 附：三个高频误区
 
-**误区一："扩散模型是马尔可夫链，所以必须逐步采样。"** 马尔可夫性只是 DDPM 选择的前向构造，训练目标只约束边缘分布 \(q(x_t \mid x_0)\)；DDIM 正是利用这一点换掉条件路径、保留边缘分布，从而获得跳步与确定性采样。链是手段，边缘分布才是契约。
+**误区一："扩散模型是马尔可夫链，所以必须逐步采样。"** 马尔可夫性只是 DDPM 选择的前向构造，训练目标只约束边缘分布 $$q(x_t \mid x_0)$$；DDIM 正是利用这一点换掉条件路径、保留边缘分布，从而获得跳步与确定性采样。链是手段，边缘分布才是契约。
 
-**误区二："CFG 权重越大，图越符合 prompt。"** 外推在放大条件方向的同时也在放大 OOD 方向：\(w\) 过大会出现高饱和、过曝与构图坍缩（Imagen 为此发明动态阈值化），多样性同步下降。工程上 \(w\in[3,8]\) 是文生图的常见舒适区，超出即进入收益递减区。
+**误区二："CFG 权重越大，图越符合 prompt。"** 外推在放大条件方向的同时也在放大 OOD 方向：$$w$$ 过大会出现高饱和、过曝与构图坍缩（Imagen 为此发明动态阈值化），多样性同步下降。工程上 $$w\in[3,8]$$ 是文生图的常见舒适区，超出即进入收益递减区。
 
 **误区三："流匹配是新目标函数，取代了扩散。"** 两者的损失同属"回归一个高斯路径派生的目标场"家族，扩散参数化可视为速度场的等价重写；差别在于路径族选择与由此带来的曲率、少步友好度。SD3 的对照实验比较的是同一目标下的不同公式配置，而非两个不相干的目标。
 
@@ -400,5 +400,5 @@ $$
 
 > 🧪 **动手练习**
 >
-> - **练习一**：用本文 §2.3 的代码骨架在 MNIST 上跑通一个最小 DDPM（约 30 行即可收敛到可辨认样本）。试试把 \(T\) 从 1000 改到 100、把线性 \(\beta\) 调度换成 cosine 调度，观察样本质量与训练稳定性的变化，并解释为什么损失曲线几乎不变。
-> - **练习二**：加载任意开源文生图权重，把 CFG 权重 \(w\) 从 1.0 扫描到 12.0 各生成一组图。动手整理一条"多样性—保真度—prompt 遵循度"随 \(w\) 变化的权衡曲线，再用 DDIM 把采样步数压到 20 步以下，检验权衡曲线是否整体左移。
+> - **练习一**：用本文 §2.3 的代码骨架在 MNIST 上跑通一个最小 DDPM（约 30 行即可收敛到可辨认样本）。试试把 $$T$$ 从 1000 改到 100、把线性 $$\beta$$ 调度换成 cosine 调度，观察样本质量与训练稳定性的变化，并解释为什么损失曲线几乎不变。
+> - **练习二**：加载任意开源文生图权重，把 CFG 权重 $$w$$ 从 1.0 扫描到 12.0 各生成一组图。动手整理一条"多样性—保真度—prompt 遵循度"随 $$w$$ 变化的权衡曲线，再用 DDIM 把采样步数压到 20 步以下，检验权衡曲线是否整体左移。

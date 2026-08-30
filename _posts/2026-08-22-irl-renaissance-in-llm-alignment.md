@@ -50,9 +50,9 @@ graph TD
 
 ### 2.1 从轨迹似然到成对比较
 
-MaxEnt IRL 给出轨迹分布 \(P(\tau\mid w)\propto \exp(r_w(\tau))\)（《[前篇](/2026/08/22/irl-fifty-years-from-demonstrations/)》§4）。人类标注者很少给完整轨迹打绝对分，更多给出**成对偏好** \(y_w \succ y_l\)（\(y_w\) 胜 \(y_l\)）。
+MaxEnt IRL 给出轨迹分布 $$P(\tau\mid w)\propto \exp(r_w(\tau))$$（《[前篇](/2026/08/22/irl-fifty-years-from-demonstrations/)》§4）。人类标注者很少给完整轨迹打绝对分，更多给出**成对偏好** $$y_w \succ y_l$$（$$y_w$$ 胜 $$y_l$$）。
 
-关键一步：把"回答空间"收缩为仅有的两个候选 \(\{y_w, y_l\}\)，配分函数从"对所有轨迹积分"塌缩为两项之和：
+关键一步：把"回答空间"收缩为仅有的两个候选 $$\{y_w, y_l\}$$，配分函数从"对所有轨迹积分"塌缩为两项之和：
 
 $$
 P(y_w \succ y_l \mid x) = \frac{e^{r_\phi(x,y_w)}}{e^{r_\phi(x,y_w)} + e^{r_\phi(x,y_l)}} = \sigma\big(r_\phi(x,y_w) - r_\phi(x,y_l)\big)
@@ -64,16 +64,16 @@ $$
 \mathcal{L}_{BT}(\phi) = -\log \sigma\big(r_\phi(x,y_w) - r_\phi(x,y_l)\big)
 $$
 
-**这正是 InstructGPT 以来所有 RM 的训练目标**（[arXiv:2203.02155](https://arxiv.org/abs/2203.02155)）。每次你训 RM，你都在做 IRL——只不过教科书没这么叫。顺带一提，RM 的长度偏置（长回答系统性高分）在 IRL 视角下也有解释：\(r_\phi\) 作为黑箱"特征提取器"，长度是最容易抓到的判别特征——这正是前篇 §2 特征不可辨识性问题的现代症状。
+**这正是 InstructGPT 以来所有 RM 的训练目标**（[arXiv:2203.02155](https://arxiv.org/abs/2203.02155)）。每次你训 RM，你都在做 IRL——只不过教科书没这么叫。顺带一提，RM 的长度偏置（长回答系统性高分）在 IRL 视角下也有解释：$$r_\phi$$ 作为黑箱"特征提取器"，长度是最容易抓到的判别特征——这正是前篇 §2 特征不可辨识性问题的现代症状。
 
 ### 2.2 要素对照表
 
 | 经典 IRL 要素 | LLM 对齐对应物 | 变化点 |
 |---|---|---|
-| 专家轨迹 \(\tau \sim \pi_E\) | 人类偏好对 \((y_w, y_l)\) | 全序 → 成对比较 |
-| 特征 \(\phi(s,a)\) 手工设计 | 奖励模型 \(r_\phi\) 整体为黑箱 NN | 特征工程消失（也失去可解释性） |
+| 专家轨迹 $$\tau \sim \pi_E$$ | 人类偏好对 $$(y_w, y_l)$$ | 全序 → 成对比较 |
+| 特征 $$\phi(s,a)$$ 手工设计 | 奖励模型 $$r_\phi$$ 整体为黑箱 NN | 特征工程消失（也失去可解释性） |
 | 轨迹级指数族似然 | 成对 Bradley-Terry | 配分函数塌缩成一对比值 |
-| 学到 \(r\) 后跑正向 RL | RM 打分喂 PPO/GRPO | 完全同构 |
+| 学到 $$r$$ 后跑正向 RL | RM 打分喂 PPO/GRPO | 完全同构 |
 | 不可辨识性定理 | RM 的 prompt 敏感 / 长度偏置 / 分数漂移 | 同一病的新症状 |
 
 ### 2.3 代码等价性一瞥
@@ -91,38 +91,38 @@ loss_rm  = -F.logsigmoid(rm(x, yw) - rm(x, yl))     # 逐字相同
 
 | 数学符号 | 代码变量 | Shape / 类型 | 含义 |
 |---|---|---|---|
-| \(r_\phi(x,y)\) | `rm(x, y)` | 标量 | 回答级奖励 |
-| \(y_w \succ y_l\) | `yw, yl` | batch of str | 偏好对 |
-| \(\Delta r\) | `rm(x,yw) - rm(x,yl)` | `(B,)` | 奖励差 |
-| \(\mathcal{L}_{BT}\) | `-F.logsigmoid(delta).mean()` | 标量 | 成对 MaxEnt NLL |
+| $$r_\phi(x,y)$$ | `rm(x, y)` | 标量 | 回答级奖励 |
+| $$y_w \succ y_l$$ | `yw, yl` | batch of str | 偏好对 |
+| $$\Delta r$$ | `rm(x,yw) - rm(x,yl)` | `(B,)` | 奖励差 |
+| $$\mathcal{L}_{BT}$$ | `-F.logsigmoid(delta).mean()` | 标量 | 成对 MaxEnt NLL |
 
 ## 3. DPO 的 IRL 视角：闭式奖励提取
 
 ### 3.1 两步推导，看清配分函数去哪了
 
-经典 IRL 是两段式：先恢复 \(r\)，再用正向 RL 优化。DPO（[arXiv:2305.18290](https://arxiv.org/abs/2305.18290)）的出发点是把奖励**参数化进策略**：
+经典 IRL 是两段式：先恢复 $$r$$，再用正向 RL 优化。DPO（[arXiv:2305.18290](https://arxiv.org/abs/2305.18290)）的出发点是把奖励**参数化进策略**：
 
 $$
 r(x,y) = \beta \log \frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}
 $$
 
-代入 BT 目标后，唯一的麻烦仍是配分函数 \(Z(x) = \sum_y \exp(r(x,y))\)——对回答空间求和不可算。DPO 的关键操作是**用 \(\pi_{ref}\) 归一化重写指数**：
+代入 BT 目标后，唯一的麻烦仍是配分函数 $$Z(x) = \sum_y \exp(r(x,y))$$——对回答空间求和不可算。DPO 的关键操作是**用 $$\pi_{ref}$$ 归一化重写指数**：
 
 $$
 e^{r(x,y)} = \left(\frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}\right)^\beta = \frac{1}{Z(x)}\left(\frac{\pi_\theta(y\mid x)}{Z(x)^{1/\beta}\,\pi_{ref}(y\mid x)}\right)^\beta \cdot Z(x)
 $$
 
-整理时把 \(Z(x)\) 从每个候选中提出，BT 的比值里它**分子分母直接相消**（对同一 prompt 的两个回答，\(Z(x)\) 相同）：
+整理时把 $$Z(x)$$ 从每个候选中提出，BT 的比值里它**分子分母直接相消**（对同一 prompt 的两个回答，$$Z(x)$$ 相同）：
 
 $$
 P(y_w \succ y_l\mid x) = \sigma\left(\beta \log \frac{\pi_\theta(y_w\mid x)}{\pi_{ref}(y_w\mid x)} - \beta \log \frac{\pi_\theta(y_l\mid x)}{\pi_{ref}(y_l\mid x)}\right)
 $$
 
-于是最优策略有闭式解 \(\pi^*(y\mid x) \propto \pi_{ref}(y\mid x)e^{r(x,y)/\beta}\)，损失里不再出现任何需要求和的 \(Z\)——**奖励被解析地吸收进策略本身**，一步梯度直达策略，无需显式 RM。
+于是最优策略有闭式解 $$\pi^*(y\mid x) \propto \pi_{ref}(y\mid x)e^{r(x,y)/\beta}$$，损失里不再出现任何需要求和的 $$Z$$——**奖励被解析地吸收进策略本身**，一步梯度直达策略，无需显式 RM。
 
 ### 3.2 这算不算 IRL？——血统上是，形态上不是
 
-支持"是"：DPO 优化的目标函数恰是 IRL 的偏好似然；隐式奖励 \(r=\beta\log(\pi_\theta/\pi_{ref})\) 在参考模型给定的"规范"（gauge）下与 BT 拟合的奖励等价——这正是前篇"解等价类"概念的再现：\(\pi_{ref}\) 的选择相当于在等价类里选了一个坐标规范。
+支持"是"：DPO 优化的目标函数恰是 IRL 的偏好似然；隐式奖励 $$r=\beta\log(\pi_\theta/\pi_{ref})$$ 在参考模型给定的"规范"（gauge）下与 BT 拟合的奖励等价——这正是前篇"解等价类"概念的再现：$$\pi_{ref}$$ 的选择相当于在等价类里选了一个坐标规范。
 
 支持"不是"：IRL 的交付物是一个**可检查、可复用、可迁移**的显式奖励函数；DPO 训完只剩策略权重，奖励锁死在权重里。这个区分在三个场景有真金白银的差别：
 
@@ -152,7 +152,7 @@ $$
 
 ### 4.3 Failure-Aware Inverse RL（arXiv:[2510.06092](https://arxiv.org/abs/2510.06092)）
 
-观察：已有"从 RLHF 行为提取潜在激励"的工作对所有偏好对一视同仁，但信息量极度不均——**被判错或近分的对才是硬信号**。定义 failures = 提取的奖励模型 misclassify 或两侧打分几乎相等的样本，迭代聚焦失败对精化奖励。机制上是一个 EM 式循环：E 步用当前奖励给偏好对按"意外程度"加权，M 步重训奖励——把主动学习注入 IRL 提取。对本站读者的接口：这相当于给 §2 的 BT 损失加了一个动态样本权重 \(w_i = g(\Delta r_i)\)，近分对（\(\Delta r_i \approx 0\)）权重最高。
+观察：已有"从 RLHF 行为提取潜在激励"的工作对所有偏好对一视同仁，但信息量极度不均——**被判错或近分的对才是硬信号**。定义 failures = 提取的奖励模型 misclassify 或两侧打分几乎相等的样本，迭代聚焦失败对精化奖励。机制上是一个 EM 式循环：E 步用当前奖励给偏好对按"意外程度"加权，M 步重训奖励——把主动学习注入 IRL 提取。对本站读者的接口：这相当于给 §2 的 BT 损失加了一个动态样本权重 $$w_i = g(\Delta r_i)$$，近分对（$$\Delta r_i \approx 0$$）权重最高。
 
 ### 4.4 The Alignment Auditor（arXiv:[2510.06096](https://arxiv.org/abs/2510.06096)）
 
@@ -178,8 +178,8 @@ X-KD 把"让学生在**教师原始环境**中学习"形式化为经验蒸馏框
 | 维度 | 正向 RL（象限Ⅲ） | 逆向 RL（象限Ⅱ） |
 |---|---|---|
 | 已知 → 未知 | 奖励已知 → 求策略 | 示范已知 → 求奖励 |
-| 优化目标 | \(\max_\pi \mathbb{E}[\sum\gamma^t r]\) | \(\max_r \; P(\text{示范}\mid r)\) |
-| 信息来源 | 奖励信号（每个 \((s,a)\) 可查询） | 示范分布（只覆盖专家流形） |
+| 优化目标 | $$\max_\pi \mathbb{E}[\sum\gamma^t r]$$ | $$\max_r \; P(\text{示范}\mid r)$$ |
+| 信息来源 | 奖励信号（每个 $$(s,a)$$ 可查询） | 示范分布（只覆盖专家流形） |
 | 核心困难 | 探索、信用分配 | 不可辨识性、分布外误设 |
 | 失效模式 | reward hacking 奖励漏洞 | 奖励欠定 / 过拟合表面特征 |
 | LLM 时代代表 | RLVR + GRPO | RM / DPO / RARO / 审计框架 |
@@ -216,9 +216,9 @@ X-KD 把"让学生在**教师原始环境**中学习"形式化为经验蒸馏框
 * "Learning from Failures: Failure-Aware Inverse RL" ([arXiv:2510.06092](https://arxiv.org/abs/2510.06092)) —— §4.3
 * "The Alignment Auditor: A Bayesian Framework" ([arXiv:2510.06096](https://arxiv.org/abs/2510.06096)) —— §4.4
 * "Masked IRL: LLM-Guided Reward Disambiguation" ([arXiv:2511.14565](https://arxiv.org/abs/2511.14565)) —— §4.5
-* "\(\mathcal{X}\)-KD: General Experiential Knowledge Distillation" ([arXiv:2602.12674](https://arxiv.org/abs/2602.12674)) —— §4.5
+* "$$\mathcal{X}$$-KD: General Experiential Knowledge Distillation" ([arXiv:2602.12674](https://arxiv.org/abs/2602.12674)) —— §4.5
 * DeepSeek-AI, "DeepSeekMath" ([arXiv:2402.03300](https://arxiv.org/abs/2402.03300)) / "DeepSeek-R1" ([arXiv:2501.12948](https://arxiv.org/abs/2501.12948)) —— GRPO 与 RLVR 主线
 * 中文社区视角：《[一文搞懂DPO、PPO和GRPO；附代码理解](https://zhuanlan.zhihu.com/p/27332009509)》（知乎）
 * 本站姊妹篇：《[逆强化学习五十年](/2026/08/22/irl-fifty-years-from-demonstrations/)》 · 《[On-Policy Distillation 深度剖析](/2026/08/11/on-policy-distillation-deepdive/)》 · 《[GRPO：组相对优势与大模型时代的 RL](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/)》
 
-> 🧪 **动手练习**：① 用 §2.3 的代码骨架在一个 toy RM 上验证 BT 损失的梯度与成对 MaxEnt IRL 解析梯度逐元素相等（容差 < 1e-6）；② 取一份开源 RM，构造 20 个近分偏好对，观察其分数差的方差是否显著小于随机对——复现 §4.3 定义 failures 的动机；③ 手推 §3.1 的 \(Z(x)\) 相消过程，确认每一步没有偷换求和范围。
+> 🧪 **动手练习**：① 用 §2.3 的代码骨架在一个 toy RM 上验证 BT 损失的梯度与成对 MaxEnt IRL 解析梯度逐元素相等（容差 < 1e-6）；② 取一份开源 RM，构造 20 个近分偏好对，观察其分数差的方差是否显著小于随机对——复现 §4.3 定义 failures 的动机；③ 手推 §3.1 的 $$Z(x)$$ 相消过程，确认每一步没有偷换求和范围。

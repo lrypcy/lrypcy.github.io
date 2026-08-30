@@ -286,7 +286,7 @@ ncu 详情页顶部有两根柱子：**Compute（SM）Throughput** 与 **Memory 
 
 $$\text{gap ratio} = \frac{T_{wall} - T_{busy}}{T_{wall}}$$
 
-其中 \(T_{wall}\) 为所选时间窗总长，\(T_{busy}\) 为窗内 kernel+memcpy 的占用时长。它可以从 nsys 的统计报表近似得出。经验判断量级：端到端 gap ratio 超过一到两成时，优化 kernel 本身的边际收益很小，应先治调度（融合、CUDA Graph、异步化）——阈值为经验值，未验证。
+其中 $$T_{wall}$$ 为所选时间窗总长，$$T_{busy}$$ 为窗内 kernel+memcpy 的占用时长。它可以从 nsys 的统计报表近似得出。经验判断量级：端到端 gap ratio 超过一到两成时，优化 kernel 本身的边际收益很小，应先治调度（融合、CUDA Graph、异步化）——阈值为经验值，未验证。
 
 ### 3.3 Occupancy 与 Warp Stall：微观归因
 
@@ -312,11 +312,11 @@ stall 分布的读法是「抓最大项」：long scoreboard 一家独大 → �
 
 | 符号 | 含义 | 在哪里看 | 维度相关性 |
 |:---|:---|:---|:---|
-| \(AI\) | 算术强度（FLOPs / Bytes） | ncu Roofline 图横轴 | 由 tile shape 与算子类型共同决定 |
-| \(\text{SOL}\) | SM%/Mem% 吞耗 | ncu 详情页顶部 | 与 grid/block 配置强相关 |
-| \(g\) | gap ratio（空转占比） | nsys 时间线统计 | batch×seq 组合越多越易恶化 |
-| \(B_{eff}\) | achieved bandwidth | ncu MemoryWorkloadAnalysis | 由张量 shape 决定访存总量 |
-| \(O_{occ}\) | achieved occupancy | ncu Occupancy section | 由 block 维度与寄存器用量决定 |
+| $$AI$$ | 算术强度（FLOPs / Bytes） | ncu Roofline 图横轴 | 由 tile shape 与算子类型共同决定 |
+| $$\text{SOL}$$ | SM%/Mem% 吞耗 | ncu 详情页顶部 | 与 grid/block 配置强相关 |
+| $$g$$ | gap ratio（空转占比） | nsys 时间线统计 | batch×seq 组合越多越易恶化 |
+| $$B_{eff}$$ | achieved bandwidth | ncu MemoryWorkloadAnalysis | 由张量 shape 决定访存总量 |
+| $$O_{occ}$$ | achieved occupancy | ncu Occupancy section | 由 block 维度与寄存器用量决定 |
 
 排查时的速查表（建议收藏）：
 
@@ -372,7 +372,7 @@ LLM 推理的两个阶段在同一张卡上呈现出截然不同的 profile 形�
 | SOL 形态 | SM% 高、Mem% 中等 | Mem%（DRAM）逼近高位、SM% 明显偏低 |
 | 主要矛盾 | 算力利用与 attention IO | 权重读取带宽与 launch/gap 开销 |
 
-Decode 的带宽下限可以直接从公开规格推导：batch=1 时每生成一个 token 至少要把全部权重读一遍，故单步时间满足 \(T_{token} \ge W_{bytes}/B_{eff}\)。以 13B FP16 模型为例，权重约 26 GB，即使有效带宽按 H100 峰值 3352 GB/s 的七折（约 2.3 TB/s）计，下限也在 11 ms/token 附近——这是规格推导出的量级演示，非实测。**推论**：decode 阶段看到「SM 利用率不高但 DRAM 带宽很高」不是病，是物理规律；此时任何提升 SM 占用的尝试都是徒劳，出路只有降低权重读取量（量化）或多请求摊薄（continuous batching）。这也是量化系列（如《伪量化算子插入》）在推理侧的核心价值所在。
+Decode 的带宽下限可以直接从公开规格推导：batch=1 时每生成一个 token 至少要把全部权重读一遍，故单步时间满足 $$T_{token} \ge W_{bytes}/B_{eff}$$。以 13B FP16 模型为例，权重约 26 GB，即使有效带宽按 H100 峰值 3352 GB/s 的七折（约 2.3 TB/s）计，下限也在 11 ms/token 附近——这是规格推导出的量级演示，非实测。**推论**：decode 阶段看到「SM 利用率不高但 DRAM 带宽很高」不是病，是物理规律；此时任何提升 SM 占用的尝试都是徒劳，出路只有降低权重读取量（量化）或多请求摊薄（continuous batching）。这也是量化系列（如《伪量化算子插入》）在推理侧的核心价值所在。
 
 ### 5.2 量化 kernel 在 profile 里该看什么
 

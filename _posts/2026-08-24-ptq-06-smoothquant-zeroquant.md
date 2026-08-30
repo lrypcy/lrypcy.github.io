@@ -30,8 +30,8 @@ per-channel 量化（每个输出通道一个 scale），早在 LLM.int8() 时�
 
 **2. 方案：一条"免费"的恒等式，两个互补的流派。**
 
-SmoothQuant（arXiv:2211.10438）观察到 \(XW = (X \cdot s^{-1})(s \cdot W)\) 对任意逐通道
-缩放向量 \(s\) 严格成立，于是把激活的量化难度按超参 \(\alpha\) 的比例"迁移"给权重——权重
+SmoothQuant（arXiv:2211.10438）观察到 $$XW = (X \cdot s^{-1})(s \cdot W)$$ 对任意逐通道
+缩放向量 $$s$$ 严格成立，于是把激活的量化难度按超参 $$\alpha$$ 的比例"迁移"给权重——权重
 扛得住（per-channel scale 吸收幅值差异），激活变得可量化（outlier 被削平），输出在数学上
 分毫不变。ZeroQuant（arXiv:2206.01861）走另一条路：不改变分布，用 group-wise 权重量化 +
 token-wise 动态激活量化 + 逐层蒸馏来硬啃，三代迭代从"细粒度"一路走向"训练时量化模拟"。
@@ -110,29 +110,29 @@ SmoothQuant 和 ZeroQuant 就是为攻克这一点而生的。
 
 先把量化误差数学化。对称 k-bit 均匀量化的步长为：
 
-$$\Delta = \frac{2 \cdot \max|X|}{2^k - 1}$$
+$$\Delta = \frac{2 \cdot \max\vertX\vert}{2^k - 1}$$
 
-在均匀分布假设下，量化误差的能量约为 \(\Delta^2 / 12\)，于是**相对误差与张量的动态
+在均匀分布假设下，量化误差的能量约为 $$\Delta^2 / 12$$，于是**相对误差与张量的动态
 范围成正比**：
 
-$$\text{err}(X) \propto \frac{\max|X|}{2^k}$$
+$$\text{err}(X) \propto \frac{\max\vertX\vert}{2^k}$$
 
 即：动态范围越大，同样位宽下的有效精度越低。现在对比权重和激活这两个张量：
 
-| 维度 | 权重 \(W\) | 激活 \(X\) |
+| 维度 | 权重 $$W$$ | 激活 $$X$$ |
 | --- | --- | --- |
 | 分布形态 | 近似高斯/均匀，无极端 outlier | 重尾，少数通道幅值极大 |
 | 量化粒度 | 可 per-channel（每输出通道一个 scale） | 只能 per-tensor 或 per-token |
 | scale 来源 | 静态、离线精确统计 | 动态、被 outlier 主导 |
 | 误差传播 | 单层局部影响 | 逐层累积、随深度放大 |
 
-决定性的差异在第二行：**权重可以 per-channel 量化**——\(d_{out}\) 个输出通道各配一个
+决定性的差异在第二行：**权重可以 per-channel 量化**——$$d_{out}$$ 个输出通道各配一个
 scale，通道间的幅值差异被 scale 吸收，行内相对误差几乎不受影响。**激活不行**——
 per-tensor 只有一个 scale，被 outlier 通道彻底绑架。
 
-**一个数字例子**：假设某层激活 99% 的数值落在 \([-1, 1]\)，但存在一个幅值为 100 的
-outlier 通道。per-tensor 步长 \(\Delta = 100/127 \approx 0.79\)，于是正常值区间 \([-1,1]\)
-内只有约 \(\pm 1.3\) 个量化步长——**有效精度不到 1.5 bit**，误差直接拉爆。
+**一个数字例子**：假设某层激活 99% 的数值落在 $$[-1, 1]$$，但存在一个幅值为 100 的
+outlier 通道。per-tensor 步长 $$\Delta = 100/127 \approx 0.79$$，于是正常值区间 $$[-1,1]$$
+内只有约 $$\pm 1.3$$ 个量化步长——**有效精度不到 1.5 bit**，误差直接拉爆。
 
 per-token 量化（每个 token 一个 scale）能缓解"不同 token 幅值不同"的问题，但**同一
 token 内跨通道的 outlier 依然无解**：outlier 通道照样拉高该 token 的 scale，把同
@@ -154,7 +154,7 @@ softmax 的指数运算后被逐层放大。这也是为什么激活量化对精
 ### 2.1 起点：一条"免费"的恒等变换
 
 SmoothQuant（MIT-IBM Watson AI Lab，NeurIPS 2023）的全部起点，是一条人尽皆知的
-代数恒等式。对任意逐通道缩放向量 \(s \in \mathbb{R}^{d_{in}}_{>0}\)：
+代数恒等式。对任意逐通道缩放向量 $$s \in \mathbb{R}^{d_{in}}_{>0}$$：
 
 $$XW = \left(X \cdot \operatorname{diag}(s)^{-1}\right)\left(\operatorname{diag}(s) \cdot W\right)$$
 
@@ -162,12 +162,12 @@ $$XW = \left(X \cdot \operatorname{diag}(s)^{-1}\right)\left(\operatorname{diag}
 
 $$X' = X \cdot \operatorname{diag}(s)^{-1}, \qquad W' = \operatorname{diag}(s) \cdot W$$
 
-则 \(X'W' = XW\) 在**数学上严格成立**——输出分毫不变。但量化误差变了：\(X'\) 的通道间
-幅值被拉齐（outlier 被削平），\(W'\) 的对应行被放大。**\(s\) 的选择，决定了量化难度在
+则 $$X'W' = XW$$ 在**数学上严格成立**——输出分毫不变。但量化误差变了：$$X'$$ 的通道间
+幅值被拉齐（outlier 被削平），$$W'$$ 的对应行被放大。**$$s$$ 的选择，决定了量化难度在
 激活与权重之间如何分配**。
 
 这就是"平滑"（Smooth）一词的由来：激活的尖峰被削平，权重的负担被加重——而权重
-扛得住。注意这个变换是"逐通道"（per-channel）的：\(s\) 有 \(d_{in}\) 个分量，每个输入
+扛得住。注意这个变换是"逐通道"（per-channel）的：$$s$$ 有 $$d_{in}$$ 个分量，每个输入
 特征通道一个，这正是为了精准打击"通道级"的 outlier。
 
 为什么之前没人这么做？因为直觉上"改权重"是危险的——GPTQ 们费尽心思才把权重压到
@@ -177,68 +177,68 @@ $$X' = X \cdot \operatorname{diag}(s)^{-1}, \qquad W' = \operatorname{diag}(s) \
 
 ### 2.2 难度守恒与最优分配
 
-均匀量化下，张量的量化难度可用动态范围刻画。平滑后，激活第 \(j\) 通道与权重第 \(j\)
+均匀量化下，张量的量化难度可用动态范围刻画。平滑后，激活第 $$j$$ 通道与权重第 $$j$$
 行的范围分别为：
 
-$$\max|X'_{:,j}| = \frac{\max|X_{:,j}|}{s_j}, \qquad \max|W'_{j,:}| = s_j \cdot \max|W_{j,:}|$$
+$$\max\vertX'_{:,j}\vert = \frac{\max\vertX_{:,j}\vert}{s_j}, \qquad \max\vertW'_{j,:}\vert = s_j \cdot \max\vertW_{j,:}\vert$$
 
 两者相乘：
 
-$$\underbrace{\frac{\max|X_{:,j}|}{s_j}}_{\text{激活侧难度}} \cdot
-\underbrace{s_j \cdot \max|W_{j,:}|}_{\text{权重侧难度}} =
-\max|X_{:,j}| \cdot \max|W_{j,:}|$$
+$$\underbrace{\frac{\max\vertX_{:,j}\vert}{s_j}}_{\text{激活侧难度}} \cdot
+\underbrace{s_j \cdot \max\vertW_{j,:}\vert}_{\text{权重侧难度}} =
+\max\vertX_{:,j}\vert \cdot \max\vertW_{j,:}\vert$$
 
-与 \(s_j\) 无关。**量化难度守恒：平滑只是搬运，不是消灭。** SmoothQuant 的聪明之处
+与 $$s_j$$ 无关。**量化难度守恒：平滑只是搬运，不是消灭。** SmoothQuant 的聪明之处
 在于：权重的 per-channel 量化对"难度"的容错远高于激活的 per-tensor/per-token 量化
 ——同样的难度，放在权重端只产生很小的相对误差，放在激活端则是灾难。所以把难度往
 权重端搬，是稳赚不赔的交易。
 
 那搬多少最优？令两端难度相等（两端误差之和在均衡时最小）：
 
-$$\frac{\max|X_{:,j}|}{s_j} = s_j \cdot \max|W_{j,:}|
-\quad\Longrightarrow\quad s_j^{*} = \sqrt{\frac{\max|X_{:,j}|}{\max|W_{j,:}|}}$$
+$$\frac{\max\vertX_{:,j}\vert}{s_j} = s_j \cdot \max\vertW_{j,:}\vert
+\quad\Longrightarrow\quad s_j^{*} = \sqrt{\frac{\max\vertX_{:,j}\vert}{\max\vertW_{j,:}\vert}}$$
 
-两个补充说明。第一，为什么用 \(\max|\cdot|\) 而不是标准差或分位数？因为对称均匀量化
-的步长由 range（即 \(2\max|X|\)）直接决定，\(\max\) 是步长的精确代理，用它做 scale 能
+两个补充说明。第一，为什么用 $$\max\vert\cdot\vert$$ 而不是标准差或分位数？因为对称均匀量化
+的步长由 range（即 $$2\max\vertX\vert$$）直接决定，$$\max$$ 是步长的精确代理，用它做 scale 能
 最直接地压缩步长。分位数（如 99.9%）可以抗校准集噪声，但会留下少量截断误差——这个
-权衡留到第 6 章批判部分展开。第二，"难度守恒"是逐通道的，\(d_{in}\) 个通道各自独立
+权衡留到第 6 章批判部分展开。第二，"难度守恒"是逐通道的，$$d_{in}$$ 个通道各自独立
 搬运，互不干扰，这也是为什么这个变换可以无损地嵌入每一层。
 
 ### 2.3 迁移因子 α：从 0 到 1 的连续谱
 
-论文没有直接使用 \(s^{*}\)，而是引入一个超参数 \(\alpha\) 来控制迁移强度：
+论文没有直接使用 $$s^{*}$$，而是引入一个超参数 $$\alpha$$ 来控制迁移强度：
 
-$$s_j(\alpha) = \frac{\max|X_{:,j}|^{\alpha}}{\max|W_{j,:}|^{1-\alpha}}, \quad \alpha \in [0, 1]$$
+$$s_j(\alpha) = \frac{\max\vertX_{:,j}\vert^{\alpha}}{\max\vertW_{j,:}\vert^{1-\alpha}}, \quad \alpha \in [0, 1]$$
 
-\(\alpha\) 的语义非常直观，它定义了一条从"纯权重量化"到"纯激活量化"的连续谱：
+$$\alpha$$ 的语义非常直观，它定义了一条从"纯权重量化"到"纯激活量化"的连续谱：
 
-| \(\alpha\) | \(s_j\) 的形态 | 效果 | 对应策略 |
+| $$\alpha$$ | $$s_j$$ 的形态 | 效果 | 对应策略 |
 | --- | --- | --- | --- |
-| \(0\) | \(1/\max\|W_{j,:}\|\) | 权重每行归一化到 1，激活原样 | 纯权重量化（激活依旧难） |
-| \(0.5\) | \(\sqrt{\max\|X_{:,j}\| / \max\|W_{j,:}\|}\) | 两端难度均衡 | 论文默认值，即 2.2 节最优解 |
-| \(1\) | \(\max\|X_{:,j}\|\) | 激活每通道归一化到 1，权重变难 | 纯激活量化（权重变难） |
+| $$0$$ | $$1/\max\|W_{j,:}\|$$ | 权重每行归一化到 1，激活原样 | 纯权重量化（激活依旧难） |
+| $$0.5$$ | $$\sqrt{\max\|X_{:,j}\| / \max\|W_{j,:}\|}$$ | 两端难度均衡 | 论文默认值，即 2.2 节最优解 |
+| $$1$$ | $$\max\|X_{:,j}\|$$ | 激活每通道归一化到 1，权重变难 | 纯激活量化（权重变难） |
 
-两个端点各有各的问题，这正是 \(\alpha\) 存在的意义：
+两个端点各有各的问题，这正是 $$\alpha$$ 存在的意义：
 
-**为什么 \(\alpha\) 不能取 1（把激活彻底抹平）？** 第一，权重端有天花板：\(s_j\) 过大时
-\(W'\) 某些行的范围被放大，虽然 per-channel scale 能吸收幅值，但行内相对误差会随范围
+**为什么 $$\alpha$$ 不能取 1（把激活彻底抹平）？** 第一，权重端有天花板：$$s_j$$ 过大时
+$$W'$$ 某些行的范围被放大，虽然 per-channel scale 能吸收幅值，但行内相对误差会随范围
 劣化——8bit 的 256 个码字被摊到更大的动态范围上，有效位宽下降。第二，激活端有残余：
-\(\alpha=1\) 只拉齐了"通道间"的幅值，同一通道内部跨 token 的波动依然存在，所以论文在
+$$\alpha=1$$ 只拉齐了"通道间"的幅值，同一通道内部跨 token 的波动依然存在，所以论文在
 平滑之外仍用 per-token 激活量化兜底——平滑 + per-token 是组合拳。
 
-**为什么 \(\alpha\) 不能取 0（完全不动激活）？** 那等于放弃平滑，回到 1.3 节那个被
-outlier 绑架的量化，精度在 13B 以上模型直接崩盘。\(\alpha=0\) 时 \(s_j = 1/\max|W_{j,:}|\)
+**为什么 $$\alpha$$ 不能取 0（完全不动激活）？** 那等于放弃平滑，回到 1.3 节那个被
+outlier 绑架的量化，精度在 13B 以上模型直接崩盘。$$\alpha=0$$ 时 $$s_j = 1/\max\vertW_{j,:}\vert$$
 只是把权重归一化，激活的原罪一点没消除。
 
-实践上，论文在 \(\alpha \in [0.2, 0.5]\) 之间做小网格搜索，默认 \(\alpha = 0.5\)；小模型
-outlier 不显著，可取更小的 \(\alpha\)，大模型倾向 0.5。值得注意的是 \(\alpha=0.5\) 恰好
-是 2.2 节推导的最优解 \(s^{*}\)——默认值不是拍脑袋，而是理论均衡点。论文还报告 α 在
+实践上，论文在 $$\alpha \in [0.2, 0.5]$$ 之间做小网格搜索，默认 $$\alpha = 0.5$$；小模型
+outlier 不显著，可取更小的 $$\alpha$$，大模型倾向 0.5。值得注意的是 $$\alpha=0.5$$ 恰好
+是 2.2 节推导的最优解 $$s^{*}$$——默认值不是拍脑袋，而是理论均衡点。论文还报告 α 在
 0.2~0.5 区间内困惑度变化极小（方法稳健），但一旦滑向 0 或 1，退化立竿见影。
 
-**一个具体数字**：设某通道 \(\max|X_{:,j}| = 80\)、\(\max|W_{j,:}| = 0.4\)，取
-\(\alpha=0.5\)，则 \(s_j = \sqrt{80/0.4} = \sqrt{200} \approx 14.14\)。平滑后激活该通道
-范围 \(80/14.14 \approx 5.66\)，权重该行范围 \(0.4 \times 14.14 \approx 5.66\)——两端
-精确均衡。而 \(\alpha=0\) 时激活范围仍高达 32（outlier 未除），\(\alpha=1\) 时权重行被
+**一个具体数字**：设某通道 $$\max\vertX_{:,j}\vert = 80$$、$$\max\vertW_{j,:}\vert = 0.4$$，取
+$$\alpha=0.5$$，则 $$s_j = \sqrt{80/0.4} = \sqrt{200} \approx 14.14$$。平滑后激活该通道
+范围 $$80/14.14 \approx 5.66$$，权重该行范围 $$0.4 \times 14.14 \approx 5.66$$——两端
+精确均衡。而 $$\alpha=0$$ 时激活范围仍高达 32（outlier 未除），$$\alpha=1$$ 时权重行被
 放大到 32（权重受伤）。α 就是在"激活的 32"和"权重的 32"之间选一个双方都能接受的
 中间点。
 
@@ -252,7 +252,7 @@ outlier 不显著，可取更小的 \(\alpha\)，大模型倾向 0.5。值得注
   1bit 的事。
 - **平滑后**：每个通道的幅值被拉齐到同一量级，动态范围缩到 10:1 以内，256 个码字
   密集覆盖真实分布，有效位宽接近满 8bit。
-- **权重侧**：\(W'\) 的每行被 \(s_j\) 放大，但 per-channel 量化对每行单独定 scale——
+- **权重侧**：$$W'$$ 的每行被 $$s_j$$ 放大，但 per-channel 量化对每行单独定 scale——
   行内分布形状没变（只是整体乘了个常数），**相对量化误差几乎不变**。放大 14 倍和
   放大 1 倍，per-channel 量化后的相对误差是同一量级的。
 
@@ -312,8 +312,8 @@ W8A8 的硬件底座是 INT8 Tensor Core：从 Volta 起 NVIDIA GPU 就有 INT8 
 INT8 之上再翻倍——这是第 6.4 节的伏笔）。GEMM 本体由硬件指令完成（A100 上的
 `mma.sync.aligned.m16n8k32.s32.s8.s8.s32` 之类），INT32 累加，精度无忧。
 
-量化后的线性层计算链如下。设激活量化步长为 per-token 的 \(\Delta^X_t\)、权重量化步长
-为 per-channel 的 \(\Delta^W_o\)，则：
+量化后的线性层计算链如下。设激活量化步长为 per-token 的 $$\Delta^X_t$$、权重量化步长
+为 per-channel 的 $$\Delta^W_o$$，则：
 
 $$\hat{Y}_{t,o} = \left(\sum_j \operatorname{round}\!\left(\frac{X'_{t,j}}{\Delta^X_t}\right)
 \cdot \operatorname{round}\!\left(\frac{W'_{j,o}}{\Delta^W_o}\right)\right)
@@ -345,9 +345,9 @@ flowchart LR
     F2 -.-> QW
 ```
 
-注意图中激活侧的技巧：**平滑不需要真的做除法**。\(X'_{t,j} = X_{t,j}/s_j\) 的除法可以
-等价地写进量化步长：\(\tilde{\Delta}^X_{t,j} = \Delta^X_t / s_j\)，量化时直接
-\(\operatorname{round}(X_{t,j}/\tilde{\Delta}^X_{t,j})\)。于是平滑在运行时是"免费"的——
+注意图中激活侧的技巧：**平滑不需要真的做除法**。$$X'_{t,j} = X_{t,j}/s_j$$ 的除法可以
+等价地写进量化步长：$$\tilde{\Delta}^X_{t,j} = \Delta^X_t / s_j$$，量化时直接
+$$\operatorname{round}(X_{t,j}/\tilde{\Delta}^X_{t,j})$$。于是平滑在运行时是"免费"的——
 它只是让 per-token scale 从标量变成了逐通道向量，多了一次逐通道乘法，而这一步本来
 就要做（反量化时 scale 要乘回）。
 
@@ -355,32 +355,32 @@ flowchart LR
 
 工程上，SmoothQuant 最优雅的一点是**所有"脏活"都在离线完成**：
 
-1. **权重侧**：\(W' = \operatorname{diag}(s)W\) 在部署前算好，直接导出融合后的 INT8
+1. **权重侧**：$$W' = \operatorname{diag}(s)W$$ 在部署前算好，直接导出融合后的 INT8
    权重 + per-channel scale。运行时看到的只是一个普通的 INT8 权重张量，平滑对它
    完全透明。
-2. **激活侧**：\(s\) 是静态的（由校准集统计），\(1/s_j\) 提前乘进 per-token scale 的
+2. **激活侧**：$$s$$ 是静态的（由校准集统计），$$1/s_j$$ 提前乘进 per-token scale 的
    计算里。运行时每来一个 token，照常算 max、照常量化，只是 scale 向量里多了
-   \(1/s_j\) 这个常数因子。
+   $$1/s_j$$ 这个常数因子。
 3. **覆盖范围**：所有线性层都要处理——attention 的 Q/K/V/O 投影、MLP 的
    gate/up/down 三个投影，一层都不能漏。漏掉一层，outlier 就会从那一层漏进下一层。
 4. **不量化的部分**：softmax 的输出（概率分布，直接 FP16 参与后续计算）、
    LayerNorm 的输出（幅值已被归一化，通常保持 FP16）、以及 embedding 表（可选
    8bit，但 embedding 的分布与激活不同，需单独评估）。
 
-数值上的几个坑，实战中都要处理：\(s_j\) 与 \(\Delta_t\) 合并时可能下溢（\(s_j\) 极小）或
+数值上的几个坑，实战中都要处理：$$s_j$$ 与 $$\Delta_t$$ 合并时可能下溢（$$s_j$$ 极小）或
 上溢（激活量化后超出 int8 范围），需要 clamp 防护；per-token scale 建议用 FP32 计算
 再转回（动态量化的 scale 精度直接影响大 batch 下的稳定性）；多卡流水并行时，每层
-的 \(s\) 要跟着权重一起分发，保证所有副本一致。
+的 $$s$$ 要跟着权重一起分发，保证所有副本一致。
 
 ### 3.3 与 KV cache 量化的关系：W8A8 的隐藏红利
 
 W8A8 相比 W4A16 的一个隐藏红利是 KV cache 可以顺带量化到 8bit。K、V 是激活的线性
 投影，同样携带 outlier——而且 **K 的 outlier 对精度更致命**：K 直接参与
-\(\operatorname{softmax}(QK^\top/\sqrt{d})\) 中的点积，经过指数运算后，K 通道的幅值
+$$\operatorname{softmax}(QK^\top/\sqrt{d})$$ 中的点积，经过指数运算后，K 通道的幅值
 误差会被放大成 attention 权重的偏差。
 
 SmoothQuant 论文在 KV cache 8bit 上做了实验：配合平滑（对 Q/K/V 投影同样施加
-\(\alpha\) 平滑），KV8 的困惑度仍接近 FP16，但需要更保守的 \(\alpha\)（因为 attention
+$$\alpha$$ 平滑），KV8 的困惑度仍接近 FP16，但需要更保守的 $$\alpha$$（因为 attention
 对误差更敏感）。这意味着在长上下文场景下，W8A8 + KV8 可以把 KV cache 显存砍半——
 128K 上下文的 KV cache 从几十 GB 降到十几 GB，这是 W4A16 给不了的。
 
@@ -395,11 +395,11 @@ SmoothQuant 论文在 KV cache 8bit 上做了实验：配合平滑（对 Q/K/V �
 | 步骤 | 操作 | 产物 |
 | --- | --- | --- |
 | 1 | 选校准集（几百条文本，覆盖目标领域） | 前向统计各层激活 |
-| 2 | 统计每层 \(\max\|X_{:,j}\|\)、\(\max\|W_{j,:}\|\) | 幅值统计表 |
-| 3 | 网格搜索 \(\alpha \in [0.2, 0.5]\)（每层可统一或分层） | 最优 \(\alpha\) |
-| 4 | 计算 \(s\)，融合 \(W' = \operatorname{diag}(s)W\) | 平滑后权重 |
+| 2 | 统计每层 $$\max\|X_{:,j}\|$$、$$\max\|W_{j,:}\|$$ | 幅值统计表 |
+| 3 | 网格搜索 $$\alpha \in [0.2, 0.5]$$（每层可统一或分层） | 最优 $$\alpha$$ |
+| 4 | 计算 $$s$$，融合 $$W' = \operatorname{diag}(s)W$$ | 平滑后权重 |
 | 5 | per-channel 量化权重，导出 INT8 + scale | INT8 权重文件 |
-| 6 | 把 \(1/s_j\) 并入激活量化逻辑（改 kernel 或图） | 推理图 |
+| 6 | 把 $$1/s_j$$ 并入激活量化逻辑（改 kernel 或图） | 推理图 |
 | 7 | 加载部署，验证困惑度/下游任务 | 上线 |
 
 整套流程在几小时内可完成，无需训练。对比之下，ZeroQuant V1 的蒸馏流程需要额外的
@@ -423,7 +423,7 @@ PTQ 方案"训练无关"（training-free）的最大卖点。
 
 ### 4.1 思路分野：预处理 vs 细粒度 + 纠错
 
-SmoothQuant 的核心动作是"改分布"：用校准集统计出 \(s\)，把激活的量化难度迁移给权重，
+SmoothQuant 的核心动作是"改分布"：用校准集统计出 $$s$$，把激活的量化难度迁移给权重，
 本质是**预处理**。ZeroQuant（微软，arXiv:2206.01861，2022 年 6 月，比 SmoothQuant
 早约 5 个月）选择了另一条路：**不改分布，硬啃**。它的三板斧是：
 
@@ -437,13 +437,13 @@ SmoothQuant 的核心动作是"改分布"：用校准集统计出 \(s\)，把激
 
 ### 4.2 V1：group-wise 权重 + token-wise 激活 + 逐层蒸馏
 
-**权重的 group-wise 量化**。把权重矩阵的输出维度分成大小为 \(g\) 的组（论文默认
-\(g=128\)），每组共享一个 scale：
+**权重的 group-wise 量化**。把权重矩阵的输出维度分成大小为 $$g$$ 的组（论文默认
+$$g=128$$），每组共享一个 scale：
 
 $$\hat{W} = \sum_{G} \Delta_G \cdot \operatorname{round}\!\left(\frac{W_G}{\Delta_G}\right),
-\qquad \Delta_G = \frac{\max|W_G|}{2^{k-1} - 1}$$
+\qquad \Delta_G = \frac{\max\vertW_G\vert}{2^{k-1} - 1}$$
 
-per-channel 是"每输出通道一个 scale"（\(g=1\) 的特例），group-wise 则是"每 \(g\) 个输出
+per-channel 是"每输出通道一个 scale"（$$g=1$$ 的特例），group-wise 则是"每 $$g$$ 个输出
 通道一个 scale"。对 8bit 权重来说，group size 128 的粒度已经足够细，精度损失远小于
 per-tensor。注意：group-wise 的反量化需要按组乘 scale，比 per-channel 略复杂，但在
 kernel 里只是多一层索引，开销可控。
@@ -451,15 +451,15 @@ kernel 里只是多一层索引，开销可控。
 **激活的 token-wise 动态量化**。每个 token（激活矩阵的一行）单独计算 scale：
 
 $$\hat{X}_{t,:} = \Delta_t \cdot \operatorname{round}\!\left(\frac{X_{t,:}}{\Delta_t}\right),
-\qquad \Delta_t = \frac{\max|X_{t,:}|}{2^{k-1} - 1}$$
+\qquad \Delta_t = \frac{\max\vertX_{t,:}\vert}{2^{k-1} - 1}$$
 
-两个关键点。第一，这是**动态量化**：\(\Delta_t\) 在推理时按当前 token 现算，完全不依赖
+两个关键点。第一，这是**动态量化**：$$\Delta_t$$ 在推理时按当前 token 现算，完全不依赖
 校准集——这直接消灭了 SmoothQuant 的"校准集分布偏移"隐患。第二，它天然适配 decode
 阶段：自回归生成本来就是逐 token 的，每来一个 token 算一次 max + 一次除法，相对
 GEMM 的成本可忽略。而在 prefill 阶段，逐行（逐 token）计算 scale 可以并行，也几乎
 无额外开销。
 
-**逐层蒸馏**。量化后的第 \(l\) 层输出 \(\hat{Y}_l\) 与 FP16 教师层输出 \(Y_l\) 对齐：
+**逐层蒸馏**。量化后的第 $$l$$ 层输出 $$\hat{Y}_l$$ 与 FP16 教师层输出 $$Y_l$$ 对齐：
 
 $$\mathcal{L}_l = \left\| \hat{Y}_l - Y_l \right\|_F^2$$
 
@@ -497,7 +497,7 @@ ZeroQuant-V3 是一次范式转移：**从"部署时补救"转向"训练时预�
 本质上还是 PTQ 框架内的纠错——量化在前，纠错在后；V3 则把量化模拟（fake quant）
 搬进训练/微调过程，让模型在训练时就"见过"量化误差并学会适应：
 
-- **量化感知训练/微调**：在前向传播中插入伪量化节点（\(\operatorname{round}\) +
+- **量化感知训练/微调**：在前向传播中插入伪量化节点（$$\operatorname{round}$$ +
   scale），反向传播用 STE（straight-through estimator）近似梯度，模型参数在
   量化误差的"噪声"中更新，最终收敛到对量化鲁棒的解；
 - **蒸馏成为主角**：FP16 教师模型蒸馏到量化学生模型（常配合 LoRA 等高效微调），
@@ -553,8 +553,8 @@ SmoothQuant 与 ZeroQuant 的全方位对比：
 
 ### 5.1 合成数据与工具函数
 
-数据设计遵循 1.3 节的设定：激活 \(X \in \mathbb{R}^{512 \times 128}\) 大部分为标准正态，
-但随机挑 8 个通道放大 30~100 倍（模拟常驻 outlier）；权重 \(W \in \mathbb{R}^{128 \times 256}\)
+数据设计遵循 1.3 节的设定：激活 $$X \in \mathbb{R}^{512 \times 128}$$ 大部分为标准正态，
+但随机挑 8 个通道放大 30~100 倍（模拟常驻 outlier）；权重 $$W \in \mathbb{R}^{128 \times 256}$$
 为标准高斯（权重本来就"老实"）。工具函数三个：per-tensor 量化、per-channel 量化、
 平滑 scale 计算——全部对齐论文公式。
 
@@ -708,14 +708,14 @@ W8A8 吃算力，KV cache 用 KV8——这不是某一篇论文的发明，而�
 仍然需要校准集 + 网格搜索，每层统一还是分层又是一轮调优。对"开箱即用"的部署
 流水线来说，多一个超参就是多一个故障点。
 
-**校准集依赖是结构性风险。** \(s_j\) 用的是 \(\max|X_{:,j}|\)——极值统计对样本分布
+**校准集依赖是结构性风险。** $$s_j$$ 用的是 $$\max\vertX_{:,j}\vert$$——极值统计对样本分布
 极度敏感。校准集与线上分布一旦偏移（长尾生成、代码补全、多语言混排），平滑就会
 失效甚至帮倒忙。后续工作（如 SmoothQuant+ 及各类变体）用分位数（99.9%）替代
 max 来增强稳健性，但分位数会留下截断误差——这是"稳健性 vs 精确性"的永恒拉扯。
 
 **静态假设的哲学问题。** 平滑假设 outlier 模式是静态的、可被校准集捕获的。但
 outlier 的幅值会随生成内容的极端程度波动（上下文越极端，outlier 越强），静态的
-\(s\) 无法完全覆盖。ZeroQuant 的动态量化恰好对此免疫——这是它"无校准集"路线最硬的
+$$s$$ 无法完全覆盖。ZeroQuant 的动态量化恰好对此免疫——这是它"无校准集"路线最硬的
 论据。
 
 **per-token scale 的成本被低估。** 平滑把激活量化从 per-tensor 推向了

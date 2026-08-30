@@ -166,13 +166,13 @@ def opd_train_step(student, teacher, batch, cfg):
 
 | 数学符号 | 代码变量 | Shape | 含义 |
 |---|---|---|---|
-| \(\hat{y}\sim\pi_\theta\) | `roll.tokens` | `(B, T)` | 学生自采样的轨迹 token 序列 |
-| \(\log\frac{\pi_\theta(y_t)}{\pi_T(y_t)}\) | `r_opd` | `(B, T)` | token 级蒸馏奖励（反向 KL 的 PG 形式） |
-| 步骤边界 \(b_k\) | `roll.step_bounds` | `(B, K)` | SOPD 的步骤切分索引 |
-| \(\widetilde{R}^{\mathrm{ver}}_g-\widetilde{S}^{\mathrm{opd}}_g\) | `delta` | `(G,)` | GC-OPD 组内符号化分歧残差 |
-| \(\beta\) | `cfg.beta` | 标量 | 残差混入强度 |
-| \(m_t\in\{0,1\}\) | `mute` | `(B, T)` | R2-OPD 排名冲突抑制掩码 |
-| \(w_t\) | `w` | `(T,)` | Open-MOPD 的每位置 token 预算权重 |
+| $$\hat{y}\sim\pi_\theta$$ | `roll.tokens` | `(B, T)` | 学生自采样的轨迹 token 序列 |
+| $$\log\frac{\pi_\theta(y_t)}{\pi_T(y_t)}$$ | `r_opd` | `(B, T)` | token 级蒸馏奖励（反向 KL 的 PG 形式） |
+| 步骤边界 $$b_k$$ | `roll.step_bounds` | `(B, K)` | SOPD 的步骤切分索引 |
+| $$\widetilde{R}^{\mathrm{ver}}_g-\widetilde{S}^{\mathrm{opd}}_g$$ | `delta` | `(G,)` | GC-OPD 组内符号化分歧残差 |
+| $$\beta$$ | `cfg.beta` | 标量 | 残差混入强度 |
+| $$m_t\in\{0,1\}$$ | `mute` | `(B, T)` | R2-OPD 排名冲突抑制掩码 |
+| $$w_t$$ | `w` | `(T,)` | Open-MOPD 的每位置 token 预算权重 |
 
 五篇新作放在同一张表里对比：
 

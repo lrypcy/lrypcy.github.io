@@ -11,7 +11,7 @@ mathjax: true
 > **TL;DR**
 >
 > * **这是「给 AI 编译器工程师的芯片课」第六篇**。前五篇攒齐了全部积木：五段流水线与冒险（05）、FMA 算术树（04）、多端口寄存器堆与 operand collector（03）、SASS 解码（04）。本篇把它们组装成 GPU 的执行引擎——**warp 把 32 个线程捆成一个调度单位 → 每个调度分区每周期的全部工作就是“挑一个就绪 warp 发射” → operand collector 用 bank 化与 replay 喂饱 32 个 lane → Tensor Core 把一条 mma 展开成多周期宽阵列流水 → cp.async/TMA 把 load 从指令流里摘出去变成后台队列 → occupancy 三约束给交织深度封顶**。
-> * **三个对编译器最值钱的结论**：1 divergence 的代价不是“慢一点”，而是两路**串行**执行的确定性惩罚——if-conversion 的判据就是两路代价之和与单路代价的比较，嵌套发散才是真正的乘法陷阱；2 喂饱 FP32 流水线只需 \(\lceil 4/2\rceil=2\) 条独立链，喂饱 HBM 却要 \(BW\times latency\approx 1\) MB 的在飞字节——前者 unroll 就够，后者必须靠 occupancy 或异步拷贝队列，Little 定律是两者之间的换算器；3 mma 的延迟与启动间隔之差比标量 FMA 放大了一个数量级，累加器拆分从优化技巧升级为跑满 Tensor Core 的前提；而 occupancy 的三条约束（寄存器、SMEM、warp slot）全是面积账——`__launch_bounds__`、`num_warps`、`num_stages` 都是在三块地皮之间搬租户。
+> * **三个对编译器最值钱的结论**：1 divergence 的代价不是“慢一点”，而是两路**串行**执行的确定性惩罚——if-conversion 的判据就是两路代价之和与单路代价的比较，嵌套发散才是真正的乘法陷阱；2 喂饱 FP32 流水线只需 $$\lceil 4/2\rceil=2$$ 条独立链，喂饱 HBM 却要 $$BW\times latency\approx 1$$ MB 的在飞字节——前者 unroll 就够，后者必须靠 occupancy 或异步拷贝队列，Little 定律是两者之间的换算器；3 mma 的延迟与启动间隔之差比标量 FMA 放大了一个数量级，累加器拆分从优化技巧升级为跑满 Tensor Core 的前提；而 occupancy 的三条约束（寄存器、SMEM、warp slot）全是面积账——`__launch_bounds__`、`num_warps`、`num_stages` 都是在三块地皮之间搬租户。
 > * **本篇动手实验**：纯 Python 手搓一个多 warp 交织调度模拟器和 occupancy 三约束计算器（无需任何硬件），再用 cuobjdump 认一认 SASS 里的 LDSM/LDGSTS 异步指令，用 ncu 读出 achieved occupancy 对照正文公式。
 
 ---
@@ -46,7 +46,7 @@ flowchart TD
     D --> E["屏障出栈 BSYNC<br>取掩码并集 继续顺序流"]
 ```
 
-关键结论一句话：**divergence 不改变指令条数，改变的是执行顺序——两路串行，而不是并行选一路**。设 if/else 两路代码体各需 \(c_{then}\)、\(c_{else}\) 个 warp 周期，比较三种编译方案：
+关键结论一句话：**divergence 不改变指令条数，改变的是执行顺序——两路串行，而不是并行选一路**。设 if/else 两路代码体各需 $$c_{then}$$、$$c_{else}$$ 个 warp 周期，比较三种编译方案：
 
 $$T_{pred} = c_{then} + c_{else}, \qquad E[T_{br}] = (1-P_{div})\cdot c_{maj} + P_{div}\cdot(c_{then} + c_{else})$$
 
@@ -56,15 +56,15 @@ $$T_{pred} - E[T_{br}] = (1-P_{div})\,\big(c_{then}+c_{else}-c_{maj}\big) = (1-P
 
 | 符号 | 含义 | 示例取值 | 维度/单位 |
 |:---:|:---|:---|:---|
-| \(c_{then},\,c_{else}\) | 两路代码体的 warp 执行周期数 | 4 与 6（示意） | 周期 |
-| \(P_{div}\) | 单个 warp 发生分歧的概率 | 0 到 1 之间 | 无量纲 |
-| \(c_{maj}\) | 多数派路径的代价 | \(\max(c_{then},c_{else})\) | 周期 |
-| \(T_{pred}\) | 谓词化方案（`@P0`）的恒定代价 | 两路之和 | 周期 |
-| \(E[T_{br}]\) | 分支方案的期望代价 | 随收敛概率变化 | 周期 |
+| $$c_{then},\,c_{else}$$ | 两路代码体的 warp 执行周期数 | 4 与 6（示意） | 周期 |
+| $$P_{div}$$ | 单个 warp 发生分歧的概率 | 0 到 1 之间 | 无量纲 |
+| $$c_{maj}$$ | 多数派路径的代价 | $$\max(c_{then},c_{else})$$ | 周期 |
+| $$T_{pred}$$ | 谓词化方案（`@P0`）的恒定代价 | 两路之和 | 周期 |
+| $$E[T_{br}]$$ | 分支方案的期望代价 | 随收敛概率变化 | 周期 |
 
-推导只用了两步：全 warp 同侧时分支方案免费跳过另一路（省 \(\min\)）；分歧时两路串行（付全额）。于是**只要同侧概率大于零，分支方案的期望就不劣于谓词化**——这就是 ptxas 对短小 if 体用 `@P0` 谓词化、对大块代码保留分支加 `BSSY` 的启发式依据。真正危险的是嵌套：连续 \(d\) 层都发散时最坏把 \(2^d\) 条路径串起来（教学上界口径），乘法陷阱才是 divergence 分析 pass 要消灭的对象。
+推导只用了两步：全 warp 同侧时分支方案免费跳过另一路（省 $$\min$$）；分歧时两路串行（付全额）。于是**只要同侧概率大于零，分支方案的期望就不劣于谓词化**——这就是 ptxas 对短小 if 体用 `@P0` 谓词化、对大块代码保留分支加 `BSSY` 的启发式依据。真正危险的是嵌套：连续 $$d$$ 层都发散时最坏把 $$2^d$$ 条路径串起来（教学上界口径），乘法陷阱才是 divergence 分析 pass 要消灭的对象。
 
-> 💡 **编译器关联**：三层。1 TVM/Triton 的 divergence 分析本质是在算上面的期望式——沿控制流树传播“warp 内谓词一致性”，一致则免串行；2 数据布局比控制流变换更治本：把按谓词分裂的数据排到不同 warp（如按 tile 重排线程映射），直接让 \(P_{div}=0\)；3 第 05 篇说过 CPU 用分支预测“赌”方向，SIMT 连赌都不用赌——掩码机制保证正确性，代价模型只剩串行时间，这是两种架构处理不确定性的哲学分野。
+> 💡 **编译器关联**：三层。1 TVM/Triton 的 divergence 分析本质是在算上面的期望式——沿控制流树传播“warp 内谓词一致性”，一致则免串行；2 数据布局比控制流变换更治本：把按谓词分裂的数据排到不同 warp（如按 tile 重排线程映射），直接让 $$P_{div}=0$$；3 第 05 篇说过 CPU 用分支预测“赌”方向，SIMT 连赌都不用赌——掩码机制保证正确性，代价模型只剩串行时间，这是两种架构处理不确定性的哲学分野。
 
 ## 2. warp scheduler：用优先编码器替代乱序机器
 
@@ -102,7 +102,7 @@ flowchart LR
 
 ### 2.2 选择电路的复杂度账
 
-从至多 \(n\) 个就绪 warp 里挑一个，电路是教科书优先编码器：
+从至多 $$n$$ 个就绪 warp 里挑一个，电路是教科书优先编码器：
 
 $$D_{pe} \approx \lceil \log_2 n \rceil, \qquad G_{pe} = O(n)$$
 
@@ -110,11 +110,11 @@ $$D_{pe} \approx \lceil \log_2 n \rceil, \qquad G_{pe} = O(n)$$
 
 | 符号 | 含义 | 示例取值 | 维度/单位 |
 |:---:|:---|:---|:---|
-| \(n\) | 每分区 warp 槽位数 | 64/4 = 16 | 个 |
-| \(D_{pe}\) | 优先编码器逻辑深度 | 4 级门 | 级 |
-| \(G_{pe}\) | 门数开销 | 线性于 \(n\) | 门 |
+| $$n$$ | 每分区 warp 槽位数 | 64/4 = 16 | 个 |
+| $$D_{pe}$$ | 优先编码器逻辑深度 | 4 级门 | 级 |
+| $$G_{pe}$$ | 门数开销 | 线性于 $$n$$ | 门 |
 
-对照第 05 篇 §4.2 的账单：CPU 乱序机器的唤醒-选择连线随窗口 \(w\) 近似平方增长，几百条的窗口就要烧掉前端功耗大头；GPU 把窗口从“几百条指令”缩成“十几个 warp 表项”，选择电路线性、深度常数——**这就是“用 TLP 替换 ILP”在调度器电路上省出来的钱**。省下的部分换成了更多 SM 和更宽的 RF（03 篇的 256 KB 地皮）。代价也明码标价：硬件不会替你重排任何东西，**SASS 里的顺序就是最终时序**，编译器的指令调度从建议变成承诺（04 篇 8.2 节的落款在这里兑现）。
+对照第 05 篇 §4.2 的账单：CPU 乱序机器的唤醒-选择连线随窗口 $$w$$ 近似平方增长，几百条的窗口就要烧掉前端功耗大头；GPU 把窗口从“几百条指令”缩成“十几个 warp 表项”，选择电路线性、深度常数——**这就是“用 TLP 替换 ILP”在调度器电路上省出来的钱**。省下的部分换成了更多 SM 和更宽的 RF（03 篇的 256 KB 地皮）。代价也明码标价：硬件不会替你重排任何东西，**SASS 里的顺序就是最终时序**，编译器的指令调度从建议变成承诺（04 篇 8.2 节的落款在这里兑现）。
 
 ### 2.3 dual-issue：一次发两条的历史轮回
 
@@ -148,7 +148,7 @@ $$\text{RF 读流量} = N_{src} \times W_{lane} \times 4\,\text{B} = 3 \times 32
 | 维度 | RF operand collector | SMEM bank（引 03） |
 |:---|:---|:---|
 | 服务对象 | 指令源/目操作数的隐式读取 | 显式 load/store 地址流 |
-| 冲突判定 | 寄存器编号映射（逆向口径） | \(\gcd(stride,32)\) 公式可静态算 |
+| 冲突判定 | 寄存器编号映射（逆向口径） | $$\gcd(stride,32)$$ 公式可静态算 |
 | 硬件对策 | 自动 replay 一拍，软件不可见 | 读广播、写串行重放 |
 | 编译器对策 | reuse 标志交给 ptxas；分配器避开 | padding/swizzle/layout pass 可控 |
 
@@ -170,7 +170,7 @@ $$P_{peak}^{FP32} = N_{SM} \times N_{FMA/SM/cycle} \times 2\,\text{FLOP/FMA} \ti
 
 $$II_{pipe} = \left\lceil \frac{W_{lane}}{L_{unit}} \right\rceil = \left\lceil \frac{32}{16} \right\rceil = 2\ \text{拍/条}$$
 
-结合 FFMA 延迟约 4 拍（05 篇微基准口径），喂饱一个分区的 FP32 阵列需要的独立依赖链数为 \(\lceil lat/II \rceil = 2\)——**两条独立 FFMA 链就能让 ALU 满速**，这就是 05 篇累加器拆 4 份绰绰有余的原因（拆 2 份即达上限，多拆是为给 load 留填缝空间）。
+结合 FFMA 延迟约 4 拍（05 篇微基准口径），喂饱一个分区的 FP32 阵列需要的独立依赖链数为 $$\lceil lat/II \rceil = 2$$——**两条独立 FFMA 链就能让 ALU 满速**，这就是 05 篇累加器拆 4 份绰绰有余的原因（拆 2 份即达上限，多拆是为给 load 留填缝空间）。
 
 访存侧完全是另一番天地。把 Little 定律（03 篇）从整片收缩到单 SM：
 
@@ -180,12 +180,12 @@ $$N_{inflight}^{SM} = BW_{share} \times L_{mem} = \frac{2.04\,\text{TB/s}}{108} 
 
 | 符号 | 含义 | 示例取值 | 维度/单位 |
 |:---:|:---|:---|:---|
-| \(BW_{share}\) | 单 SM 分摊带宽 | 约 18.9 GB/s | 字节/秒 |
-| \(L_{mem}\) | HBM 往返延迟 | 约 500 ns（03 篇口径） | 秒 |
-| \(N_{inflight}^{SM}\) | 每 SM 必须的在飞字节 | 约 9.5 KB | 字节 |
-| \(II_{pipe}\) | FP32 管道启动间隔 | 2 | 拍 |
+| $$BW_{share}$$ | 单 SM 分摊带宽 | 约 18.9 GB/s | 字节/秒 |
+| $$L_{mem}$$ | HBM 往返延迟 | 约 500 ns（03 篇口径） | 秒 |
+| $$N_{inflight}^{SM}$$ | 每 SM 必须的在飞字节 | 约 9.5 KB | 字节 |
+| $$II_{pipe}$$ | FP32 管道启动间隔 | 2 | 拍 |
 
-9.5 KB 折算成 LDG.E.128（每 warp 请求 512 B）约 19 个并发请求。驻留 warp 数决定谁来凑这 19 个：满 occupancy 时 64 个 warp 每个摊不到 1 条；但寄存器大户 kernel 只有 8 个 warp 时，**每条 warp 要同时挂着 2~3 个未完成 load**——这意味着深 unroll、多个基址指针、一堆活到消费时刻的目的寄存器。寄存器压力推高 \(r_t\)、\(r_t\) 又压低驻留数：同步 load 路径的死结就在这里拧着，解法在第 6 节。
+9.5 KB 折算成 LDG.E.128（每 warp 请求 512 B）约 19 个并发请求。驻留 warp 数决定谁来凑这 19 个：满 occupancy 时 64 个 warp 每个摊不到 1 条；但寄存器大户 kernel 只有 8 个 warp 时，**每条 warp 要同时挂着 2~3 个未完成 load**——这意味着深 unroll、多个基址指针、一堆活到消费时刻的目的寄存器。寄存器压力推高 $$r_t$$、$$r_t$$ 又压低驻留数：同步 load 路径的死结就在这里拧着，解法在第 6 节。
 
 > 💡 **编译器关联**：cost model 里“ALU 满速”与“带宽满速”是两个量级的需求（2 条链 vs 约 19 个请求），autotuner 搜 unroll 深度时的收益拐点几乎总在后者——前者只是让 II 公式成立的地板，后者才是 Roofline 的天花板。
 
@@ -193,14 +193,14 @@ $$N_{inflight}^{SM} = BW_{share} \times L_{mem} = \frac{2.04\,\text{TB/s}}{108} 
 
 ### 5.1 mma：对外一条指令，对内一段流水
 
-PTX 的 `mma.sync.aligned.m16n8k16`（sm_80 起的 FP16 形状，PTX ISA 官方口径）让一个 warp 的一条指令完成 \(16\times8\times16\) 矩阵块的乘累加——**2048 个 MAC，4096 FLOP**。对照第 05 篇的标量流水，这不是量变：
+PTX 的 `mma.sync.aligned.m16n8k16`（sm_80 起的 FP16 形状，PTX ISA 官方口径）让一个 warp 的一条指令完成 $$16\times8\times16$$ 矩阵块的乘累加——**2048 个 MAC，4096 FLOP**。对照第 05 篇的标量流水，这不是量变：
 
 | 维度 | 05 篇标量 FMA 流水 | Tensor Core mma 流水 |
 |:---|:---|:---|
 | 一条指令的计算量 | 32 MAC（warp 全体） | 2048 MAC |
 | 执行单元 | 每分区 16 个 FP32 lane | 每 TC 内部宽阵列 + 自带缓冲 |
 | 吞吐口径 | 每分区每拍 16 lane | 每 TC 每拍 512 FLOP（01 篇口径反推） |
-| 单条占用 | \(II=2\) 拍 | 约 8 拍/TC（4096 ÷ 512 折算，切分未公开，未验证） |
+| 单条占用 | $$II=2$$ 拍 | 约 8 拍/TC（4096 ÷ 512 折算，切分未公开，未验证） |
 | 延迟 | 约 4 拍 | 十几拍量级（微基准口径，随形状与代际浮动） |
 | 操作数来源 | RF 直供经 operand collector | fragment 寄存器 ← ldmatrix ← SMEM |
 | 冒险主角 | load-use、bank conflict | fragment 布局错位、累加环 |
@@ -209,7 +209,7 @@ A100 的 SM 级吞吐账同样可以反推核对：312 TFLOPS ÷ 108 SM ÷ 1.41 
 
 ### 5.2 喂数才是瓶颈：ldmatrix 与 swizzle
 
-256 MAC/拍的 TC 若零复用地吃操作数，每拍要吞约 1 KB——RF 端口根本直供不起。TC 的解法是**分形复用**：一条 mma 内部，\(K\) 维的每个输入元素被 \(M\times N\) 方向反复使用，外部接口只需要把“fragment”（分布在 warp 32 组寄存器里的矩阵切片）备好。为此 ISA 专门配了装载原语 `ldmatrix`：一条指令让 warp 完成 8 行 128 bit 矩阵块的装载（可选转置），专为 fragment 形状设计（PTX ISA 口径）。
+256 MAC/拍的 TC 若零复用地吃操作数，每拍要吞约 1 KB——RF 端口根本直供不起。TC 的解法是**分形复用**：一条 mma 内部，$$K$$ 维的每个输入元素被 $$M\times N$$ 方向反复使用，外部接口只需要把“fragment”（分布在 warp 32 组寄存器里的矩阵切片）备好。为此 ISA 专门配了装载原语 `ldmatrix`：一条指令让 warp 完成 8 行 128 bit 矩阵块的装载（可选转置），专为 fragment 形状设计（PTX ISA 口径）。
 
 于是 tensorize 之后的数据通路长这样：
 
@@ -227,7 +227,7 @@ SMEM 到 ldmatrix 这一段是 layout pass 的主战场：fragment 要求的元�
 
 ### 5.3 依赖环：05 篇故事的十六倍重演
 
-mma 结果落在累加 fragment 上，连续的 \(acc += A_k \times B_k\) 构成依赖环：环上的 II 被延迟钉住（十几拍），而流水线本可每约 8 拍收一条——利用率立刻减半。解法和 05 篇 §6.3 同构：**拆多份累加器**，对应 GEMM 里沿 \(N\) 方向的多列输出（每列一份 acc fragment，互不相干）。区别只在常数放大：标量时代拆 2 份够用，Tensor Core 场景常拆 2~4 份以上，且每份 acc fragment 占据每线程多个寄存器（f32 累加的 m16n8 输出即 4 个/thread）——**寄存器地皮（03 篇）与 TC 吞吐在这里正面相撞**，这笔账在第 7 节合拢。
+mma 结果落在累加 fragment 上，连续的 $$acc += A_k \times B_k$$ 构成依赖环：环上的 II 被延迟钉住（十几拍），而流水线本可每约 8 拍收一条——利用率立刻减半。解法和 05 篇 §6.3 同构：**拆多份累加器**，对应 GEMM 里沿 $$N$$ 方向的多列输出（每列一份 acc fragment，互不相干）。区别只在常数放大：标量时代拆 2 份够用，Tensor Core 场景常拆 2~4 份以上，且每份 acc fragment 占据每线程多个寄存器（f32 累加的 m16n8 输出即 4 个/thread）——**寄存器地皮（03 篇）与 TC 吞吐在这里正面相撞**，这笔账在第 7 节合拢。
 
 Hopper 把这条路走到了下一个台阶：wgmma 让 4 个 warp 成组协作、操作数可以直接从 SMEM 流入阵列（跳过 RF fragment，官方 Hopper 文档口径），异步化的终点是“指令流分家”——producer warp 只管搬数，consumer warps 只管算。伏笔留给第 6 节的队列机制。
 
@@ -242,7 +242,7 @@ Hopper 把这条路走到了下一个台阶：wgmma 让 4 个 warp 成组协作�
 | 步骤 | 占用什么 | 代价 |
 |:---|:---|:---|
 | LDG 发射与等待 | warp 槽位挂起数百拍 | 调度槽浪费，需别的 warp 顶班 |
-| 目的寄存器 | RF 地皮直到消费 | 推高 \(r_t\) → 压低 occupancy（§7 死结） |
+| 目的寄存器 | RF 地皮直到消费 | 推高 $$r_t$$ → 压低 occupancy（§7 死结） |
 | STS 二次搬运 | 再一次发射 + RF 端口 + 可能 bank conflict | 纯开销 |
 
 Ampere（sm_80）起给出硬件答案：`cp.async` 让全局内存数据**直达 SMEM，不过 RF、不占目的寄存器**（CUDA C Programming Guide 口径）。配套三个原语构成完整的异步语义（PTX ISA 官方定义）：`cp.async` 发拷贝（每线程 4/8/16 B 粒度）、`commit_group` 把已发批次打包成组、`wait_group N` 表示“放行到最多 N 组未完成为止”。SASS 里它叫 `LDGSTS`（社区口径，Lab 3 可自验）。
@@ -261,7 +261,7 @@ flowchart LR
     B0 --> TCX["Tensor Core 计算"]
 ```
 
-下界来自 Little 定律（03 篇埋的伏笔在此兑现）：要让 HBM 满速，每 SM 需要 \(BW_{share}\times L_{mem}\approx 9.5\) KB 在飞；每级 buffer 装 \(B_{stage}\) 字节的 K 切片，于是：
+下界来自 Little 定律（03 篇埋的伏笔在此兑现）：要让 HBM 满速，每 SM 需要 $$BW_{share}\times L_{mem}\approx 9.5$$ KB 在飞；每级 buffer 装 $$B_{stage}$$ 字节的 K 切片，于是：
 
 $$N_{stages} \geq 1 + \left\lceil \frac{BW_{share} \times L_{mem}}{B_{stage}} \right\rceil$$
 
@@ -269,11 +269,11 @@ $$N_{stages} \geq 1 + \left\lceil \frac{BW_{share} \times L_{mem}}{B_{stage}} \r
 
 | 符号 | 含义 | 示例取值 | 维度/单位 |
 |:---:|:---|:---|:---|
-| \(B_{stage}\) | 每级缓冲的字节数 | A/B 各 128×32 FP16 = 8 KB+8 KB = 16 KB | 字节 |
-| \(N_{stages}\) | 流水级数 | 下界 2，工程常取 3~4 | 级 |
-| \(+1\) | “正在被消费的那一级”不算预取 | -- | -- |
+| $$B_{stage}$$ | 每级缓冲的字节数 | A/B 各 128×32 FP16 = 8 KB+8 KB = 16 KB | 字节 |
+| $$N_{stages}$$ | 流水级数 | 下界 2，工程常取 3~4 | 级 |
+| $$+1$$ | “正在被消费的那一级”不算预取 | -- | -- |
 
-代入：\(1+\lceil 9.5/16\rceil = 2\)。工程上取 3~4，余量买的是延迟方差（HBM 行命中与否差一倍）与尾循环重叠。天花板则在另一头：164 KB 的 SMEM 除以每级 16 KB，级数封顶约 10——**下界来自带宽×延迟，上界来自 SRAM 面积，autotuner 搜 `num_stages` 就是在这个区间里找寄存器压力与 occupancy 的平衡点**。Triton 默认生成的 3~4 级、TVM software pipelining 的展开深度，都是这条公式的化身（观察口径，各家默认值随版本浮动）。
+代入：$$1+\lceil 9.5/16\rceil = 2$$。工程上取 3~4，余量买的是延迟方差（HBM 行命中与否差一倍）与尾循环重叠。天花板则在另一头：164 KB 的 SMEM 除以每级 16 KB，级数封顶约 10——**下界来自带宽×延迟，上界来自 SRAM 面积，autotuner 搜 `num_stages` 就是在这个区间里找寄存器压力与 occupancy 的平衡点**。Triton 默认生成的 3~4 级、TVM software pipelining 的展开深度，都是这条公式的化身（观察口径，各家默认值随版本浮动）。
 
 ### 6.3 TMA：从“每人搬一点”到“一人描述整块”
 
@@ -293,27 +293,27 @@ $$W_{resident} = \min\Big(\underbrace{\Big\lfloor \tfrac{R_{SM}}{32\,r_t} \Big\r
 
 | 符号 | 含义 | A100 取值 | 维度/单位 |
 |:---:|:---|:---|:---|
-| \(R_{SM}\) | 每 SM 寄存器堆总量 | 65536 个 32 bit（256 KB，03 篇） | 个 |
-| \(r_t\) | 每线程寄存器数（ptxas 分配结果） | 8~255，架构上限 255 | 个/线程 |
-| \(C_{smem}\) | 每 SM 可配置 SMEM 上限 | 164 KB（03 篇口径） | 字节 |
-| \(s_b,\,T_b\) | 每 block 的 SMEM 用量 / 线程数 | 由 kernel 决定 | 字节、个 |
-| \(W_{slot}\) | 每 SM warp 槽位上限 | 64（CC 8.0 官方表） | 个 |
+| $$R_{SM}$$ | 每 SM 寄存器堆总量 | 65536 个 32 bit（256 KB，03 篇） | 个 |
+| $$r_t$$ | 每线程寄存器数（ptxas 分配结果） | 8~255，架构上限 255 | 个/线程 |
+| $$C_{smem}$$ | 每 SM 可配置 SMEM 上限 | 164 KB（03 篇口径） | 字节 |
+| $$s_b,\,T_b$$ | 每 block 的 SMEM 用量 / 线程数 | 由 kernel 决定 | 字节、个 |
+| $$W_{slot}$$ | 每 SM warp 槽位上限 | 64（CC 8.0 官方表） | 个 |
 
-三个约束的**电路根源各是一座 SRAM**：寄存器约束来自多端口 RF 的面积平方模型（03 篇——每多一个 \(r_t\) 都是实打实的 die 面积）；SMEM 约束来自 6T macro 的物理容量（02/03 篇）；warp 槽约束最少被人谈起，但最诚实——**每个槽位的 PC、活跃掩码、记分板状态都是分区上下文存储的一部分，64 这个数字本身就是面积决策**（01 篇让你查的 `max_threads_per_multi_processor=2048` 在这里兑现）。代入三种典型配置看瓶颈怎么切换：
+三个约束的**电路根源各是一座 SRAM**：寄存器约束来自多端口 RF 的面积平方模型（03 篇——每多一个 $$r_t$$ 都是实打实的 die 面积）；SMEM 约束来自 6T macro 的物理容量（02/03 篇）；warp 槽约束最少被人谈起，但最诚实——**每个槽位的 PC、活跃掩码、记分板状态都是分区上下文存储的一部分，64 这个数字本身就是面积决策**（01 篇让你查的 `max_threads_per_multi_processor=2048` 在这里兑现）。代入三种典型配置看瓶颈怎么切换：
 
 | 配置（A100） | 寄存器上限 | SMEM 上限 | 槽位上限 | 实际驻留 | 瓶颈 |
 |:---|:---:|:---:|:---:|:---:|:---|
-| elementwise：\(r_t\)=32，\(s_b\)=8 KB，\(T_b\)=256 | 64 | 64 | 64 | 64（100%） | 撞满槽位 |
-| 中型 GEMM：\(r_t\)=64，\(s_b\)=64 KB，\(T_b\)=256 | 32 | 16 | 64 | 16（25%） | SMEM |
-| 深 unroll 大户：\(r_t\)=255，\(s_b\)=8 KB，\(T_b\)=256 | 8 | 64 | 64 | 8（12.5%） | 寄存器 |
+| elementwise：$$r_t$$=32，$$s_b$$=8 KB，$$T_b$$=256 | 64 | 64 | 64 | 64（100%） | 撞满槽位 |
+| 中型 GEMM：$$r_t$$=64，$$s_b$$=64 KB，$$T_b$$=256 | 32 | 16 | 64 | 16（25%） | SMEM |
+| 深 unroll 大户：$$r_t$$=255，$$s_b$$=8 KB，$$T_b$$=256 | 8 | 64 | 64 | 8（12.5%） | 寄存器 |
 
 ### 7.2 跷跷板：occupancy 与 ILP 的兑换率
 
-03 篇 §6.2 留过一个现象：“低 occupancy 但深流水”与“高 occupancy 浅流水”都能跑满带宽。本篇给出它的电路解释：Little 定律只约束乘积 \(BW\times L\)，凑在飞量的两条路——**更多 warp**（occupancy 路线，受三约束封顶）与**单 warp 更多未完成 load**（ILP 路线，受寄存器与 unroll 深度封顶）——可以互相兑换。异步拷贝之所以是范式转移，在于它把兑换率改写了：在飞数据搬进 SMEM 和队列表项记账，不再占用 RF 目的寄存器，同一个 \(r_t\) 预算下 ILP 更便宜。
+03 篇 §6.2 留过一个现象：“低 occupancy 但深流水”与“高 occupancy 浅流水”都能跑满带宽。本篇给出它的电路解释：Little 定律只约束乘积 $$BW\times L$$，凑在飞量的两条路——**更多 warp**（occupancy 路线，受三约束封顶）与**单 warp 更多未完成 load**（ILP 路线，受寄存器与 unroll 深度封顶）——可以互相兑换。异步拷贝之所以是范式转移，在于它把兑换率改写了：在飞数据搬进 SMEM 和队列表项记账，不再占用 RF 目的寄存器，同一个 $$r_t$$ 预算下 ILP 更便宜。
 
 但要警惕反面：occupancy 高 ≠ 快。缓存局部性好的 kernel 刻意压低驻留数换更大的 L1/SMEM 份额（GEMM 常驻 25% occupancy 就是典型）；occupancy 只是延迟隐藏的必要条件，不是充分条件。**它是 autotuner 的坐标轴之一，不是优化目标本身**。
 
-> 💡 **编译器关联**：四个旋钮对着三块地皮——`__launch_bounds__`/`-maxrregcount` 直接砍 \(r_t\)（必要时插 spill，03 篇警告过 spill 的价格）；`num_warps` 改变 block 的 warp 形态；tile 尺寸与 `num_stages` 分割 SMEM 地皮；TVN/TVM 的 thread binding 决定前三者怎么联动。第 10 篇会把它们装进 cost model 与 ncu 计数器的映射表。
+> 💡 **编译器关联**：四个旋钮对着三块地皮——`__launch_bounds__`/`-maxrregcount` 直接砍 $$r_t$$（必要时插 spill，03 篇警告过 spill 的价格）；`num_warps` 改变 block 的 warp 形态；tile 尺寸与 `num_stages` 分割 SMEM 地皮；TVN/TVM 的 thread binding 决定前三者怎么联动。第 10 篇会把它们装进 cost model 与 ncu 计数器的映射表。
 
 ## 8. 编译器启示汇总
 
@@ -329,7 +329,7 @@ $$W_{resident} = \min\Big(\underbrace{\Big\lfloor \tfrac{R_{SM}}{32\,r_t} \Big\r
 | HBM 要在飞约 1 MB | Little 定律（03） | 低 occupancy 必须补 MLP 或异步队列 |
 | mma 一条 2048 MAC | TC 宽阵列 + K 维分形复用 | tensorize 原语化；shape 即 Target 契约 |
 | 喂数靠 ldmatrix+swizzle | SMEM 单端口排队（03） | layout pass 以无冲突为目标形态 |
-| cp.async/TMA 解耦“在飞” | 后台拷贝队列 + mbarrier | \(N_{stages}\geq 1+\lceil BW\cdot L/B_{stage}\rceil\) |
+| cp.async/TMA 解耦“在飞” | 后台拷贝队列 + mbarrier | $$N_{stages}\geq 1+\lceil BW\cdot L/B_{stage}\rceil$$ |
 | occupancy 三约束 | RF/SMEM/warp slot 三座 SRAM | 四旋钮联动的 autotuner 天花板 |
 
 一句话收束：**GPU 执行引擎的全部设计都在回答同一个问题——“找并行”这件事，哪些交给电路（打包、掩码、replay、队列），哪些留给编译器（调度、布局、分级、旋钮）。warp 调度器把 CPU 的乱序机器换成一台优先编码器，省下的晶体管换成阵列宽度；而每一份转嫁给软件的责任，最终都变成 cost model 里的一行参数、layout pass 里的一条规则、autotuner 里的一根轴。**
