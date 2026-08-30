@@ -13,6 +13,9 @@ baseurl: ""
 timezone: Asia/Shanghai
 permalink: /:year/:month/:day/:title/
 
+# 允许渲染日期为"未来"的文章（便于当天预先排期写作）
+future: true
+
 # Markdown 渲染
 markdown: kramdown
 highlighter: rouge
