@@ -43,6 +43,7 @@ title: 首页
       {% elsif cat_name == '编译器技术' %}{% assign icon = '🛠️' %}
       {% elsif cat_name == '性能分析' %}{% assign icon = '📊' %}
       {% elsif cat_name == 'LLM算法' %}{% assign icon = '🧩' %}
+      {% elsif cat_name == '算子开发' %}{% assign icon = '⚙️' %}
       {% endif %}
       <a class="category-card" href="/categories/#{{ cat_name | url_encode }}">
         <span class="category-card-icon">{{ icon }}</span>
