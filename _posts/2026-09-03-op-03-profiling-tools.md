@@ -1,6 +1,6 @@
 ---
-title: "算子开发与优化（12）：跨硬件 Profiling 工具链，从 Nsight 到 msprof"
-date: 2026-09-03 21:00:00 +0800
+title: "算子开发与优化（03）：跨硬件 Profiling 工具链，从 Nsight 到 msprof"
+date: 2026-09-03 12:00:00 +0800
 categories:
   - 算子开发
 tags: [profiling, nsight, ncu, aoe, tools, cross-hardware]
@@ -8,9 +8,9 @@ layout: post
 mathjax: true
 ---
 
-> **算子开发与优化系列 · 第 12 篇 / 共 13 篇**（完结篇）
+> **算子开发与优化系列 · 第 03 篇 / 共 14 篇**
 >
-> [11 超越函数](/2026/09/03/op-11-transcendental-math/) ← **本篇**
+> [02 Kernel 语言](/2026/09/03/op-02-kernel-languages/) ← **本篇** → [04 性能分析](/2026/09/03/op-04-performance-analysis/)
 
 **TL;DR**
 > * **背景**：NVIDIA 的 Nsight Systems（nsys）只是"系统层时间线"这一个工具，但很多工程师误以为 profiling 就只有它。换到 AMD/Intel/昇腾/寒武纪后，工具名全部变化，方法论却完全一致——关键是先建立**分层心智模型**。
@@ -69,7 +69,7 @@ graph TD
 
 ### 1.3 三层三问：标准 profiling 流程
 
-03 篇的"三查法"在这里延伸为跨硬件通用流程：
+04 篇的"三查法"在这里延伸为跨硬件通用流程：
 
 1. **框架层**：`torch.profiler` 跑一遍，拿到算子耗时排序 → 找到 Top-N 热点算子
 2. **系统层**：对热点区间开系统 profiler，看 kernel 是否连续执行、有没有同步气泡
@@ -257,16 +257,16 @@ msprof op --aic-metrics=Default,Roofline
 
 ---
 
-## 10. 系列总结：从想清楚到 Tools 的最后一课
+## 10. 工具链小结：从"会跑工具"到"会用工具"
 
-至此 13 篇全部走完。回顾这条路线，可以浓缩成三个递进的闭环：
+到这里，profiling 三层工具你已经全部拿到：框架层（torch.profiler）、系统层（nsys / Perfetto）、内核层（ncu / msprof）。剩下的是把它们**串成流程**——这正是下一篇（04）要展开的内容。把全系列拉直看，可以浓缩成三个递进的闭环，本篇属于第一个闭环：
 
 ```
-闭环一（00-04）：想清楚 —— Roofline 定上界，硬件决定写法，语言选对工具，
-                  tracing 定位层级，优化技术库对着瓶颈开枪。
-闭环二（05-08）：做出来 —— GEMM 金字塔、FlashAttention、归约/归一化三大案例，
-                  昇腾上把同一套方法论换一种表达。
-闭环三（09-12）：规模化 —— 融入框架（自定义算子/torch.compile/MLIR）、
+闭环一（00-05）：想清楚 —— Roofline 定上界，硬件决定写法，语言选对工具，
+                  profiling 定位层级，优化技术库对着瓶颈开枪。
+闭环二（06-10）：做出来 —— GEMM 金字塔、FlashAttention、归约/归一化、卷积、超越函数五大案例，
+                  在真实硬件上把同一套方法论落到极致。
+闭环三（11-13）：规模化 —— 国产 NPU 迁移、融入框架（自定义算子/torch.compile/MLIR）、
                   建算子库与性能模型、用 AI 加速开发、换硬件时工具和方法论平移。
 ```
 
@@ -304,9 +304,9 @@ msprof op --aic-metrics=Default,Roofline
 - 确认跨工具的时间线格式统一
 - 对比不同硬件上的时间线，找出格式一致的地方
 
-### Exercise 5（收尾）：重温 00 篇的 Roofline
+### Exercise 5：用"三层三问"跑通熟悉算子
 
-回到 00 篇，把其中"什么时候 More Work Better、什么时候 Less Work Better"的判断流程重读一遍，用你现在掌握的 GEMM/Attention/LayerNorm 三个案例各自验证一次——**这套判断现在应该变成肌肉记忆了**。
+回到 00 篇，把其中"什么时候 More Work Better、什么时候 Less Work Better"的判断流程重读一遍，再用手头最熟悉的一类算子（如 elementwise / GEMM）把本篇的"三层三问"完整走一遍——**下一篇（04 篇）会教你怎么看每一层的指标，本篇先把流程跑通**。
 
 ---
 
@@ -325,8 +325,5 @@ msprof op --aic-metrics=Default,Roofline
 
 ---
 
-*上一篇：[11 超越函数](/2026/09/03/op-11-transcendental-math/)*
-
----
-
-**系列索引**：[00 算子本质与 Roofline](/2026/09/03/op-00-fundamentals/) · [01 硬件架构](/2026/09/03/op-01-hardware/) · [02 Kernel 语言](/2026/09/03/op-02-kernel-languages/) · [03 性能分析](/2026/09/03/op-03-performance-analysis/) · [04 优化技术](/2026/09/03/op-04-optimization-techniques/) · [05 GEMM 案例](/2026/09/03/op-05-case-gemm/) · [06 Attention 案例](/2026/09/03/op-06-case-attention/) · [07 归约案例](/2026/09/03/op-07-case-normalization/) · [08 国产 NPU](/2026/09/03/op-08-domestic-npu/) · [09 编译器集成](/2026/09/03/op-09-compiler-integration/) · [10 专家之路](/2026/09/03/op-10-expert-level/) · [11 超越函数](/2026/09/03/op-11-transcendental-math/) · [12 Profiling 工具链](/2026/09/03/op-12-profiling-tools/)
+*上一篇：[02 Kernel 语言](/2026/09/03/op-02-kernel-languages/)*
+*下一篇：[04 性能分析](/2026/09/03/op-04-performance-analysis/) —— 15 分钟定位算子瓶颈的方法论。*

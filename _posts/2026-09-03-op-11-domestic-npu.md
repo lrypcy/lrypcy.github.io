@@ -1,6 +1,6 @@
 ---
-title: "算子开发与优化（08）：国产 NPU 实战，昇腾 Ascend C 开发与迁移"
-date: 2026-09-03 17:00:00 +0800
+title: "算子开发与优化（11）：国产 NPU 实战，昇腾 Ascend C 开发与迁移"
+date: 2026-09-03 20:00:00 +0800
 categories:
   - 算子开发
 tags: [npu, ascend, ascend-c, cube, vector, dataflow, domestic-chip]
@@ -8,9 +8,9 @@ layout: post
 mathjax: true
 ---
 
-> **算子开发与优化系列 · 第 08 篇 / 共 13 篇**
+> **算子开发与优化系列 · 第 11 篇 / 共 14 篇**
 >
-> [07 归约案例](/2026/09/03/op-07-case-normalization/) ← **本篇** → [09 编译器集成](/2026/09/03/op-09-compiler-integration/)
+> [10 超越函数](/2026/09/03/op-10-transcendental-math/) ← **本篇** → [12 编译器集成](/2026/09/03/op-12-compiler-integration/)
 
 **TL;DR**
 > * **背景**：国产化替代是当前 AI Infra 的主旋律，昇腾（华为）是国产 AI 芯片中生态最完整的选择之一。对算子工程师而言，从 CUDA 迁移到昇腾的**核心挑战不是语法，而是思维模型**——昇腾的"显式数据搬运 + Cube/Vector 分离"与 CUDA 的"SIMT + 隐式缓存"是两种完全不同的心智模型。
@@ -294,7 +294,7 @@ Roofline 模型在昇腾依然适用，只是把"峰值算力"换成 Cube 单元
 
 ### Exercise 2：对比数据流图
 
-把 05 篇的 Triton GEMM 与本文的 Ascend C GEMM 画成数据流图，对比：
+把 06 篇的 Triton GEMM 与本文的 Ascend C GEMM 画成数据流图，对比：
 - 哪些环节是编译器自动处理的（Triton）
 - 哪些环节必须程序员显式处理（Ascend C）
 - 各自的"自由度"在哪里
@@ -325,5 +325,5 @@ Roofline 模型在昇腾依然适用，只是把"峰值算力"换成 Cube 单元
 
 ---
 
-*上一篇：[07 归约案例](/2026/09/03/op-07-case-normalization/)*
-*下一篇：[09 编译器集成](/2026/09/03/op-09-compiler-integration/) —— 手写 Kernel 与 torch.compile / MLIR 协同。*
+*上一篇：[10 超越函数](/2026/09/03/op-10-transcendental-math/)*
+*下一篇：[12 编译器集成](/2026/09/03/op-12-compiler-integration/) —— 手写 Kernel 与 torch.compile / MLIR 协同。*

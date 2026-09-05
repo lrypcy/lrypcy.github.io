@@ -1,6 +1,6 @@
 ---
-title: "算子开发与优化（06）：案例实战，FlashAttention 与 Online Softmax"
-date: 2026-09-03 15:00:00 +0800
+title: "算子开发与优化（07）：案例实战，FlashAttention 与 Online Softmax"
+date: 2026-09-03 16:00:00 +0800
 categories:
   - 算子开发
 tags: [attention, flashattention, online-softmax, fusion, kernel]
@@ -8,9 +8,9 @@ layout: post
 mathjax: true
 ---
 
-> **算子开发与优化系列 · 第 06 篇 / 共 13 篇**
+> **算子开发与优化系列 · 第 07 篇 / 共 14 篇**
 >
-> [05 GEMM 案例](/2026/09/03/op-05-case-gemm/) ← **本篇** → [07 归约案例](/2026/09/03/op-07-case-normalization/)
+> [06 GEMM 案例](/2026/09/03/op-06-case-gemm/) ← **本篇** → [08 归约案例](/2026/09/03/op-08-case-normalization/)
 
 **TL;DR**
 > * **背景**：FlashAttention 是近年来算子优化的标志性成果——它把 Transformer 的注意力从"显存读写受限"变成"算力受限"，让长序列训练成为可能，并启发了 PagedAttention 等一系列工作。对算子工程师而言，它是"融合 + Online 算法"两个思想的完美结合案例。
@@ -58,7 +58,7 @@ $$
 
 当 $d = 64$ 时 $I \approx 21$，仍然远低于 H100 dense FP16 的 ridge point（~148）——**传统 Attention 是 Memory Bound**。
 
-> 对照 03 篇的流程走一遍：算术强度低于 ridge point → 先别优化计算，先把访存压下去。FlashAttention 做的正是这件事。
+> 对照 04 篇的流程走一遍：算术强度低于 ridge point → 先别优化计算，先把访存压下去。FlashAttention 做的正是这件事。
 
 ---
 
@@ -249,7 +249,7 @@ graph TD
     style F fill:#ffff99
 ```
 
-**这三个思想每一个都来自前面的技术篇**：融合（04 篇）、Tiling（04 篇）、数值稳定技巧。**FlashAttention 不是发明了新硬件特性，而是把已有优化技术做到了极致组合。**
+**这三个思想每一个都来自前面的技术篇**：融合（05 篇）、Tiling（05 篇）、数值稳定技巧。**FlashAttention 不是发明了新硬件特性，而是把已有优化技术做到了极致组合。**
 
 ### 4.2 数值稳定性验证
 
@@ -315,5 +315,5 @@ Online Softmax 的数值精度与标准两遍 Softmax 几乎一致（误差在 F
 
 ---
 
-*上一篇：[05 GEMM 案例](/2026/09/03/op-05-case-gemm/)*
-*下一篇：[07 归约案例](/2026/09/03/op-07-case-normalization/) —— LayerNorm 与访存密集算子优化。*
+*上一篇：[06 GEMM 案例](/2026/09/03/op-06-case-gemm/)*
+*下一篇：[08 归约案例](/2026/09/03/op-08-case-normalization/) —— LayerNorm 与访存密集算子优化。*

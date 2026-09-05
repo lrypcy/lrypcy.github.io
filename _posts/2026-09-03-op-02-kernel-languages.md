@@ -8,9 +8,9 @@ layout: post
 mathjax: true
 ---
 
-> **算子开发与优化系列 · 第 02 篇 / 共 13 篇**
+> **算子开发与优化系列 · 第 02 篇 / 共 14 篇**
 >
-> [01 硬件架构](/2026/09/03/op-01-hardware/) ← **本篇** → [03 性能分析](/2026/09/03/op-03-performance-analysis/)
+> [01 硬件架构](/2026/09/03/op-01-hardware/) ← **本篇** → [03 Profiling 工具链](/2026/09/03/op-03-profiling-tools/)
 
 **TL;DR**
 > * **背景**：理解硬件（01 篇）之后，第一个现实问题就是：用什么语言写 kernel？CUDA 灵活但繁琐，Triton 高效但受限，Ascend C 是国产化必须。选错语言，轻则开发慢，重则被硬件特性困死。
@@ -148,7 +148,7 @@ def add_kernel(x_ptr, y_ptr, output_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
 2. **自动优化**：编译器自动决定如何用 warp、如何排共享内存、如何生成 Tensor Core 指令
 3. **Mask 处理边界**：`mask=` 参数处理越界访问，编译器生成 predicated 代码
 
-### 3.3 Triton 的 GEMM（对比 05 篇的 CUDA 版）
+### 3.3 Triton 的 GEMM（对比 06 篇的 CUDA 版）
 
 ```python
 @triton.jit
@@ -346,7 +346,7 @@ graph TD
 对大多数业务算子，推荐**混合策略**：
 
 1. **先用 Triton 写**，跑通逻辑、拿到 80% 性能基线
-2. **用 profiler 定位**（03 篇）真正是热点的 kernel
+2. **用 profiler 定位**（04 篇）真正是热点的 kernel
 3. **对热点 kernel 手写 CUDA**，精确控制访存和指令调度
 4. **回归测试**：新 CUDA 版本必须比 Triton 版本快且正确
 
@@ -384,7 +384,7 @@ graph TD
 
 ### Exercise 2：Triton 写出 GEMM 并对比 cuBLAS
 
-用 05 篇的 Triton GEMM 代码，在 4096³ 输入上与 `torch.matmul`（底层 cuBLAS）对比：
+用 06 篇的 Triton GEMM 代码，在 4096³ 输入上与 `torch.matmul`（底层 cuBLAS）对比：
 - 调整 `BLOCK_M/BLOCK_N/BLOCK_K` 和 `num_warps`
 - 记录每个配置的 TFLOPS
 - 看差距是否在 10% 以内（是则说明 Triton 自动优化已经很好）
@@ -409,4 +409,4 @@ graph TD
 ---
 
 *上一篇：[01 硬件架构](/2026/09/03/op-01-hardware/)*
-*下一篇：[03 性能分析](/2026/09/03/op-03-performance-analysis/) —— 15 分钟定位算子瓶颈的方法论。*
+*下一篇：[03 Profiling 工具链](/2026/09/03/op-03-profiling-tools/) —— 跨硬件 Profiling 工具链选型。*

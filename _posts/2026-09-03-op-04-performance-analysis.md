@@ -1,6 +1,6 @@
 ---
-title: "算子开发与优化（03）：性能分析方法论，15 分钟定位算子瓶颈"
-date: 2026-09-03 12:00:00 +0800
+title: "算子开发与优化（04）：性能分析方法论，15 分钟定位算子瓶颈"
+date: 2026-09-03 13:00:00 +0800
 categories:
   - 算子开发
 tags: [profiling, nsys, ncu, performance-analysis, roofline, methodology]
@@ -8,9 +8,11 @@ layout: post
 mathjax: true
 ---
 
-> **算子开发与优化系列 · 第 03 篇 / 共 13 篇**
+> **算子开发与优化系列 · 第 04 篇 / 共 14 篇**
 >
-> [02 Kernel 语言](/2026/09/03/op-02-kernel-languages/) ← **本篇** → [04 优化技术](/2026/09/03/op-04-optimization-techniques/)
+> [03 Profiling 工具链](/2026/09/03/op-03-profiling-tools/) ← **本篇** → [05 优化技术](/2026/09/03/op-05-optimization-techniques/)
+>
+> **工具速览**：本篇聚焦"怎么想"，实操抓取 Trace/Metric 的具体工具（Nsight Systems / Compute、msprof）详见 [03 篇《跨硬件 Profiling 工具链》](/2026/09/03/op-03-profiling-tools/)。建议先通读 03 篇的工具操作，再回来用本篇方法论逐条排查。
 
 **TL;DR**
 > * **背景**：Roofline 模型给了你理论判断，但实际 kernel 往往"感觉慢"却说不出慢在哪。没有 profiling 数据的优化是玄学——这是算子开发最核心的一条纪律。
@@ -197,7 +199,7 @@ graph TD
 
 **假设 2：访存量过大**
 - 统计发现算了两次 `exp`（一次求 max 一次求 exp）→ 额外读写了中间结果
-- 修正：Online Softmax（06 篇会详讲）一次遍历 → DRAM 升到 85%
+- 修正：Online Softmax（07 篇会详讲）一次遍历 → DRAM 升到 85%
 
 **假设 3：带宽利用不足**
 - 检查向量化：标量访问 vs float4 → 向量化后升到 92%
@@ -309,5 +311,5 @@ nvcc -o bench bench.cu && ncu --section SpeedOfLight ./bench
 
 ---
 
-*上一篇：[02 Kernel 语言](/2026/09/03/op-02-kernel-languages/)*
-*下一篇：[04 优化技术](/2026/09/03/op-04-optimization-techniques/) —— 优化技术体系全景。*
+*上一篇：[03 Profiling 工具链](/2026/09/03/op-03-profiling-tools/)*
+*下一篇：[05 优化技术](/2026/09/03/op-05-optimization-techniques/) —— 优化技术体系全景。*

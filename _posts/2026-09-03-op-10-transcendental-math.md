@@ -1,6 +1,6 @@
 ---
-title: "算子开发与优化（11）：超越函数，GPU / NPU 是怎么算 exp、log、sin 的"
-date: 2026-09-03 20:00:00 +0800
+title: "算子开发与优化（10）：超越函数，GPU / NPU 是怎么算 exp、log、sin 的"
+date: 2026-09-03 19:00:00 +0800
 categories:
   - 算子开发
 tags: [transcendental, mufu, sfu, polynomial, lookup-table, numerical]
@@ -8,9 +8,9 @@ layout: post
 mathjax: true
 ---
 
-> **算子开发与优化系列 · 第 11 篇 / 共 13 篇**
+> **算子开发与优化系列 · 第 10 篇 / 共 14 篇**
 >
-> [10 专家之路](/2026/09/03/op-10-expert-level/) ← **本篇** → [12 Profiling 工具链](/2026/09/03/op-12-profiling-tools/)
+> [09 卷积实战](/2026/09/03/op-09-convolution/) ← **本篇** → [11 国产 NPU](/2026/09/03/op-11-domestic-npu/)
 
 **TL;DR**
 > * **背景**：Transformer 里的 Softmax、LayerNorm、GELU、FlashAttention 全都绕不开 `exp`、`log`、`rsqrt` 这些超越函数（transcendental functions）。它们的硬件实现方式，直接决定了算子的性能天花板。
@@ -304,7 +304,7 @@ graph TD
 2. **让 Vector 单元吃饱**：exp 的多项式序列是 Vector FMA，要和 Cube 矩阵运算并行调度
 3. **考虑查表友好性**：把输入先 clamp 到查表区间，避免边界分支
 
-这也是 08 篇里提到的：昇腾算子的 `Exp` 属于 Vector 计算密集路径，和 GPU 的"一条 SFU 指令"在性能模型上**不可直接类比**。
+这也是 11 篇里提到的：昇腾算子的 `Exp` 属于 Vector 计算密集路径，和 GPU 的"一条 SFU 指令"在性能模型上**不可直接类比**。
 
 ---
 
@@ -340,14 +340,14 @@ TPU 的哲学是"**把矩阵做到极致，把其他做简单**"。超越函数�
 
 ### 9.1 FlashAttention 为什么"省"了 exp
 
-FlashAttention（06 篇）的 Online Softmax 技巧，从**访存**角度省了中间矩阵的读写。但它的 exp 调用次数**没变**（每个元素还是 1 次）。那为什么 FA 快？因为：
+FlashAttention（07 篇）的 Online Softmax 技巧，从**访存**角度省了中间矩阵的读写。但它的 exp 调用次数**没变**（每个元素还是 1 次）。那为什么 FA 快？因为：
 
 1. 省下的是带宽（原版 Softmax 是带宽瓶颈，exp 的慢被带宽掩盖）
 2. 融合后 FA 变成计算/带宽混合，exp 开始暴露——这时**用 `__expf` 而不是 `expf` 就成了关键优化**（实测 2 条 vs 20 条指令）
 
 ### 9.2 LayerNorm 的 rsqrt 选择
 
-07 篇的 LayerNorm 优化里，用 `rsqrt` 而非 `sqrt + div` 能省一半超越函数开销。对带宽瓶颈的 LayerNorm 影响不大，但一旦融合进计算密集场景，这 1 条指令的差异就会显现。
+08 篇的 LayerNorm 优化里，用 `rsqrt` 而非 `sqrt + div` 能省一半超越函数开销。对带宽瓶颈的 LayerNorm 影响不大，但一旦融合进计算密集场景，这 1 条指令的差异就会显现。
 
 ### 9.3 快速版精度到底行不行
 
@@ -394,7 +394,7 @@ SFU 是独立于 FP32 Core 的物理单元，**它可以和 FMA 并行**。所�
 - 标准版：`expf`
 - 快速版：`__expf`
 - 对比端到端精度（输出差多远）与性能
-- 再叠加 Online Softmax（06 篇），观察组合效果
+- 再叠加 Online Softmax（07 篇），观察组合效果
 
 ### Exercise 5（昇腾）：软实现 exp 的开销
 
@@ -418,5 +418,5 @@ SFU 是独立于 FP32 Core 的物理单元，**它可以和 FMA 并行**。所�
 
 ---
 
-*上一篇：[10 专家之路](/2026/09/03/op-10-expert-level/)*
-*下一篇：[12 Profiling 工具链](/2026/09/03/op-12-profiling-tools/) —— 跨硬件 Profiling 工具链选型。*
+*上一篇：[09 卷积实战](/2026/09/03/op-09-convolution/)*
+*下一篇：[11 国产 NPU](/2026/09/03/op-11-domestic-npu/) —— 昇腾 Ascend C 算子开发。*

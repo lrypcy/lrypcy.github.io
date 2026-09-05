@@ -1,6 +1,6 @@
 ---
-title: "算子开发与优化（04）：优化技术体系，Tiling / 向量化 / 双缓冲 / 布局优化的完整工具箱"
-date: 2026-09-03 13:00:00 +0800
+title: "算子开发与优化（05）：优化技术体系，Tiling / 向量化 / 双缓冲 / 布局优化的完整工具箱"
+date: 2026-09-03 14:00:00 +0800
 categories:
   - 算子开发
 tags: [tiling, vectorization, double-buffering, layout-optimization, fusion, optimization]
@@ -8,13 +8,13 @@ layout: post
 mathjax: true
 ---
 
-> **算子开发与优化系列 · 第 04 篇 / 共 13 篇**
+> **算子开发与优化系列 · 第 05 篇 / 共 14 篇**
 >
-> [03 性能分析](/2026/09/03/op-03-performance-analysis/) ← **本篇** → [05 GEMM 案例](/2026/09/03/op-05-case-gemm/)
+> [04 性能分析](/2026/09/03/op-04-performance-analysis/) ← **本篇** → [06 GEMM 案例](/2026/09/03/op-06-case-gemm/)
 
 **TL;DR**
 > * **背景**：前面四篇建立了"判断瓶颈"的能力（Roofline、硬件理解、语言掌握、profiling 纪律），但判断完瓶颈后，"怎么改"才是真正的战场。这一篇给出可复用的**优化技术工具箱**，每项技术讲清"解决什么问题、代价是什么、什么时候用"。
-> * **核心发现**：所有高性能 kernel 优化最终收敛到四个核心手法——**Tiling（切分数据提升复用）、向量化（合并访存压满带宽）、双缓冲/流水线（隐藏访存延迟）、布局优化（让数据天然适配硬件）**。GEMM、FlashAttention、LayerNorm 三大案例（后续三篇）都是这四件套的具体组合。
+> * **核心发现**：所有高性能 kernel 优化最终收敛到四个核心手法——**Tiling（切分数据提升复用）、向量化（合并访存压满带宽）、双缓冲/流水线（隐藏访存延迟）、布局优化（让数据天然适配硬件）**。GEMM、FlashAttention、LayerNorm、卷积、超越函数五大案例（后续各篇）都是这四件套的具体组合。
 > * **收益**：拿到任何算子，都能从工具箱里选出正确的优化组合，并预判每项优化的收益量级。
 > * **适用人群**：会写简单 kernel、想系统建立优化方法论的工程师。
 
@@ -287,7 +287,7 @@ acc = tl.dot(a, b_t)
 
 ### 6.2 融合的收益量化
 
-以 Transformer 块里的 `LayerNorm → 残差相加 → 激活` 融合为例（07 篇的完整案例）：
+以 Transformer 块里的 `LayerNorm → 残差相加 → 激活` 融合为例（08 篇的完整案例）：
 
 | 方案 | 访存量 | 算术强度 | 说明 |
 |---|---|---|---|
@@ -322,13 +322,15 @@ graph TD
     I --> J
 ```
 
-**三大案例预告**（后续三篇将是这套工具的组合应用）：
+**案例预告**（后续五篇案例实战将是这套工具的组合应用）：
 
 | 案例 | 主要技术 | 次要技术 |
 |---|---|---|
-| GEMM（05） | Tiling + Tensor Core + 流水线 | 布局优化、向量化 |
-| FlashAttention（06） | 融合 + Online Softmax | Tiling、寄存器布局 |
-| LayerNorm（07） | 融合 + 归约优化 | 向量化、Warp Shuffle |
+| GEMM（06） | Tiling + Tensor Core + 流水线 | 布局优化、向量化 |
+| FlashAttention（07） | 融合 + Online Softmax | Tiling、寄存器布局 |
+| LayerNorm（08） | 融合 + 归约优化 | 向量化、Warp Shuffle |
+| 卷积（09） | 隐式 GEMM / Winograd | 复用 GEMM 的 tiling 思路 |
+| 超越函数（10） | 多项式近似 / 查表 | 与访存融合（减缓超越压力） |
 
 ---
 
@@ -366,5 +368,5 @@ graph TD
 
 ---
 
-*上一篇：[03 性能分析](/2026/09/03/op-03-performance-analysis/)*
-*下一篇：[05 GEMM 案例](/2026/09/03/op-05-case-gemm/) —— 从 Naive 到 Tensor Core 的性能金字塔。*
+*上一篇：[04 性能分析](/2026/09/03/op-04-performance-analysis/)*
+*下一篇：[06 GEMM 案例](/2026/09/03/op-06-case-gemm/) —— 从 Naive 到 Tensor Core 的性能金字塔。*

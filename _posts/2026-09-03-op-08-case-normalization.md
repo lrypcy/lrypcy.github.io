@@ -1,6 +1,6 @@
 ---
-title: "算子开发与优化（07）：案例实战，LayerNorm / 归约与访存密集算子优化"
-date: 2026-09-03 16:00:00 +0800
+title: "算子开发与优化（08）：案例实战，访存密集型算子优化：以 Reduction 与 LayerNorm 为例"
+date: 2026-09-03 17:00:00 +0800
 categories:
   - 算子开发
 tags: [layernorm, normalization, memory-bound, reduction, warp-shuffle, welford]
@@ -8,9 +8,9 @@ layout: post
 mathjax: true
 ---
 
-> **算子开发与优化系列 · 第 07 篇 / 共 13 篇**
+> **算子开发与优化系列 · 第 08 篇 / 共 14 篇**
 >
-> [06 Attention 案例](/2026/09/03/op-06-case-attention/) ← **本篇** → [08 国产 NPU](/2026/09/03/op-08-domestic-npu/)
+> [07 Attention 案例](/2026/09/03/op-07-case-attention/) ← **本篇** → [09 卷积实战](/2026/09/03/op-09-convolution/)
 
 **TL;DR**
 > * **背景**：GEMM 和 FlashAttention 是"计算密集"的优化代表，但深度学习里还有大量**访存密集**算子——LayerNorm、Softmax、各种 Reduce。这类算子每读一个数据只做 O(1) 次运算，算术强度极低，优化目标和计算密集算子**完全不同**。
@@ -104,7 +104,7 @@ y3 = fused_ln_dropout_add(x, residual, gamma, beta, mask)
 
 ### 3.3 融合案例：Softmax 的"一次遍历"
 
-标准 Softmax 需要两次遍历（先求 max，再求 exp/sum）。**Online Softmax**（06 篇已推导）可以一次遍历完成。
+标准 Softmax 需要两次遍历（先求 max，再求 exp/sum）。**Online Softmax**（07 篇已推导）可以一次遍历完成。
 
 ### 3.4 一次遍历统计技巧（Welford 算法）
 
@@ -307,7 +307,7 @@ __global__ void layernorm_stats(const float* x, float* y,
 
 **实测参考**：LayerNorm 优化到位后，带宽利用率可达 85-95% 峰值，延迟对比 PyTorch 默认实现快 2-4 倍。
 
-> 这个 +1 → +4 的路径与 05 篇 GEMM 金字塔是**同一套方法论**：先定瓶颈（Roofline）→ 减访存 → 压带宽 → 叠优化。区别只是对的算力/带宽分配不同。
+> 这个 +1 → +4 的路径与 06 篇 GEMM 金字塔是**同一套方法论**：先定瓶颈（Roofline）→ 减访存 → 压带宽 → 叠优化。区别只是对的算力/带宽分配不同。
 
 ---
 
@@ -386,5 +386,5 @@ def _layer_norm_fwd_fused(
 
 ---
 
-*上一篇：[06 Attention 案例](/2026/09/03/op-06-case-attention/)*
-*下一篇：[08 国产 NPU](/2026/09/03/op-08-domestic-npu/) —— 昇腾 Ascend C 算子开发。*
+*上一篇：[07 Attention 案例](/2026/09/03/op-07-case-attention/)*
+*下一篇：[09 卷积实战](/2026/09/03/op-09-convolution/) —— im2col / 隐式 GEMM / Winograd 案例。*
