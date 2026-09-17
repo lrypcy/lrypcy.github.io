@@ -16,6 +16,7 @@
   var scale = 1, tx = 0, ty = 0;
   var baseW = 1, baseH = 1, fitScale = 1;
   var userZoomed = false;
+  var openSeq = 0;   // 每次打开/关闭自增，用于丢弃过期的异步渲染结果
 
   var pointers = {};
   var pointerCount = 0;
@@ -236,12 +237,6 @@
   }
 
   function openContent(node, kind) {
-    build();
-    lastFocus = document.activeElement;
-
-    content.className = 'pcy-lb-content' + (kind === 'svg' ? ' pcy-for-svg' : ' pcy-for-img');
-    content.innerHTML = '';
-
     var clone = node.cloneNode(true);
     if (kind === 'svg') {
       var r = node.getBoundingClientRect();
@@ -252,17 +247,7 @@
       clone.style.width = w + 'px';
       clone.style.height = h + 'px';
       clone.style.maxWidth = 'none';
-      // mermaid 的样式作用域是 SVG 自身 id（#mermaid-xxx ...）写在内嵌 <style> 里，
-      // 克隆后必须同步改写 id 与 <style> 作用域，否则样式失配、节点退化成黑色填充
-      var srcId = node.getAttribute('id');
-      var newId = 'pcy-lb-svg-' + Math.random().toString(36).slice(2, 8);
-      clone.setAttribute('id', newId);
-      if (srcId) {
-        var st = clone.querySelector('style');
-        if (st && st.textContent.indexOf('#' + srcId) !== -1) {
-          st.textContent = st.textContent.split('#' + srcId).join('#' + newId);
-        }
-      }
+      fixSvgScope(clone, node);
     } else {
       clone.removeAttribute('id');
       var nw = node.naturalWidth || node.clientWidth || 800;
@@ -273,17 +258,7 @@
       clone.style.borderRadius = '6px';
       if (nh) clone.setAttribute('height', nh);
     }
-    content.appendChild(clone);
-
-    isOpen = true;
-    overlay.classList.add('open');
-    overlay.setAttribute('aria-hidden', 'false');
-    lockScroll(true);
-
-    measureBase();
-    fit();
-    var btn = $('.pcy-lb-btn[data-act="close"]', bar);
-    if (btn) btn.focus();
+    mountNode(clone, kind === 'svg' ? 'pcy-for-svg' : 'pcy-for-img');
   }
 
   function lockScroll(on) {
@@ -301,11 +276,86 @@
   function close() {
     if (!isOpen) return;
     isOpen = false;
+    openSeq++;
     overlay.classList.remove('open');
     overlay.setAttribute('aria-hidden', 'true');
     lockScroll(false);
     content.innerHTML = '';
     if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+
+  // mermaid 的样式作用域是 SVG 自身 id（#mermaid-xxx ...）写在内嵌 <style> 里，
+  // 克隆后必须同步改写 id 与 <style> 作用域，否则样式失配、节点退化成黑色填充
+  function fixSvgScope(clone, orig) {
+    var srcId = orig.getAttribute('id');
+    var newId = 'pcy-lb-svg-' + Math.random().toString(36).slice(2, 8);
+    clone.setAttribute('id', newId);
+    if (srcId) {
+      var st = clone.querySelector('style');
+      if (st && st.textContent.indexOf('#' + srcId) !== -1) {
+        st.textContent = st.textContent.split('#' + srcId).join('#' + newId);
+      }
+    }
+  }
+
+  function showSvgNode(svg, w, h, lightCanvas) {
+    svg.setAttribute('width', w);
+    svg.setAttribute('height', h);
+    svg.style.width = w + 'px';
+    svg.style.height = h + 'px';
+    svg.style.maxWidth = 'none';
+    mountNode(svg, 'pcy-for-svg' + (lightCanvas ? ' pcy-light-canvas' : ''));
+  }
+
+  function mountNode(node, cls) {
+    build();
+    lastFocus = document.activeElement;
+    content.className = 'pcy-lb-content ' + cls;
+    content.innerHTML = '';
+    content.appendChild(node);
+    isOpen = true;
+    openSeq++;
+    overlay.classList.add('open');
+    overlay.setAttribute('aria-hidden', 'false');
+    lockScroll(true);
+    measureBase();
+    fit();
+    var btn = $('.pcy-lb-btn[data-act="close"]', bar);
+    if (btn) btn.focus();
+  }
+
+  /* Mermaid：全屏时统一用浅色主题重新渲染（深色主题下整屏发黑，看不清） */
+  function openMermaid(mmd) {
+    var orig = mmd.querySelector('svg');
+    if (!orig) return;
+    var r = orig.getBoundingClientRect();
+    var w = Math.round(r.width) || 800;
+    var h = Math.round(r.height) || 600;
+    var src = mmd.getAttribute('data-mmd-src');
+    var seq = openSeq;
+
+    function fallback() {
+      var c = orig.cloneNode(true);
+      fixSvgScope(c, orig);
+      showSvgNode(c, w, h, false);
+    }
+
+    if (!(window.mermaid && src && typeof window.mermaid.render === 'function')) { fallback(); return; }
+
+    try {
+      window.mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
+      var id = 'pcy-lb-svg-' + Math.random().toString(36).slice(2, 8);
+      var p = window.mermaid.render(id, src);
+      if (!p || !p.then) { fallback(); return; }
+      p.then(function (res) {
+        if (seq !== openSeq) return;           // 期间已关闭，丢弃
+        var box = document.createElement('div');
+        box.innerHTML = (res && res.svg) || '';
+        var svg = box.querySelector('svg');
+        if (!svg) { fallback(); return; }
+        showSvgNode(svg, w, h, true);
+      }, fallback);
+    } catch (e) { fallback(); }
   }
 
   /* ---------- 挂载入口 ---------- */
@@ -328,17 +378,13 @@
       btn.title = '全屏查看（可缩放 / 平移）';
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
-        var svg = mmd.querySelector('svg');
-        if (svg) openContent(svg, 'svg');
+        openMermaid(mmd);
       });
       fig.appendChild(btn);
 
       mmd.classList.add('pcy-zoomable');
       mmd.title = '点击全屏查看';
-      mmd.addEventListener('click', function () {
-        var svg = mmd.querySelector('svg');
-        if (svg) openContent(svg, 'svg');
-      });
+      mmd.addEventListener('click', function () { openMermaid(mmd); });
     });
   }
 

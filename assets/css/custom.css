@@ -1458,7 +1458,13 @@ a { color: var(--primary); }
   border-radius: 10px;
 }
 .pcy-lb-content.pcy-for-svg svg { display: block; }
-.pcy-lb-content.pcy-for-img { padding: 0; }
+.pcy-lb-content.pcy-for-img { padding: 0; background: #fff; }
+/* 全屏画布恒为浅色：深色主题下 mermaid 图会整体发黑，看不清 */
+.pcy-lb-content.pcy-for-svg.pcy-light-canvas {
+  background: #fff;
+  border-color: #e6edf4;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.28);
+}
 
 .pcy-lb-hint {
   position: relative;
@@ -1483,7 +1489,8 @@ a { color: var(--primary); }
 }
 
 @media (prefers-color-scheme: dark) {
-  .pcy-lb { background: rgba(15, 23, 41, 0.95); }
+  /* 深色模式下遮罩保留一定透明度 + 模糊，能透出底层页面，避免"整个屏幕一片黑" */
+  .pcy-lb { background: rgba(15, 23, 41, 0.78); }
   .pcy-zoom-btn { background: rgba(26, 35, 52, 0.9); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
 }
 

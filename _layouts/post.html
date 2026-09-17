@@ -193,6 +193,8 @@ layout: default
       div.className = 'mermaid';
       div.id = 'mmd-' + i;
       div.textContent = code.textContent.trim();
+      // 保留源码：全屏查看时按浅色主题重新渲染，避免深色主题下整屏发黑
+      div.setAttribute('data-mmd-src', code.textContent.trim());
       pre.parentElement.replaceChild(div, pre);
       divs.push(div);
     });
