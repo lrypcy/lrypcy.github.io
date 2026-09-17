@@ -243,7 +243,6 @@
     content.innerHTML = '';
 
     var clone = node.cloneNode(true);
-    clone.removeAttribute('id');
     if (kind === 'svg') {
       var r = node.getBoundingClientRect();
       var w = Math.round(r.width) || parseFloat(node.getAttribute('width')) || 800;
@@ -253,7 +252,19 @@
       clone.style.width = w + 'px';
       clone.style.height = h + 'px';
       clone.style.maxWidth = 'none';
+      // mermaid 的样式作用域是 SVG 自身 id（#mermaid-xxx ...）写在内嵌 <style> 里，
+      // 克隆后必须同步改写 id 与 <style> 作用域，否则样式失配、节点退化成黑色填充
+      var srcId = node.getAttribute('id');
+      var newId = 'pcy-lb-svg-' + Math.random().toString(36).slice(2, 8);
+      clone.setAttribute('id', newId);
+      if (srcId) {
+        var st = clone.querySelector('style');
+        if (st && st.textContent.indexOf('#' + srcId) !== -1) {
+          st.textContent = st.textContent.split('#' + srcId).join('#' + newId);
+        }
+      }
     } else {
+      clone.removeAttribute('id');
       var nw = node.naturalWidth || node.clientWidth || 800;
       var nh = node.naturalHeight || node.clientHeight || 600;
       clone.style.width = nw + 'px';
