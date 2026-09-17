@@ -196,7 +196,12 @@ layout: default
       pre.parentElement.replaceChild(div, pre);
       divs.push(div);
     });
-    mermaid.run({ nodes: divs });
+    // 渲染完成后把「全屏 / 缩放」挂到新生成的图上
+    var done = function () { if (window.PCYZoom) window.PCYZoom.attach(document); };
+    try {
+      var p = mermaid.run({ nodes: divs });
+      if (p && p.then) p.then(done, done); else done();
+    } catch (e) { done(); }
   }
 
   document.addEventListener('DOMContentLoaded', function () {

@@ -1310,3 +1310,189 @@ a { color: var(--primary); }
   .search-overlay { background: rgba(0, 0, 0, 0.6); }
   .search-footer { background: var(--card-bg); }
 }
+
+/* ============================================================
+   图片 / Mermaid 全屏查看器（assets/js/zoom.js）
+   交互：点击 ⛶ 或图本身全屏；滚轮 / 双指缩放；拖拽平移；双击切换
+   ============================================================ */
+
+/* --- 触发入口 --- */
+.pcy-fig { position: relative; }
+.pcy-img-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.pcy-img-wrap > img { display: block; }
+.pcy-zoomable { cursor: zoom-in; }
+.pcy-nozoom .pcy-zoom-btn { display: none; }
+.pcy-nozoom .pcy-img-wrap > img,
+.pcy-nozoom.pcy-img-wrap > img { cursor: default; }
+
+.pcy-zoom-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  font-size: 12px;
+  line-height: 1;
+  font-family: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(30, 40, 60, 0.12);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 0.18s ease, transform 0.18s ease,
+    background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.pcy-zoom-icon { font-size: 13px; }
+.pcy-fig:hover .pcy-zoom-btn,
+.pcy-img-wrap:hover .pcy-zoom-btn { opacity: 1; transform: none; }
+.pcy-zoom-btn:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+@media (hover: none) {
+  .pcy-zoom-btn { opacity: 0.92; transform: none; }
+}
+
+/* --- 全屏层 --- */
+.pcy-lb {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: rgba(246, 249, 252, 0.95);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.pcy-lb.open { opacity: 1; visibility: visible; }
+
+.pcy-lb-bar {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 6px rgba(30, 40, 60, 0.06);
+}
+.pcy-lb-btn {
+  height: 30px;
+  min-width: 34px;
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.pcy-lb-btn:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.pcy-lb-close { font-size: 14px; }
+.pcy-lb-scale {
+  min-width: 58px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-light);
+  font-variant-numeric: tabular-nums;
+}
+.pcy-lb-spacer { flex: 1; }
+
+.pcy-lb-stage {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+.pcy-lb-stage.dragging { cursor: grabbing; }
+
+.pcy-lb-content {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  will-change: transform;
+  box-shadow: var(--shadow);
+}
+.pcy-lb-content > * { flex: 0 0 auto; max-width: none; display: block; }
+.pcy-lb-content.pcy-anim { transition: transform 0.2s ease-out; }
+.pcy-lb-content.pcy-for-svg {
+  padding: 18px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.pcy-lb-content.pcy-for-svg svg { display: block; }
+.pcy-lb-content.pcy-for-img { padding: 0; }
+
+.pcy-lb-hint {
+  position: relative;
+  z-index: 3;
+  padding: 9px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-light);
+  background: var(--card-bg);
+  border-top: 1px solid var(--border);
+}
+.pcy-lb-hint kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  margin: 0 1px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pcy-lb { background: rgba(15, 23, 41, 0.95); }
+  .pcy-zoom-btn { background: rgba(26, 35, 52, 0.9); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
+}
+
+@media (max-width: 640px) {
+  .pcy-lb-wide { display: none; }
+  .pcy-lb-bar { padding: 8px 12px; gap: 6px; }
+  .pcy-lb-hint { font-size: 11px; }
+}
+
+@media print {
+  .pcy-zoom-btn, .pcy-lb { display: none !important; }
+}
