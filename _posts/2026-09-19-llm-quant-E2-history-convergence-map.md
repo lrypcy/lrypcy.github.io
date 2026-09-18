@@ -458,6 +458,10 @@ BitNet b1.58 一类「从预训练开始就是低比特」的路线效果最好�
 
 ## 10. 2026 年的实用选型表
 
+> **注意**：本节是**算法侧**的选型（哪个算法适合哪个场景）。算法能不能真正在你的机器上跑起来，是另一件事——
+> vLLM / SGLang 的支持矩阵、kernel 后端、硬件门槛见 **[E3 篇：部署侧视角](/2026/09/19/llm-quant-E3-deployment-support/)**。
+> 两套排序并不一致（典型例子：AQLM 精度很好但已被 vLLM 移除；RTN 是最朴素的 baseline 却是官方推荐的入门路径）。
+
 把历史收敛结论落成可执行的判断：
 
 | 你的场景 | 推荐配置 | 说明 |
@@ -514,5 +518,8 @@ BitNet b1.58 一类「从预训练开始就是低比特」的路线效果最好�
 
 ---
 
+> **姊妹篇**：**[E3 部署侧视角](/2026/09/19/llm-quant-E3-deployment-support/)**——本篇讲「算法处于收敛地图的哪个格子」，
+> E3 讲「这个格子在你的机器上跑不跑得起来」（vLLM / SGLang 支持矩阵、kernel 后端、llm-compressor 白名单）。
+>
 > **与主线的最短路径**：如果你只想从本篇回到主线，按这个顺序读——
-> [00 全景](/2026/08/24/ptq-00-overview/) → [01 量化器数学](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) → [03 GPTQ](/2026/08/24/ptq-02-gptq/) → [09 SmoothQuant](/2026/08/24/llm-quant-02-smoothquant-w8a8/) → **[23 统一视角](/2026/08/29/llm-quant-23-unified-view/)** → 本篇。
+> [00 全景](/2026/08/24/ptq-00-overview/) → [01 量化器数学](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) → [03 GPTQ](/2026/08/24/ptq-02-gptq/) → [09 SmoothQuant](/2026/08/24/llm-quant-02-smoothquant-w8a8/) → **[23 统一视角](/2026/08/29/llm-quant-23-unified-view/)** → 本篇 → **E3**。
