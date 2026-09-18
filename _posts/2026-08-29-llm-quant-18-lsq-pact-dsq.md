@@ -248,9 +248,9 @@ $$s_0 = \frac{2\,\langle\lvert v\rvert\rangle}{\sqrt{Q_P}}$$
 - 权重的 $$s_0$$ 用**初始权重值**算；激活的 $$s_0$$ 用**第一个 batch 的激活**算。
 - 每个权重层、每个激活层各一个独立的 fp32 $$s$$。
 
-为什么是 $$2\langle\vertv\vert\rangle/\sqrt{Q_P}$$ 而不是 $$\max\vertv\vert/Q_P$$？两个理由：
+为什么是 $$2\langle\vert v\vert\rangle/\sqrt{Q_P}$$ 而不是 $$\max\vert v\vert/Q_P$$？两个理由：
 
-1. **它落在最优与 min-max 之间，且明显偏向最优那一侧。** 用任务 A 的实测范围（$$\mathrm{rms}(W)=0.09473$$）来算：$$s^\star$$ 的范围是 $$\pm0.306$$（3.23×rms），$$s_0$$ 是 $$\pm0.389$$（4.11×rms），$$s_{\text{min-max}}$$ 是 $$\pm0.677$$（7.15×rms）。理论上，若 $$v$$ 是零均值标准差 $$\sigma$$ 的近似高斯，$$\langle\vertv\vert\rangle=\sqrt{2/\pi}\sigma\approx0.798\sigma$$，则 $$s_0\approx1.6\sigma/\sqrt{Q_P}$$、范围 $$\approx1.6\sigma\sqrt{Q_P}$$，4-bit 下是 $$\pm4.2\sigma$$——**这比纯高斯 8192 个样本的 min-max（$$\approx\pm3.5\sigma$$）还要大**。所以这个初始化**不是为干净高斯设计的，它是为真实网络里 $$\max/\mathrm{rms}\gg3.5$$ 的重尾分布设计的**：重尾下 min-max 被离群值撑到 7×rms，而 $$2\langle\vertv\vert\rangle/\sqrt{Q_P}$$ 只到 4.1×rms，恰好切在 §3.2 那个"少量截断、换取细网格"的甜区里。
+1. **它落在最优与 min-max 之间，且明显偏向最优那一侧。** 用任务 A 的实测范围（$$\mathrm{rms}(W)=0.09473$$）来算：$$s^\star$$ 的范围是 $$\pm0.306$$（3.23×rms），$$s_0$$ 是 $$\pm0.389$$（4.11×rms），$$s_{\text{min-max}}$$ 是 $$\pm0.677$$（7.15×rms）。理论上，若 $$v$$ 是零均值标准差 $$\sigma$$ 的近似高斯，$$\langle\vert v\vert\rangle=\sqrt{2/\pi}\sigma\approx0.798\sigma$$，则 $$s_0\approx1.6\sigma/\sqrt{Q_P}$$、范围 $$\approx1.6\sigma\sqrt{Q_P}$$，4-bit 下是 $$\pm4.2\sigma$$——**这比纯高斯 8192 个样本的 min-max（$$\approx\pm3.5\sigma$$）还要大**。所以这个初始化**不是为干净高斯设计的，它是为真实网络里 $$\max/\mathrm{rms}\gg3.5$$ 的重尾分布设计的**：重尾下 min-max 被离群值撑到 7×rms，而 $$2\langle\vert v\vert\rangle/\sqrt{Q_P}$$ 只到 4.1×rms，恰好切在 §3.2 那个"少量截断、换取细网格"的甜区里。
 2. **它避开 §3.2 的"软方向"。** 从"太大"恢复比从"太小"恢复慢得多（刚度差 $$2Q_P$$ 倍），所以初值宁可偏小。任务 A 上 $$s_0$$ 比最优偏大 27%——**这是个安全的偏置方向**（下一节对照：偏大 10 倍是灾难，偏小 10 倍几乎无害）。
 
 实测（任务 A，SGD+mom，2000 步，$$g$$ 用完整缩放，各自扫 lr）：
@@ -660,7 +660,7 @@ class LSQLinear(torch.nn.Linear):                     # 用法：直接替换 nn
 
 **论文（arXiv ID 已逐一核验，链接可点开核对）**
 
-- Esser et al., *Learned Step Size Quantization*, ICLR 2020, [arXiv:1902.08153](https://arxiv.org/abs/1902.08153) —— §3 主角。Eq.(1)(2) 量化器定义、Eq.(3) scale 梯度三段式、Eq.(4) 失衡比 $$R$$、Appendix A 的 $$g=1/\sqrt{N_WQ_P}$$ 推导、Table 3 的 $$g$$ 消融、§2.1 末的 $$2\langle\vertv\vert\rangle/\sqrt{Q_P}$$ 初始化
+- Esser et al., *Learned Step Size Quantization*, ICLR 2020, [arXiv:1902.08153](https://arxiv.org/abs/1902.08153) —— §3 主角。Eq.(1)(2) 量化器定义、Eq.(3) scale 梯度三段式、Eq.(4) 失衡比 $$R$$、Appendix A 的 $$g=1/\sqrt{N_WQ_P}$$ 推导、Table 3 的 $$g$$ 消融、§2.1 末的 $$2\langle\vert v\vert\rangle/\sqrt{Q_P}$$ 初始化
 - Choi et al., *PACT: Parameterized Clipping Activation for Quantized Neural Networks*, ICLR 2018, [arXiv:1805.06085](https://arxiv.org/abs/1805.06085) —— §4 主角。$$\mathrm{clip}(x,0,\alpha)$$ 定义、$$\partial\hat y/\partial\alpha$$ 三段式、Eq.(9) 的 $$\lVert\alpha\rVert_2<\lambda$$ L2 约束、与 ReLU 的关系
 - Gong et al., *Differentiable Soft Quantization: Bridging Full-Precision and Low-Bit Neural Networks*, ICCV 2019, [arXiv:1908.05033](https://arxiv.org/abs/1908.05033) —— §5 主角。Eq.(3)(4) 的 tanh 渐近函数、Eq.(5) 的 $$Q_S$$、Eq.(6)–(8) 的 $$\alpha$$ 与 $$k$$ 参数化、Eq.(10) 的 $$\partial y/\partial\alpha$$、Algorithm 1 的 $$\mathrm{sgn}$$ 硬化、Table 2/4/5/7 的实测
 - Bengio et al., *Estimating or Propagating Gradients Through Stochastic Neurons for Conditional Computation*, [arXiv:1308.3432](https://arxiv.org/abs/1308.3432) —— STE 的原始论文，LSQ/PACT 都建立在它的"round 导数为 1"假设上

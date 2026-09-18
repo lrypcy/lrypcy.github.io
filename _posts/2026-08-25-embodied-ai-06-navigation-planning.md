@@ -57,7 +57,7 @@ def a_star(grid, start, goal):
 
 ## 2. 学习式导航：NoMaD 统一框架
 
-传统导航栈（定位→建图→全局规划→局部规划）模块间误差层层传递。学习派直接学 $$\pi(a\verto, \text{goal})$$：
+传统导航栈（定位→建图→全局规划→局部规划）模块间误差层层传递。学习派直接学 $$\pi(a\vert o, \text{goal})$$：
 
 - **GNM**（2020）：跨 12 种机器人的导航模仿基础模型雏形（项目页 general-navigation-models.github.io，未本地验证可达性）；
 - **ViNT**（2023）：Transformer 骨干 + 目标图像条件化，19 个数据集训练后 zero-shot 迁移到新平台[3](https://arxiv.org/abs/2306.14846)；

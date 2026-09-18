@@ -14,7 +14,7 @@ mathjax: true
 
 > **TL;DR 1｜多模态之死**：同一任务有多条等价轨迹时，MSE 回归会输出所有模式的**平均值**——向左绕和向右绕平均成"撞柱子直行"。这是 BC 十年停滞的元凶，也是扩散模型进入机器人学的根本理由。
 
-> **TL;DR 2｜Diffusion Policy 一句话**：把动作序列当作图像去噪。训练学 $$\nabla\log p(a\verto)$$，推理从高斯噪声迭代去噪出动作块；它天然表达多模态分布，代价是需要 $$N$$ 次前向传播（DDIM 蒸馏可缓解）[1](https://arxiv.org/abs/2303.04137)。
+> **TL;DR 2｜Diffusion Policy 一句话**：把动作序列当作图像去噪。训练学 $$\nabla\log p(a\vert o)$$，推理从高斯噪声迭代去噪出动作块；它天然表达多模态分布，代价是需要 $$N$$ 次前向传播（DDIM 蒸馏可缓解）[1](https://arxiv.org/abs/2303.04137)。
 
 > **TL;DR 3｜ALOHA 的贡献一半在硬件**：低延迟主从双臂 + **action chunking**（一次预测未来 $$k$$ 步）把真机成功率从个位数推到 80%+，证明"数据质量 × 架构细节"比算法炫技更重要[2](https://arxiv.org/abs/2304.13705)。
 
@@ -222,7 +222,7 @@ if __name__ == "__main__":
 | $$g_{ij}$$ | 循环内的 `(fx, fy)` | `(2,)` | 线性化锥边方向 |
 | $$\mathcal{w}_{ij}$$ | `W` | `(n_edge·k, 3)` | 原始力旋量集 |
 | $$\lambda$$ | `res.x[:-1]` | `(n_edge·k,)` | 凸包组合系数 |
-| $$\delta^\*$$ | `res.x[-1]` | 标量 | 判据：$$\delta^\*>0$$ 即力闭合 |
+| $$\delta^*$$ | `res.x[-1]` | 标量 | 判据：$$\delta^*>0$$ 即力闭合 |
 
 ### 2.4 抓取质量的度量：从 Ferrari-Canny 到鲁棒化
 
@@ -362,7 +362,7 @@ print(f"L1  pred = {model(torch.zeros(1,1)).item():+.4f}")   # ≈ ±1.0x：跳�
 
 ### 4.2 Diffusion Policy 完整推导
 
-**核心思想**：把动作序列 $$a_{0:T_a}$$ 视为高维向量，用去噪扩散过程建模其条件分布 $$p(a\verto)$$[1](https://arxiv.org/abs/2303.04137)[14](https://arxiv.org/abs/2006.11239)。
+**核心思想**：把动作序列 $$a_{0:T_a}$$ 视为高维向量，用去噪扩散过程建模其条件分布 $$p(a\vert o)$$[1](https://arxiv.org/abs/2303.04137)[14](https://arxiv.org/abs/2006.11239)。
 
 **前向加噪**（训练时人为破坏）：定义噪声调度 $$\alpha_t$$、$$\bar\alpha_t=\prod_{i\le t}\alpha_i$$，闭式采样任意时刻的加噪动作：
 
@@ -378,10 +378,10 @@ $$
 
 这个简洁目标是哪里来的？完整推导链如下（DDPM 框架）[14](https://arxiv.org/abs/2006.11239)：
 
-1. **变分下界**：逆过程参数化为 $$p_\theta(a_{t-1}\verta_t)=\mathcal{N}(\mu_\theta(a_t,t,o), \sigma_t^2 I)$$，对负对数似然施 ELBO 分解成三项：
+1. **变分下界**：逆过程参数化为 $$p_\theta(a_{t-1}\vert a_t)=\mathcal{N}(\mu_\theta(a_t,t,o), \sigma_t^2 I)$$，对负对数似然施 ELBO 分解成三项：
 
 $$
-L_{vlb} = \mathbb{E}_q\Big[\underbrace{D_{KL}\big(q(a_T\verta_0)\,\Vert\,\mathcal{N}(0,I)\big)}_{\text{先验匹配，无参数}} + \sum_{t=2}^{T} D_{KL}\big(q(a_{t-1}\verta_t,a_0)\,\Vert\,p_\theta(a_{t-1}\verta_t)\big) - \log p_\theta(a_0\verta_1)\Big]
+L_{vlb} = \mathbb{E}_q\Big[\underbrace{D_{KL}\big(q(a_T\vert a_0)\,\Vert\,\mathcal{N}(0,I)\big)}_{\text{先验匹配，无参数}} + \sum_{t=2}^{T} D_{KL}\big(q(a_{t-1}\vert a_t,a_0)\,\Vert\,p_\theta(a_{t-1}\vert a_t)\big) - \log p_\theta(a_0\vert a_1)\Big]
 $$
 
 2. **后验闭式**：贝叶斯公式代入两个高斯、对 $$a_{t-1}$$ 配方，真实后验也是高斯：

@@ -86,7 +86,7 @@ $$
 （忽略 clamp 时）。由 $$\operatorname{round}(u) \in [u - \tfrac12, u + \tfrac12]$$ 直接得到**逐元素误差上界**：
 
 $$
-\verte_i\vert = \left\vert x_i - s \cdot \operatorname{round}\left( \frac{x_i}{s} \right) \right\vert \le \frac{s}{2}
+\vert e_i\vert = \left\vert x_i - s \cdot \operatorname{round}\left( \frac{x_i}{s} \right) \right\vert \le \frac{s}{2}
 $$
 
 进一步，round 的误差在 $$[-\frac{s}{2}, \frac{s}{2}]$$ 上近似均匀分布（假设 $$x$$ 在量化格点上足够"平滑"），因此：
@@ -101,17 +101,17 @@ $$
 \| x - \hat{x} \|_2 \le \frac{s}{2}\sqrt{K}
 $$
 
-把 $$s$$ 用动态范围表出（对称量化、min-max scale：$$s = \dfrac{\max\vertx\vert}{q_{\max}}$$），得到**相对误差上界**：
+把 $$s$$ 用动态范围表出（对称量化、min-max scale：$$s = \dfrac{\max\vert x\vert}{q_{\max}}$$），得到**相对误差上界**：
 
 $$
-\frac{\| x - \hat{x} \|_2}{\| x \|_2} \le \frac{\sqrt{K}}{2\, q_{\max}} \cdot \frac{\max_i \vertx_i\vert}{\| x \|_2}
+\frac{\| x - \hat{x} \|_2}{\| x \|_2} \le \frac{\sqrt{K}}{2\, q_{\max}} \cdot \frac{\max_i \vert x_i\vert}{\| x \|_2}
 $$
 
 这个式子是全文最重要的不等式。它告诉我们三件事：
 
 1. 位宽 $$b$$ 越大（$$q_{\max} = 2^{b-1}-1$$），误差越小——平庸。
 2. 维度 $$K$$ 越大，误差上界越松——但这是 worst-case，实际是随机误差的平方根累积，均值意义下误差随 $$K$$ 增长是 $$\sqrt{K}/K$$ 量级，可接受。
-3. **比值 $$\max\vertx\vert / \|x\|_2$$（"尖峰度"）直接放大误差上界**。一个均匀向量该比值 $$\approx 1/\sqrt{K}$$，误差上界被压得很小；而一个"99% 小值 + 1% 大尖峰"的向量，该比值趋近 $$1$$，误差上界直接爆炸。**outlier 就是这个比值从 $$\frac{1}{\sqrt{K}}$$ 变成 $$\approx 1$$ 的推手**。
+3. **比值 $$\max\vert x\vert / \|x\|_2$$（"尖峰度"）直接放大误差上界**。一个均匀向量该比值 $$\approx 1/\sqrt{K}$$，误差上界被压得很小；而一个"99% 小值 + 1% 大尖峰"的向量，该比值趋近 $$1$$，误差上界直接爆炸。**outlier 就是这个比值从 $$\frac{1}{\sqrt{K}}$$ 变成 $$\approx 1$$ 的推手**。
 
 ### 2.3 RTN 与 MSE 最优 scale 的关系
 
@@ -162,8 +162,8 @@ LLM.int8() 论文对 OPT/BLOOM 系列逐特征（feature/channel，即激活矩�
 用数学语言重新表述"约 0.1% 通道占 30% 范数"：设激活矩阵 $$X \in \mathbb{R}^{T \times K}$$（$$T$$ 个 token，$$K$$ 个特征），outlier 列集合 $$O$$ 满足
 
 $$
-\frac{\vertO\vert}{K} \approx 0.1\%, \qquad
-\frac{\sum_{j \in O} \sum_i \vertx_{ij}\vert}{\sum_{j} \sum_i \vertx_{ij}\vert} \approx 30\%
+\frac{\vert O\vert}{K} \approx 0.1\%, \qquad
+\frac{\sum_{j \in O} \sum_i \vert x_{ij}\vert}{\sum_{j} \sum_i \vert x_{ij}\vert} \approx 30\%
 $$
 
 即每列平均能量密度高出正常列约三个数量级（$$30\%/0.1\% = 300\times$$）。第 5 章的合成实验会用一个可控版本复现这个比例。
@@ -175,7 +175,7 @@ $$
 | 维度 | 权重 W | 激活 X |
 |---|---|---|
 | 分布 | 近似高斯，per-channel 规整，**无 outlier 列** | 重尾，存在系统性 outlier 列 |
-| 动态范围 | 每通道范围窄（$$\max\vertx\vert \approx 4\sigma$$ 量级） | per-tensor 范围被 outlier 撑大 10~40x |
+| 动态范围 | 每通道范围窄（$$\max\vert x\vert \approx 4\sigma$$ 量级） | per-tensor 范围被 outlier 撑大 10~40x |
 | 获取方式 | 静态已知 → 可离线 per-channel 校准 | 动态生成 → 只能在线用 per-token/per-tensor scale |
 | scale 粒度 | 可做到 per-channel（$$K$$ 个 scale，离线融合进反量化） | per-tensor 廉价但粗；per-row 需运行时计算；per-channel 需额外 elementwise 变换 |
 | 误差传播 | 单层一次性的加性噪声，被后续层部分吸收 | 误差通过残差流与注意力**逐层累积放大** |
@@ -185,7 +185,7 @@ $$
 
 权重为什么没事？两点：
 
-1. **没有 outlier**：预训练得到的权重每个输出通道内近似零均值高斯，$$\max\vertx\vert$$ 相对 $$\sigma$$ 稳定，per-channel scale 下 $$s$$ 很小，误差上界 $$s/2$$ 可控。
+1. **没有 outlier**：预训练得到的权重每个输出通道内近似零均值高斯，$$\max\vert x\vert$$ 相对 $$\sigma$$ 稳定，per-channel scale 下 $$s$$ 很小，误差上界 $$s/2$$ 可控。
 2. **静态**：scale 可以离线按通道算好、折叠进 GEMM 的载荷里，推理零开销。
 
 激活为什么崩？根源在 **scale 被 outlier 绑架**。设激活的全局动态范围为 $$[-R, R]$$（$$R$$ 由 outlier 决定，比如 130），而正常值的范围只有 $$[-3, 3]$$。INT8 对称量化的 127 个正电平要覆盖 $$[0, R]$$，正常值只分到：
@@ -214,7 +214,7 @@ $$
 outlier 列集合由**绝对阈值 $$\alpha$$** 定义（论文取 $$\alpha = 6.0$$，依据 3.1 节实证：破坏性 outlier 的幅值稳定超过 6）：
 
 $$
-O(X) = \left\{ j \in [K] : \max_{i} \vertx_{ij}\vert \ge \alpha \right\}
+O(X) = \left\{ j \in [K] : \max_{i} \vert x_{ij}\vert \ge \alpha \right\}
 $$
 
 $$
@@ -273,7 +273,7 @@ $$
 Y_{\text{outlier}} = X_{\text{outlier}} \cdot W_{\text{outlier}} \in \mathbb{R}^{T \times N}
 $$
 
-其中 $$X_{\text{outlier}}$$ 是 $$(T \times \vertO\vert)$$、$$W_{\text{outlier}}$$ 是 $$(\vertO\vert \times N)$$。由于 $$\vertO\vert \ll K$$（约 0.1%），这个 GEMM 非常小。
+其中 $$X_{\text{outlier}}$$ 是 $$(T \times \vert O\vert)$$、$$W_{\text{outlier}}$$ 是 $$(\vert O\vert \times N)$$。由于 $$\vert O\vert \ll K$$（约 0.1%），这个 GEMM 非常小。
 
 **合并：**
 
@@ -315,12 +315,12 @@ $$
 1. **无校准**：不需要像静态量化那样用校准集预先统计全局激活范围——LLM 的激活分布随输入分布漂移，静态范围估不准，动态量化从根上绕开校准偏差。
 2. **细粒度自适应**：不同 token 的激活量级差异很大（长句 vs 短句、稀有 token vs 常见 token），per-row scale 让每个 token 都独享满 8 bit 精度。
 
-但这里有个**必须先拆 outlier 的原因**：如果对包含 outlier 的原始 $$X$$ 做 per-row 量化，由于 outlier 列跨所有 token 稳定出现，每行的 $$\max_k \vertX[t,k]\vert$$ 都被 outlier 撑到 $$\approx 100$$，$$s_X[t] \approx 100/127 \approx 0.79$$，正常值（$$\pm 3$$）只能勉强走进 $$\pm 4$$ 个电平——**token-wise 动态量化被 outlier 一票否决**。只有先做 4.1 的分解、对干净的 $$X_{\text{int8}}$$ 做 per-row 量化，$$s_X[t] \approx 3/127 \approx 0.024$$，正常值才能用满 127 个电平。**分解是动态量化的前提，二者缺一不可。**
+但这里有个**必须先拆 outlier 的原因**：如果对包含 outlier 的原始 $$X$$ 做 per-row 量化，由于 outlier 列跨所有 token 稳定出现，每行的 $$\max_k \vert X[t,k]\vert$$ 都被 outlier 撑到 $$\approx 100$$，$$s_X[t] \approx 100/127 \approx 0.79$$，正常值（$$\pm 3$$）只能勉强走进 $$\pm 4$$ 个电平——**token-wise 动态量化被 outlier 一票否决**。只有先做 4.1 的分解、对干净的 $$X_{\text{int8}}$$ 做 per-row 量化，$$s_X[t] \approx 3/127 \approx 0.024$$，正常值才能用满 127 个电平。**分解是动态量化的前提，二者缺一不可。**
 
 误差上界也可以写出来（一阶展开，忽略高阶项）：int8 路径输出误差
 
 $$
-\vert\Delta Y[t,n]\vert \le \sum_k \Big( \vert\Delta X_q[t,k]\vert \cdot \vertW_q[k,n]\vert + \vertX_q[t,k]\vert \cdot \vert\Delta W_q[k,n]\vert \Big) + O(s_X s_W)
+\vert\Delta Y[t,n]\vert \le \sum_k \Big( \vert\Delta X_q[t,k]\vert \cdot \vert W_q[k,n]\vert + \vert X_q[t,k]\vert \cdot \vert\Delta W_q[k,n]\vert \Big) + O(s_X s_W)
 $$
 
 其中 $$\vert\Delta X_q\vert \le s_X[t]/2$$、$$\vert\Delta W_q\vert \le s_W[n]/2$$。**不做分解时 $$s_X$$ 被 outlier 放大约 40 倍，整个误差上界线性放大 40 倍**——数学上精确解释了 2.4 节的崩溃现象。
@@ -333,7 +333,7 @@ $$
 - **大模型（13B+）**：outlier 扩散到 **FFN 中间激活**——即 up-projection + GELU 之后、down-projection 之前的那个大矩阵（维度如 $$4H$$，OPT-175B 上 $$H=12288$$ → 中间 49152 维）。有一个直观解释：FFN 的中间维度充当"记忆槽"，少数神经元对应高频语义模式，学出了系统性大权重/大激活。
 - **175B**：outlier 几乎遍布所有层，且强度进一步增大（这正是 2.4 节表 1 中"崩溃"的解剖学基础）。
 
-从量化视角看，outlier 的位置决定了**哪条路径会被 fp16 拖累**：attention 输出路径的 $$\vertO\vert$$ 小，fp16 开销可忽略；一旦 FFN 中间层也冒出 outlier 列，$$\vertO\vert$$ 和矩阵本身的宽度同时变大，fp16 路径的串行代价上升（第 6 章量化这个代价）。而对 SmoothQuant（本系列第 10 篇）而言，**outlier 集中在 FFN 中间层意味着可以用"每层一个迁移 scale"低成本搞定**——这是后话，先记住这个伏笔。
+从量化视角看，outlier 的位置决定了**哪条路径会被 fp16 拖累**：attention 输出路径的 $$\vert O\vert$$ 小，fp16 开销可忽略；一旦 FFN 中间层也冒出 outlier 列，$$\vert O\vert$$ 和矩阵本身的宽度同时变大，fp16 路径的串行代价上升（第 6 章量化这个代价）。而对 SmoothQuant（本系列第 10 篇）而言，**outlier 集中在 FFN 中间层意味着可以用"每层一个迁移 scale"低成本搞定**——这是后话，先记住这个伏笔。
 
 ---
 

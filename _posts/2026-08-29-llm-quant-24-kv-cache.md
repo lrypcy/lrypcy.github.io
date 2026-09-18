@@ -379,7 +379,7 @@ $$Q\big(R_n k\big) \;\neq\; R_n\, Q\big(k\big)$$
 - **pre-RoPE**：对未旋转的 $$k$$ 做 per-channel 量化，误差 $$\epsilon$$ 满足 $$\vert\epsilon_c\vert \le s_c/2$$，各通道独立。反量化后再旋转，误差变成 $$R_n\epsilon$$。由正交性：
   $$\|R_n \epsilon\|_2 = \|\epsilon\|_2$$
   **误差的 $$\ell_2$$ 范数被旋转精确保持**——旋转不会让误差变大。而分数误差由 Cauchy–Schwarz：
-  $$\vert\delta_j\vert = \frac{\vertq^\top R_n \epsilon_j\vert}{\sqrt{d_h}} \le \frac{\|R_n^\top q\|_2 \,\|\epsilon_j\|_2}{\sqrt{d_h}} = \frac{\|q\|_2 \,\|\epsilon_j\|_2}{\sqrt{d_h}}$$
+  $$\vert\delta_j\vert = \frac{\vert q^\top R_n \epsilon_j\vert}{\sqrt{d_h}} \le \frac{\|R_n^\top q\|_2 \,\|\epsilon_j\|_2}{\sqrt{d_h}} = \frac{\|q\|_2 \,\|\epsilon_j\|_2}{\sqrt{d_h}}$$
   这里用到了 $$\|R_n^\top q\| = \|q\|$$。**上界与位置 $$n$$ 无关**，且 $$\|\epsilon_j\|$$ 由 pre-RoPE 的紧凑通道分布控制。
 - **post-RoPE**：直接量化 $$R_n k$$，误差 $$\epsilon'$$ 的 scale 必须按旋转后的（被撑开的）通道范围来定，$$\|\epsilon'\| > \|\epsilon\|$$，上界更松，而且**随位置 $$n$$ 变化**。
 
@@ -886,11 +886,11 @@ $$b^{*} = \frac{295\cdot B_w}{2} \quad\Longrightarrow\quad
 
 这一节给的代码**我都跑过**，下面写的"预期趋势"是实际观察到的方向。但它们用的是**合成数据**，不是真实模型的 KV cache——所以不要把这些当成算法的实测精度，只当成"机制是否成立"的验证。要拿真实数字，把 `K` / `V` 换成你自己模型 dump 出来的 cache 即可。
 
-> **一个必须前置说明的坑（我自己在写这篇时踩了）**：下面 `sym_quant` 默认对裁剪比例 $$\alpha$$ 做 MSE 网格搜索，而**不是**用 $$\max\vertx\vert$$ 定 scale。
+> **一个必须前置说明的坑（我自己在写这篇时踩了）**：下面 `sym_quant` 默认对裁剪比例 $$\alpha$$ 做 MSE 网格搜索，而**不是**用 $$\max\vert x\vert$$ 定 scale。
 >
 > 这不是讲究，是必需。我在第一版里图省事用了 max-scale，结果 **Key 的 per-channel 反而输给 per-token**——和 KIVI 的实测完全相反。把 scale 换成 MSE 最优裁剪后，排序立刻翻回来。
 >
-> 原因见 [01 篇 §4](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)：2-bit 对称网格只有 4 个电平（$$\{-2,-1,0,1\}$$），用 $$\max\vertx\vert$$ 定 scale 意味着 $$m\approx 3.5\sigma$$，九成以上样本被舍入到 0，per-channel 的"每个通道各管各量级"这个优势被粗网格彻底淹没。而 per-token 的 scale 由 outlier 通道撑开，**恰好**给了能量占绝对多数的那几个通道一个合适的尺子——于是它在粗网格下反而占了便宜。
+> 原因见 [01 篇 §4](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)：2-bit 对称网格只有 4 个电平（$$\{-2,-1,0,1\}$$），用 $$\max\vert x\vert$$ 定 scale 意味着 $$m\approx 3.5\sigma$$，九成以上样本被舍入到 0，per-channel 的"每个通道各管各量级"这个优势被粗网格彻底淹没。而 per-token 的 scale 由 outlier 通道撑开，**恰好**给了能量占绝对多数的那几个通道一个合适的尺子——于是它在粗网格下反而占了便宜。
 >
 > **换句话说：在低比特下，scale 策略的选择能翻转 per-channel 与 per-token 的优劣排序。** 这不是 KV cache 特有的现象，而是 [01 篇 §4](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 那句"位宽越低，scale 选择越是一门大生意"在粒度维度上的投影。你要比较两种粒度，先保证 scale 策略是同一个、且是最优的，否则比的是 scale 不是粒度。
 

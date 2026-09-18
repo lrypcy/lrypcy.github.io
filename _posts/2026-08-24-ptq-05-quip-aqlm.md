@@ -127,7 +127,7 @@ QuIP 的核心洞察：**病态不是数据固有的，而是坐标系选择的�
 > **定义（μ-incoherent）**：矩阵 $$A \in \mathbb{R}^{m \times n}$$ 称为 **μ-incoherent**，若其元素绝对值有界：
 >
 > $$
-> \|A\|_\infty \;=\; \max_{i,j} \vertA_{ij}\vert
+> \|A\|_\infty \;=\; \max_{i,j} \vert A_{ij}\vert
 > \;\le\; \mu\, \frac{\|A\|_F}{\sqrt{mn}}
 > $$
 >

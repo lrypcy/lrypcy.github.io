@@ -94,7 +94,7 @@ class FakeQuant(torch.autograd.Function):
 
 LSQ（Learned Step Size Quantization，[arXiv:1902.08153](https://arxiv.org/abs/1902.08153)）的关键观察：与其每步从数据重估 scale，不如**把 scale 当作普通可学习参数**。设 $$v_i$$ 是权重经线性变换后的实值激活，$$u_i = v_i / s$$，则：
 
-$$\frac{\partial u_i}{\partial s} = \begin{cases} -v_i / s^2 & \vertu_i\vert \le q_{max} \\ 0 & \text{otherwise} \end{cases}$$
+$$\frac{\partial u_i}{\partial s} = \begin{cases} -v_i / s^2 & \vert u_i\vert \le q_{max} \\ 0 & \text{otherwise} \end{cases}$$
 
 再配合 round 的 STE（$$\partial\,\mathrm{round}/\partial u \approx 1$$）与 clamp 的指示函数，得到完整的尺度梯度。这个看似简单的改动带来两个质变：其一，scale 从"被动统计量"变成"主动权衡者"——它会自动收缩以换取更小的整体重建误差；其二，训练后期可以给 scale 加上逐通道自由度，等效于学出一组最优粒度。
 

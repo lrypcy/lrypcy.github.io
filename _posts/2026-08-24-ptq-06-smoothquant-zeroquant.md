@@ -110,12 +110,12 @@ SmoothQuant 和 ZeroQuant 就是为攻克这一点而生的。
 
 先把量化误差数学化。对称 k-bit 均匀量化的步长为：
 
-$$\Delta = \frac{2 \cdot \max\vertX\vert}{2^k - 1}$$
+$$\Delta = \frac{2 \cdot \max\vert X\vert}{2^k - 1}$$
 
 在均匀分布假设下，量化误差的能量约为 $$\Delta^2 / 12$$，于是**相对误差与张量的动态
 范围成正比**：
 
-$$\text{err}(X) \propto \frac{\max\vertX\vert}{2^k}$$
+$$\text{err}(X) \propto \frac{\max\vert X\vert}{2^k}$$
 
 即：动态范围越大，同样位宽下的有效精度越低。现在对比权重和激活这两个张量：
 
@@ -180,13 +180,13 @@ $$X' = X \cdot \operatorname{diag}(s)^{-1}, \qquad W' = \operatorname{diag}(s) \
 均匀量化下，张量的量化难度可用动态范围刻画。平滑后，激活第 $$j$$ 通道与权重第 $$j$$
 行的范围分别为：
 
-$$\max\vertX'_{:,j}\vert = \frac{\max\vertX_{:,j}\vert}{s_j}, \qquad \max\vertW'_{j,:}\vert = s_j \cdot \max\vertW_{j,:}\vert$$
+$$\max\vert X'_{:,j}\vert = \frac{\max\vert X_{:,j}\vert}{s_j}, \qquad \max\vert W'_{j,:}\vert = s_j \cdot \max\vert W_{j,:}\vert$$
 
 两者相乘：
 
-$$\underbrace{\frac{\max\vertX_{:,j}\vert}{s_j}}_{\text{激活侧难度}} \cdot
-\underbrace{s_j \cdot \max\vertW_{j,:}\vert}_{\text{权重侧难度}} =
-\max\vertX_{:,j}\vert \cdot \max\vertW_{j,:}\vert$$
+$$\underbrace{\frac{\max\vert X_{:,j}\vert}{s_j}}_{\text{激活侧难度}} \cdot
+\underbrace{s_j \cdot \max\vert W_{j,:}\vert}_{\text{权重侧难度}} =
+\max\vert X_{:,j}\vert \cdot \max\vert W_{j,:}\vert$$
 
 与 $$s_j$$ 无关。**量化难度守恒：平滑只是搬运，不是消灭。** SmoothQuant 的聪明之处
 在于：权重的 per-channel 量化对"难度"的容错远高于激活的 per-tensor/per-token 量化
@@ -195,11 +195,11 @@ $$\underbrace{\frac{\max\vertX_{:,j}\vert}{s_j}}_{\text{激活侧难度}} \cdot
 
 那搬多少最优？令两端难度相等（两端误差之和在均衡时最小）：
 
-$$\frac{\max\vertX_{:,j}\vert}{s_j} = s_j \cdot \max\vertW_{j,:}\vert
-\quad\Longrightarrow\quad s_j^{*} = \sqrt{\frac{\max\vertX_{:,j}\vert}{\max\vertW_{j,:}\vert}}$$
+$$\frac{\max\vert X_{:,j}\vert}{s_j} = s_j \cdot \max\vert W_{j,:}\vert
+\quad\Longrightarrow\quad s_j^{*} = \sqrt{\frac{\max\vert X_{:,j}\vert}{\max\vert W_{j,:}\vert}}$$
 
 两个补充说明。第一，为什么用 $$\max\vert\cdot\vert$$ 而不是标准差或分位数？因为对称均匀量化
-的步长由 range（即 $$2\max\vertX\vert$$）直接决定，$$\max$$ 是步长的精确代理，用它做 scale 能
+的步长由 range（即 $$2\max\vert X\vert$$）直接决定，$$\max$$ 是步长的精确代理，用它做 scale 能
 最直接地压缩步长。分位数（如 99.9%）可以抗校准集噪声，但会留下少量截断误差——这个
 权衡留到第 6 章批判部分展开。第二，"难度守恒"是逐通道的，$$d_{in}$$ 个通道各自独立
 搬运，互不干扰，这也是为什么这个变换可以无损地嵌入每一层。
@@ -208,7 +208,7 @@ $$\frac{\max\vertX_{:,j}\vert}{s_j} = s_j \cdot \max\vertW_{j,:}\vert
 
 论文没有直接使用 $$s^{*}$$，而是引入一个超参数 $$\alpha$$ 来控制迁移强度：
 
-$$s_j(\alpha) = \frac{\max\vertX_{:,j}\vert^{\alpha}}{\max\vertW_{j,:}\vert^{1-\alpha}}, \quad \alpha \in [0, 1]$$
+$$s_j(\alpha) = \frac{\max\vert X_{:,j}\vert^{\alpha}}{\max\vert W_{j,:}\vert^{1-\alpha}}, \quad \alpha \in [0, 1]$$
 
 $$\alpha$$ 的语义非常直观，它定义了一条从"纯权重量化"到"纯激活量化"的连续谱：
 
@@ -227,7 +227,7 @@ $$\alpha=1$$ 只拉齐了"通道间"的幅值，同一通道内部跨 token 的�
 平滑之外仍用 per-token 激活量化兜底——平滑 + per-token 是组合拳。
 
 **为什么 $$\alpha$$ 不能取 0（完全不动激活）？** 那等于放弃平滑，回到 1.3 节那个被
-outlier 绑架的量化，精度在 13B 以上模型直接崩盘。$$\alpha=0$$ 时 $$s_j = 1/\max\vertW_{j,:}\vert$$
+outlier 绑架的量化，精度在 13B 以上模型直接崩盘。$$\alpha=0$$ 时 $$s_j = 1/\max\vert W_{j,:}\vert$$
 只是把权重归一化，激活的原罪一点没消除。
 
 实践上，论文在 $$\alpha \in [0.2, 0.5]$$ 之间做小网格搜索，默认 $$\alpha = 0.5$$；小模型
@@ -235,7 +235,7 @@ outlier 不显著，可取更小的 $$\alpha$$，大模型倾向 0.5。值得注
 是 2.2 节推导的最优解 $$s^{*}$$——默认值不是拍脑袋，而是理论均衡点。论文还报告 α 在
 0.2~0.5 区间内困惑度变化极小（方法稳健），但一旦滑向 0 或 1，退化立竿见影。
 
-**一个具体数字**：设某通道 $$\max\vertX_{:,j}\vert = 80$$、$$\max\vertW_{j,:}\vert = 0.4$$，取
+**一个具体数字**：设某通道 $$\max\vert X_{:,j}\vert = 80$$、$$\max\vert W_{j,:}\vert = 0.4$$，取
 $$\alpha=0.5$$，则 $$s_j = \sqrt{80/0.4} = \sqrt{200} \approx 14.14$$。平滑后激活该通道
 范围 $$80/14.14 \approx 5.66$$，权重该行范围 $$0.4 \times 14.14 \approx 5.66$$——两端
 精确均衡。而 $$\alpha=0$$ 时激活范围仍高达 32（outlier 未除），$$\alpha=1$$ 时权重行被
@@ -441,7 +441,7 @@ SmoothQuant 的核心动作是"改分布"：用校准集统计出 $$s$$，把激
 $$g=128$$），每组共享一个 scale：
 
 $$\hat{W} = \sum_{G} \Delta_G \cdot \operatorname{round}\!\left(\frac{W_G}{\Delta_G}\right),
-\qquad \Delta_G = \frac{\max\vertW_G\vert}{2^{k-1} - 1}$$
+\qquad \Delta_G = \frac{\max\vert W_G\vert}{2^{k-1} - 1}$$
 
 per-channel 是"每输出通道一个 scale"（$$g=1$$ 的特例），group-wise 则是"每 $$g$$ 个输出
 通道一个 scale"。对 8bit 权重来说，group size 128 的粒度已经足够细，精度损失远小于
@@ -451,7 +451,7 @@ kernel 里只是多一层索引，开销可控。
 **激活的 token-wise 动态量化**。每个 token（激活矩阵的一行）单独计算 scale：
 
 $$\hat{X}_{t,:} = \Delta_t \cdot \operatorname{round}\!\left(\frac{X_{t,:}}{\Delta_t}\right),
-\qquad \Delta_t = \frac{\max\vertX_{t,:}\vert}{2^{k-1} - 1}$$
+\qquad \Delta_t = \frac{\max\vert X_{t,:}\vert}{2^{k-1} - 1}$$
 
 两个关键点。第一，这是**动态量化**：$$\Delta_t$$ 在推理时按当前 token 现算，完全不依赖
 校准集——这直接消灭了 SmoothQuant 的"校准集分布偏移"隐患。第二，它天然适配 decode
@@ -708,7 +708,7 @@ W8A8 吃算力，KV cache 用 KV8——这不是某一篇论文的发明，而�
 仍然需要校准集 + 网格搜索，每层统一还是分层又是一轮调优。对"开箱即用"的部署
 流水线来说，多一个超参就是多一个故障点。
 
-**校准集依赖是结构性风险。** $$s_j$$ 用的是 $$\max\vertX_{:,j}\vert$$——极值统计对样本分布
+**校准集依赖是结构性风险。** $$s_j$$ 用的是 $$\max\vert X_{:,j}\vert$$——极值统计对样本分布
 极度敏感。校准集与线上分布一旦偏移（长尾生成、代码补全、多语言混排），平滑就会
 失效甚至帮倒忙。后续工作（如 SmoothQuant+ 及各类变体）用分位数（99.9%）替代
 max 来增强稳健性，但分位数会留下截断误差——这是"稳健性 vs 精确性"的永恒拉扯。

@@ -422,7 +422,7 @@ Gemini Robotics（DeepMind, 2025）在 Gemini 2.0 之上加装动作解码器构
 
 ## 7. 世界模型线：另一条通往通用的路
 
-VLA 学的是"看到 X 做 Y"的反应式映射；世界模型学的是 $$p(s_{t+1}\verts_t,a_t)$$——**可想象、可规划、可评测**。这条线的祖师爷是 Ha & Schmidhuber 的《World Models》（VAE + MDN-RNN + 小控制器，2018）[36](https://arxiv.org/abs/1803.10122)，现代形态如下。
+VLA 学的是"看到 X 做 Y"的反应式映射；世界模型学的是 $$p(s_{t+1}\vert s_t,a_t)$$——**可想象、可规划、可评测**。这条线的祖师爷是 Ha & Schmidhuber 的《World Models》（VAE + MDN-RNN + 小控制器，2018）[36](https://arxiv.org/abs/1803.10122)，现代形态如下。
 
 ### 7.1 DreamerV3：RSSM 世界模型的目标函数
 
@@ -442,7 +442,7 @@ $$
 \mathcal{L}_{WM} = \mathbb{E}\Big[-\log p(o_t \mid h_t, z_t) - \log p(r_t \mid h_t, z_t) - \log p(c_t \mid h_t, z_t) + \beta\,\mathrm{KL}\big(q_\phi(z_t \mid h_t, o_t)\ \big\|\ \mathrm{sg}[p_\phi(\hat z_t \mid h_t)]\big)\Big]
 $$
 
-三项重构/预测损失 + 一项先验后验的 KL 正则。两个跨域稳定性的工程细节：KL 带 **free bits**（低于阈值的 KL 不施罚，防止后验坍缩成先验的复读机）与 **KL balancing**（先验、后验用不同的学习率系数）；奖励等信号统一过 **symlog 编码** $$\mathrm{sign}(x)\log(1+\vertx\vert)$$，把跨任务相差多个数量级的 reward 压到同一尺度——这就是"一套超参打天下"的秘密所在。
+三项重构/预测损失 + 一项先验后验的 KL 正则。两个跨域稳定性的工程细节：KL 带 **free bits**（低于阈值的 KL 不施罚，防止后验坍缩成先验的复读机）与 **KL balancing**（先验、后验用不同的学习率系数）；奖励等信号统一过 **symlog 编码** $$\mathrm{sign}(x)\log(1+\vert x\vert)$$，把跨任务相差多个数量级的 reward 压到同一尺度——这就是"一套超参打天下"的秘密所在。
 
 **想象中训练 actor-critic**：从后验播种初始状态，之后完全用先验 roll-out 想象轨迹，critic 学 $$\lambda$$-return，actor 沿想象轨迹优化——策略梯度穿过世界模型继续回传（Dreamer 系的特色）。真实环境的交互只用来收集数据、更新世界模型本身。
 

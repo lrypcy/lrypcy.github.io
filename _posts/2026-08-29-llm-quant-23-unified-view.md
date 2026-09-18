@@ -122,7 +122,7 @@ $$C \triangleq \mathbb{E}_x\big[\,x x^\top\,\big] \ \in \mathbb{R}^{d_{\text{in}
 
 给定网格类型，还要决定它放在数轴何处、间距多大。这个决定比很多人以为的重要得多。
 
-[01 篇 §4](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 已经推导过：教科书公式 $$s = \max\vertw\vert / 2^{b-1}$$ 在高斯型权重上**远非最优**，因为它让极少数极端值决定全局格距。主动裁掉一部分尾部（引入裁剪误差）反而能降低总误差：
+[01 篇 §4](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 已经推导过：教科书公式 $$s = \max\vert w\vert / 2^{b-1}$$ 在高斯型权重上**远非最优**，因为它让极少数极端值决定全局格距。主动裁掉一部分尾部（引入裁剪误差）反而能降低总误差：
 
 $$\min_{s}\ \mathbb{E}\Big[\big(w - \hat{w}(s)\big)^2\Big] \quad\text{s.t.}\quad \hat{w} = s\cdot\mathrm{clip}\!\left(\big\lfloor w/s \rceil,\ q_{\min},\ q_{\max}\right)$$
 

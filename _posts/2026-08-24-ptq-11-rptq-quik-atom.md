@@ -61,13 +61,13 @@ $$
 
 ## 2. 问题的形式化:per-group 的"离群值污染"
 
-设激活 $$X\in\mathbb{R}^{T\times d}$$,通道划分 $$\mathcal{G}=\{G_1,\dots,G_m\}$$,$$\vertG_i\vert=g$$。对称 $$b$$-bit 组量化的步长由组内最大幅值决定:
+设激活 $$X\in\mathbb{R}^{T\times d}$$,通道划分 $$\mathcal{G}=\{G_1,\dots,G_m\}$$,$$\vert G_i\vert=g$$。对称 $$b$$-bit 组量化的步长由组内最大幅值决定:
 
 $$
-\Delta_i = \frac{\max_{j\in G_i}\max_t \vertx_{tj}\vert}{2^{b-1}-1}
+\Delta_i = \frac{\max_{j\in G_i}\max_t \vert x_{tj}\vert}{2^{b-1}-1}
 $$
 
-组内任一正常通道的量化噪声方差 $$\approx \Delta_i^2/12$$。定义**污染比** $$\rho_i = \max_{j\in G_i}\vertx_j\vert\ /\ \mathrm{median}_{j\in G_i}\vertx_j\vert$$:
+组内任一正常通道的量化噪声方差 $$\approx \Delta_i^2/12$$。定义**污染比** $$\rho_i = \max_{j\in G_i}\vert x_j\vert\ /\ \mathrm{median}_{j\in G_i}\vert x_j\vert$$:
 
 * $$\rho_i \approx 1$$:组内通道幅值均匀,网格利用率高;
 * $$\rho_i = 12$$(一组混进一个 40 倍离群值):正常通道的有效分辨率从 15 级掉到 $$15/\rho_i \approx 1$$ 级--**等于没量化,甚至更糟**。

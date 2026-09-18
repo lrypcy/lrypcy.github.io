@@ -101,7 +101,7 @@ $$
 训练动力学的经验事实(第 E1 篇讲过):少数通道存在跨 token 稳定的幅值优势,attention/MLP 依赖这些通道传递"全局信号"。训练会把这份依赖写进 $$\gamma$$--这些通道对应的 $$\gamma_j$$ 长到 5~20 倍于其他通道。于是 LN 输出的幅值谱变成:
 
 $$
-\verty_j\vert \approx \vert\gamma_j\vert\cdot\vert\hat{x}_j\vert
+\vert y_j\vert \approx \vert\gamma_j\vert\cdot\vert\hat{x}_j\vert
 $$
 
 即便 $$\hat x$$ 是温良的(逐 token 归一化保证 $$\|\hat x\|$$ 有界),乘上悬殊的 $$\gamma$$ 之后,$$y$$ 的 per-tensor absmax 就被少数几个通道劫持。OS 论文观察到:**离群值主要在 LN 乘法之后成型**--$$\hat x$$ 上本来只有"苗头",$$\gamma$$ 把苗头浇成了离群值。这就是"放大器"一词的准确含义:它不是离群值的源头(源头上游还有 attention 的结构性偏好),但它是最直接的增益级。
@@ -168,7 +168,7 @@ $$
 \Delta = \frac{M}{127} \approx 0.33
 $$
 
-现在做 SmoothQuant 式处理:除以逐通道 scale $$s_j = \max_i\vertx_{ij}\vert \approx 42$$,再对结果做 per-tensor int8(此时网格步长归一化为 $$2/254$$)。反推回原始单位,**该通道的实际步长**:
+现在做 SmoothQuant 式处理:除以逐通道 scale $$s_j = \max_i\vert x_{ij}\vert \approx 42$$,再对结果做 per-tensor int8(此时网格步长归一化为 $$2/254$$)。反推回原始单位,**该通道的实际步长**:
 
 $$
 \Delta_j^{(\text{scale})} = \frac{s_j}{127} \approx \frac{42}{127} = \Delta
@@ -188,7 +188,7 @@ $$
 
 移位后分布以零为中心、支撑集收窄,再叠加逐通道 scale $$s_j$$(以及可选的裁剪),量化器看到的就是一组"均值零、幅度均匀"的通道。$$\delta_j$$ 的选择:
 
-* **最小化绝对动态范围**准则:对单通道样本集合,使 $$\max_i \tilde x - \min_i \tilde x$$ 最小的移位是**中点** $$\delta_j^\* = (\max_i x_{ij} + \min_i x_{ij})/2$$;
+* **最小化绝对动态范围**准则:对单通道样本集合,使 $$\max_i \tilde x - \min_i \tilde x$$ 最小的移位是**中点** $$\delta_j^* = (\max_i x_{ij} + \min_i x_{ij})/2$$;
 * **矩准则**:对单峰近对称的残差,取**均值** $$\delta_j = \mathbb{E}[x_{ij}]$$(校准集逐通道平均)更稳健--它不受单个极端样本摆布,且让二阶矩(量化噪声的能量上限)最小化。
 
 两种准则在"重尾但偏移明确"的离群通道上给出相近的结果;OS+ 在校准集上估计移位与缩放(scale 的估计沿用"激活难度向权重迁移"的思想),不再像 SmoothQuant 那样依赖人工调节的 $$\alpha$$ 网格搜索(论文的具体估计式以原文为准,此处保留两种准则的推导供对照)。

@@ -15,7 +15,7 @@ mathjax: true
 > **TL;DR**
 >
 > * **核心结论**：W8A8（权重、激活都压到 8-bit）的难点从来不在权重，而在激活——权重可以 per-channel 量化，激活只能 per-token/per-tensor，于是常驻 outlier 通道把激活 scale 拉爆而拿权重毫无办法。SmoothQuant 用一条严格恒等式 $$XW=\big(X\,\mathrm{diag}(\boldsymbol{\tau})^{-1}\big)\big(\mathrm{diag}(\boldsymbol{\tau})\,W\big)$$ 把量化难度按迁移强度 $$\beta$$ 在两侧之间搬运：$$\tau_j=a_j^{\beta}/w_j^{\,1-\beta}$$。本篇推导出这条变换为什么输出分毫不变、为什么"难度守恒"、为什么默认 $$\beta=0.5$$ 恰是两端动态范围的均衡点；配套实验实测直接 W8A8 的层输出 MSE 是平滑后的 **10.7 倍**，且 U 形曲线谷底精确落在 $$\beta^{*}=0.50$$。
-> * **反直觉发现**：① 平滑不消灭难度、只搬运难度——逐通道动态范围乘积 $$\max\vertX'_{:j}\vert\cdot\max\vertW'_{j:}\vert$$ 在变换前后最大相对偏差 **$$2.4\times10^{-16}$$**，机器精度级的守恒；② 权重被放大 $$\tau_j$$ 倍并不受伤：per-channel scale 精确地跟着乘 $$\tau_j$$，整数量码一个不变，相对误差分毫不动；③ 校准集从 256 token 扩到 65536，outlier 通道的 max 统计估计从 45.1 单调漂到 70.0（+55%）——01 篇的极值漂移定律在 SmoothQuant 上有了真实后果，而 99.9% 分位数估计的波动只有 max 估计的约 60%，代价是留下截断误差。
+> * **反直觉发现**：① 平滑不消灭难度、只搬运难度——逐通道动态范围乘积 $$\max\vert X'_{:j}\vert\cdot\max\vert W'_{j:}\vert$$ 在变换前后最大相对偏差 **$$2.4\times10^{-16}$$**，机器精度级的守恒；② 权重被放大 $$\tau_j$$ 倍并不受伤：per-channel scale 精确地跟着乘 $$\tau_j$$，整数量码一个不变，相对误差分毫不动；③ 校准集从 256 token 扩到 65536，outlier 通道的 max 统计估计从 45.1 单调漂到 70.0（+55%）——01 篇的极值漂移定律在 SmoothQuant 上有了真实后果，而 99.9% 分位数估计的波动只有 max 估计的约 60%，代价是留下截断误差。
 > * **系列定位**：01 篇立起 RTN 对照组，02 篇 LLM.int8() 用混合精度分解"绕开"outlier，本篇第一次正面回答"能不能让激活本身变得可量化"。等效变换思想是本系列的第二条主线：AWQ（04 篇）换目标函数、OmniQuant（05 篇）把变换参数学化、QuaRot/SpinQuant（12 篇）把逐通道缩放升级为正交旋转。全部结论有配套实验背书：smoothquant_alpha_sweep。
 
 ---

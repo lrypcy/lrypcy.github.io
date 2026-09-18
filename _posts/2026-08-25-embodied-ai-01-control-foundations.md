@@ -139,7 +139,7 @@ $$
 可达性判据同样来自余弦定理——目标在工作空间环内当且仅当
 
 $$
-\vertl_1-l_2\vert \;\le\; \sqrt{x^2+y^2} \;\le\; l_1+l_2
+\vert l_1-l_2\vert \;\le\; \sqrt{x^2+y^2} \;\le\; l_1+l_2
 $$
 
 边界上 $$\cos q_2 = \pm 1$$，即 $$q_2=0$$ 或 $$\pi$$，恰好对应 1.4 节将定量讨论的**边界奇异位形**。
@@ -622,7 +622,7 @@ $$
 \begin{aligned}
 \min_{u_{0:N-1}} \quad & \sum_{k=0}^{N-1} \Big( x_k^T Q x_k + u_k^T R u_k \Big) + x_N^T P x_N \\
 \text{s.t.} \quad & x_{k+1} = f(x_k, u_k) \\
-& \vertu_k\vert \le u_{max}, \quad q_{min} \le q_k \le q_{max} \quad (\text{真实约束！})
+& \vert u_k\vert \le u_{max}, \quad q_{min} \le q_k \le q_{max} \quad (\text{真实约束！})
 \end{aligned}
 $$
 
@@ -812,7 +812,7 @@ $$
 **(2) 摩擦锥线性化（内接金字塔）**。用 $$k$$ 面棱雉内接近似，最常用的四面棱雉（$$k=4$$）只需 4 条线性不等式：
 
 $$
-\vertf_{i,x}\vert + \vertf_{i,y}\vert \le \mu f_{i,z}
+\vert f_{i,x}\vert + \vert f_{i,y}\vert \le \mu f_{i,z}
 $$
 
 它是保守近似（棱雉在锥内部），好处是完全 QP-ready——凸 MPC 与 WBC 全部采用这条路[3](https://ieeexplore.ieee.org/document/8593885)。想要更紧的近似就把 $$k$$ 升到 8，代价是多一倍的约束行。

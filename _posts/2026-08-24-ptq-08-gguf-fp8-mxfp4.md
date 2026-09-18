@@ -386,7 +386,7 @@ $$
 \text{FP8}(x) = x \cdot (1 + \epsilon), \quad \vert\epsilon\vert \le 2^{-4} \text{（相对误差上界）}
 $$
 
-相对误差**与 $$x$$ 的大小无关**（浮点的相对误差恒定），而 INT8 的绝对误差恒定、相对误差随 $$\vertx\vert$$ 减小而爆炸。这一性质对**权重和激活同时 8-bit**（W8A8）至关重要：
+相对误差**与 $$x$$ 的大小无关**（浮点的相对误差恒定），而 INT8 的绝对误差恒定、相对误差随 $$\vert x\vert$$ 减小而爆炸。这一性质对**权重和激活同时 8-bit**（W8A8）至关重要：
 
 - 权重：高斯分布，E4M3 相对误差 $$2^{-3}$$，叠加后模型精度损失 < 1%；
 - 激活：带离群值，E4M3 动态范围覆盖 4 个数量级，离群值不再需要 per-channel scale；
@@ -437,7 +437,7 @@ $$
 E8M0 是一个极端的「纯指数」格式：它不存尾数，只存 2 的幂次。它的作用不是表示「值」，而是表示「这一块数据的整体量级」。数学上：
 
 $$
-\text{block scale: } s_b = 2^{k_b}, \quad k_b = \text{round}\left( \log_2 \max_{i \in b} \vertx_i\vert \right)
+\text{block scale: } s_b = 2^{k_b}, \quad k_b = \text{round}\left( \log_2 \max_{i \in b} \vert x_i\vert \right)
 $$
 
 scale 的选取目标是**把 block 内最大绝对值映射到 FP4 的最大值 2 附近**，从而让 FP4 的 4-bit 精度覆盖整个 block 的动态范围。
@@ -449,7 +449,7 @@ FP4 单打独斗是废的：E2M1 只有 3 个有效值级（$$\pm 1, \pm 2, \pm 
 共享 scale 的数学意义：把「表示动态范围」的任务从每个元素身上剥离，交给 block 级 scale。设 block 内权重 $$x_i = s_b \cdot m_i$$，则相对量化误差只取决于尾数：
 
 $$
-\frac{\vertx_i - \hat{x}_i\vert}{\vertx_i\vert} = \frac{\vertm_i - \hat{m}_i\vert}{\vertm_i\vert} \le 2^{-2} \quad \text{（FP4 尾数 1 bit，相对误差 } \le 25\% \text{）}
+\frac{\vert x_i - \hat{x}_i\vert}{\vert x_i\vert} = \frac{\vert m_i - \hat{m}_i\vert}{\vert m_i\vert} \le 2^{-2} \quad \text{（FP4 尾数 1 bit，相对误差 } \le 25\% \text{）}
 $$
 
 **相对误差与 $$s_b$$ 无关**——无论这个 block 整体量级是 $$10^{-2}$$ 还是 $$10^{2}$$，只要 scale 选对了，相对误差都控制在 FP4 尾数的精度内。这就是 Microscaling 的全部秘密：**用 8-bit 的 block scale 换取 32 个元素的动态范围自由**。

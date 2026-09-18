@@ -105,7 +105,7 @@ $$
 
 ### 2.2 外参变换与机器人坐标系链
 
-$$[R\vertt]$$ 把世界系点搬到相机系：$$X_c = R_{cw}X_w + t_{cw}$$，等价于刚体变换 $$T_{cw}\in SE(3)$$。机器人系统的特殊之处在于坐标系不止两个，而是一条**链**：
+$$[R\vert t]$$ 把世界系点搬到相机系：$$X_c = R_{cw}X_w + t_{cw}$$，等价于刚体变换 $$T_{cw}\in SE(3)$$。机器人系统的特殊之处在于坐标系不止两个，而是一条**链**：
 
 ```text
 world ──T_wb── base ──T_bf── flange ──T_fc── camera ──K,[R|t]── pixel
@@ -146,11 +146,11 @@ $$
 \underbrace{T_{wf_j}^{-1}T_{wf_i}}_{A:\ 法兰相对运动} \cdot X = X \cdot \underbrace{T_{cb_i}T_{cb_j}^{-1}}_{B:\ 相机相对运动}
 $$
 
-左边由正运动学已知，右边由每次观测棋盘格的 $$[R\vertt]$$ 已知——这是一个经典的 $$AX=XB$$ 方程，可用 Tsai-Lenz 等闭式方法解旋转再解平移[23]，OpenCV `calibrateHandEye` 提供 API。eye-to-hand（相机固定在外部）只是 $$X$$ 挪到等式另一侧的同构问题。经验做法：采集 10 组以上大角度差异的运动对，解完后再用一次完整"识别-投影-比对"闭环验收。
+左边由正运动学已知，右边由每次观测棋盘格的 $$[R\vert t]$$ 已知——这是一个经典的 $$AX=XB$$ 方程，可用 Tsai-Lenz 等闭式方法解旋转再解平移[23]，OpenCV `calibrateHandEye` 提供 API。eye-to-hand（相机固定在外部）只是 $$X$$ 挪到等式另一侧的同构问题。经验做法：采集 10 组以上大角度差异的运动对，解完后再用一次完整"识别-投影-比对"闭环验收。
 
 ### 2.5 PnP：从 2D-3D 对应解出位姿
 
-Perspective-n-Point 是投影的"半逆问题"：已知 $$n$$ 个物体的 3D 点 $$P_i$$ 及其在图像上的投影 $$u_i$$，求 $$[R\vertt]$$ 使投影复原 $$u_i$$：
+Perspective-n-Point 是投影的"半逆问题"：已知 $$n$$ 个物体的 3D 点 $$P_i$$ 及其在图像上的投影 $$u_i$$，求 $$[R\vert t]$$ 使投影复原 $$u_i$$：
 
 $$
 [R^*,t^*] = \arg\min_{R,t} \sum_{i=1}^{n} \left\| u_i - \pi\big(K(RP_i+t)\big) \right\|^2, \quad \pi([X_c,Y_c,Z_c]) = \left[\frac{f_xX_c}{Z_c}+c_x,\ \frac{f_yY_c}{Z_c}+c_y\right]
@@ -159,7 +159,7 @@ $$
 三个层次的理解：
 
 1. **最小解 P3P**：恰好 3 个点即可约束出至多 4 组解（三角形在锥面上的多义性），需第 4 个点消歧——这是"最少信息量"的理论底线；
-2. **线性解 DLT/EPnP**：把 $$[R\vertt]$$ 的 12 个元素当未知数线性化（DLT），或 EPnP 用 4 个虚拟控制点的加权和表达全部 3D 点，把复杂度降到 $$O(n)$$[24]；
+2. **线性解 DLT/EPnP**：把 $$[R\vert t]$$ 的 12 个元素当未知数线性化（DLT），或 EPnP 用 4 个虚拟控制点的加权和表达全部 3D 点，把复杂度降到 $$O(n)$$[24]；
 3. **实践配方**：对应点带野值时套 RANSAC——随机抽 4 点解 P3P 统计内点数，再用全体内点跑非线性精化（Levenberg-Marquardt）。OpenCV `solvePnPRansac` 即此配方。
 
 PnP 在本篇后面出现两次：SLAM 前端用它把匹配到的地图点变成帧间位姿（8.1），位姿估计流水线用它把 3D 物体模型对齐到 2D 检测框（第 6 节）。它是"几何感知"里出场率最高的单一算法。
@@ -279,7 +279,7 @@ $$
 
 PointNet 的理论贡献不止于"这样是对的"，而是"这样做是**万能的**"[1]：
 
-> **定理（普适逼近）**：设 $$f:2^{\mathcal{X}}\to\mathbb{R}$$ 是关于 Hausdorff 距离连续的集合函数（即 $$d_H(S,S')\le\varepsilon \Rightarrow \vertf(S)-f(S')\vert$$ 充分小），则对任意 $$\varepsilon>0$$，存在连续函数 $$h:\mathcal{X}\to\mathbb{R}^K$$ 与连续函数 $$\gamma$$，使得对所有有界点集 $$S$$ 有 $$\vertf(S)-\gamma(\max_{x_i\in S} h(x_i))\vert<\varepsilon$$。
+> **定理（普适逼近）**：设 $$f:2^{\mathcal{X}}\to\mathbb{R}$$ 是关于 Hausdorff 距离连续的集合函数（即 $$d_H(S,S')\le\varepsilon \Rightarrow \vert f(S)-f(S')\vert$$ 充分小），则对任意 $$\varepsilon>0$$，存在连续函数 $$h:\mathcal{X}\to\mathbb{R}^K$$ 与连续函数 $$\gamma$$，使得对所有有界点集 $$S$$ 有 $$\vert f(S)-\gamma(\max_{x_i\in S} h(x_i))\vert<\varepsilon$$。
 
 **证明草图**（一句话版）：把输入空间切成细网格，构造 $$h$$ 把每一点映为一个近似 one-hot 的指示向量（标记它落在哪个格子），max 聚合后得到"$$S$$ 占据了哪些格子"的占用指纹；$$\gamma$$ 只需在这有限的占用模式集合上逼近 $$f$$——格子切得足够细，连续性保证误差任意小。**连续性一句话**：两个集合 Hausdorff 距离近，则它们的格子占用模式只在边界格子上有差异，max 输出的变化就被限制住了。
 
@@ -590,7 +590,7 @@ $$
 ## Lab Exercises
 
 1. **PointNet 手搓体验**：安装 Open3D（`pip install open3d`），下载 ModelNet10 子集，跑通官方 PointNet PyTorch 最小实现（约 200 行），然后做三个破坏性实验：测试时随机打乱点序，验证精度不变；再把 `torch.max` 换成 `torch.mean`，对比 ModelNet40 精度变化并解释；最后扫描全局特征维度 $$K\in\{2,4,8,16,64,256\}$$ 画精度曲线，对应 4.2 节"瓶颈维度决定表达能力"的论断。
-2. **Depth Anything 尺度对齐实验**：用 Depth Anything V2 开源权重（HuggingFace: `depth-anything` 系列，未本地验证）对一张室内照片推相对深度，再用 RealSense 采 20 个稀疏真值点做 RANSAC 线性尺度回归，报告绝对相对误差的改善幅度，评价指标 $$\mathrm{AbsRel}=\frac{1}{M}\sum_i \frac{\vertd_i-d_i^*\vert}{d_i^*}$$；额外记录去掉最差 2 个对齐点后指标的变化，体会 RANSAC 的必要性。
+2. **Depth Anything 尺度对齐实验**：用 Depth Anything V2 开源权重（HuggingFace: `depth-anything` 系列，未本地验证）对一张室内照片推相对深度，再用 RealSense 采 20 个稀疏真值点做 RANSAC 线性尺度回归，报告绝对相对误差的改善幅度，评价指标 $$\mathrm{AbsRel}=\frac{1}{M}\sum_i \frac{\vert d_i-d_i^*\vert}{d_i^*}$$；额外记录去掉最差 2 个对齐点后指标的变化，体会 RANSAC 的必要性。
 3. **标定-投影闭环实验**：打印棋盘格标定你的 webcam（OpenCV `calibrateCamera`，验收线：重投影 RMS 小于 0.5 px）；用 2.6 节代码把桌面上一个已知 3D 点投回图像，手动核对像素误差小于 2 px；然后把外参平移人为扰动 5 mm，重新投影并估算该像素偏移在工作距离上对应多少厘米的实际偏差——写一段"为什么 90% 的抓不准是标定问题"的复盘笔记。
 4. **因子图玩具求解**：用 NumPy 手写 8.3 节的三帧最小例子（高斯-牛顿 3 次迭代即可），把回环观测从 2.2 扫到 2.0，画出 $$x_2,x_3$$ 的解随之变化的曲线；再给里程计因子 10 倍权重重跑，观察修正量的分配如何改变。
 5. **FoundationPose 上手**：按官方仓库 README 准备 YCB-V 数据或自拍视频，对一个新物体跑 zero-shot 位姿跟踪，故意用反光材质物体复现失败案例，记录置信度曲线——体会"什么时候该降级到盲抓"。

@@ -70,9 +70,9 @@ $$x' = Qx = M\cdot q_1 + Qg$$
 
 其中 $$q_1$$ 是 $$Q$$ 的第一列。随机正交矩阵的列向量**均匀分布在单位球面**上，所以 $$q_1$$ 的每个坐标幅度都是 $$O(1/\sqrt{d})$$。于是旋转后：
 
-$$\max_i \vertx'_i\vert \;\approx\; \frac{M}{\sqrt{d}} + O(\sqrt{\log d})$$
+$$\max_i \vert x'_i\vert \;\approx\; \frac{M}{\sqrt{d}} + O(\sqrt{\log d})$$
 
-而旋转前 $$\max\vertx_i\vert = M$$。**动态范围从 $$M$$ 直接缩到 $$M/\sqrt{d}$$**。$$d = 4096$$ 时，$$M = 60$$ 的 outlier 被摊薄到 $$\approx 1$$——刚好掉进 4bit 能容纳的动态范围。这就是"旋转消除 outlier"的全部直觉：不删除 outlier，而是把它分给所有人。
+而旋转前 $$\max\vert x_i\vert = M$$。**动态范围从 $$M$$ 直接缩到 $$M/\sqrt{d}$$**。$$d = 4096$$ 时，$$M = 60$$ 的 outlier 被摊薄到 $$\approx 1$$——刚好掉进 4bit 能容纳的动态范围。这就是"旋转消除 outlier"的全部直觉：不删除 outlier，而是把它分给所有人。
 
 更一般地，对激活协方差矩阵 $$\Sigma_x = \mathbb{E}[x^{\mathsf{T}}x]$$（$$d\times d$$），旋转后第 $$i$$ 个坐标的方差为：
 
@@ -115,7 +115,7 @@ $$X'W' = XQ^{\mathsf{T}}QW = XW = Y$$
 
 两个变换的代价完全不对称：$$W'$$ 是**离线**算好的（推理零成本），而 $$X'$$ 必须在**推理时在线**计算——除非 $$XQ^{\mathsf{T}}$$ 能吸收进前一个模块。如何安排"哪些旋转吸收、哪些在线"，是 QuaRot 的核心设计（2.3 节）。
 
-**量化误差视角（为什么旋转后量化更准）**。考虑对激活 $$X$$ 做均匀量化，量化误差 $$\Delta x_i \sim \mathcal{U}(-\delta_i/2, \delta_i/2)$$，其中步长 $$\delta_i \propto \max\vertx_i\vert$$（或按动态范围）。输出误差的期望可以近似为：
+**量化误差视角（为什么旋转后量化更准）**。考虑对激活 $$X$$ 做均匀量化，量化误差 $$\Delta x_i \sim \mathcal{U}(-\delta_i/2, \delta_i/2)$$，其中步长 $$\delta_i \propto \max\vert x_i\vert$$（或按动态范围）。输出误差的期望可以近似为：
 
 $$\mathbb{E}\left[\left\|\,(X - \hat{X})\,W\,\right\|^2\right] \;\approx\; \sum_i \frac{\delta_i^2}{12}\,\|W_{i:}\|^2$$
 
@@ -125,7 +125,7 @@ $$\mathbb{E}\left[\left\|\,(X - \hat{X})\,W\,\right\|^2\right] \;\approx\; \sum_
 
 为了把"旋转减少动态范围 → 量化误差下降"讲得更严谨，推导均匀量化 SNR 与动态范围的定量关系。
 
-设激活坐标 $$x_i$$ 分布的标准差为 $$\sigma_i$$，对称均匀量化的范围 $$B = \max\vertx_i\vert$$，量化电平数 $$2^b$$（4bit 时为 15 个正电平 + 对称负电平）。步长 $$\delta = 2B/(2^b - 1)$$，量化噪声 $$e \sim \mathcal{U}(-\delta/2, \delta/2)$$，噪声方差 $$\delta^2/12$$。该坐标的信噪比为：
+设激活坐标 $$x_i$$ 分布的标准差为 $$\sigma_i$$，对称均匀量化的范围 $$B = \max\vert x_i\vert$$，量化电平数 $$2^b$$（4bit 时为 15 个正电平 + 对称负电平）。步长 $$\delta = 2B/(2^b - 1)$$，量化噪声 $$e \sim \mathcal{U}(-\delta/2, \delta/2)$$，噪声方差 $$\delta^2/12$$。该坐标的信噪比为：
 
 $$\mathrm{SNR}_i \;=\; \frac{\mathbb{E}[x_i^2]}{\delta^2/12} \;\approx\; 3\cdot 2^{2b}\cdot \frac{\sigma_i^2}{B_i^2}$$
 

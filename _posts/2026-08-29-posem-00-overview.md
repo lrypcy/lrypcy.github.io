@@ -97,7 +97,7 @@ graph TD
 | Sinusoidal | 理论无约束，实测一般 | 训练分布外的位置组合内积行为未见过 |
 | 可学习 PE | **零** | $$L_{\text{train}}$$ 之外的 embedding 根本不存在 |
 | T5 bias | 零（bucket 截断） | 相对距离超过 bucket 范围无参数 |
-| ALiBi | **好**（有限距离内） | 偏置 $$-s\vertm-n\vert$$ 对任意 $$m-n$$ 都有定义 |
+| ALiBi | **好**（有限距离内） | 偏置 $$-s\vert m-n\vert$$ 对任意 $$m-n$$ 都有定义 |
 | RoPE（原版） | 差 | 训练外的高频旋转组合爆炸（[04 篇](/2026/08/29/posem-04-extrapolation-pi-ntk/)分析"罪魁频率"） |
 | RoPE + YaRN/LongRoPE | 好 + 少量微调 | 重整频率谱 + 注意力温度 |
 

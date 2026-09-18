@@ -99,10 +99,10 @@ $$
 \mathbb{E}[\Delta y_i^2] \;=\; \delta_{ij}^2 \cdot \mathbb{E}[x_j^2] \;=\; \delta_{ij}^2 \cdot H_{jj}
 $$
 
-其中 $$H = \mathbb{E}_{x \sim \mathcal{D}}[x x^\top]$$ 是激活的二阶矩矩阵，也就是线性层场景下损失函数 Hessian 的近似（GPTQ 那套误差分析的同一来源）。量化误差 $$\delta_{ij}$$ 的典型量级与权重幅值 $$\vertW_{ij}\vert$$ 成正比（仿射量化下误差上界为半个量化步长，而步长与幅值范围同阶），于是 SpQR 把敏感度定义为：
+其中 $$H = \mathbb{E}_{x \sim \mathcal{D}}[x x^\top]$$ 是激活的二阶矩矩阵，也就是线性层场景下损失函数 Hessian 的近似（GPTQ 那套误差分析的同一来源）。量化误差 $$\delta_{ij}$$ 的典型量级与权重幅值 $$\vert W_{ij}\vert$$ 成正比（仿射量化下误差上界为半个量化步长，而步长与幅值范围同阶），于是 SpQR 把敏感度定义为：
 
 $$
-\boxed{\,s_{ij} = \frac{\vertW_{ij}\vert}{\sqrt{[H^{-1}]_{jj}}}\,}
+\boxed{\,s_{ij} = \frac{\vert W_{ij}\vert}{\sqrt{[H^{-1}]_{jj}}}\,}
 $$
 
 这个定义来自"最优脑外科医生（OBS/OBQ）"框架：量化权重 $$W_{ij}$$ 且允许其他权重做最优补偿时，引入的误差正比于 $$(\hat{W}_{ij} - W_{ij})^2 / [H^{-1}]_{jj}$$，敏感度取其"幅值 × 1/√(H⁻¹ 对角)"的形式。
@@ -110,7 +110,7 @@ $$
 问题在于：逐元素求逆 Hessian 的对角线计算量太大（$$H^{-1}$$ 是 $$d_{\text{in}} \times d_{\text{in}}$$ 稠密矩阵，求逆是 $$O(d_{\text{in}}^3)$$）。SpQR 利用 Hessian 近似对角占优的性质，用 $$[H^{-1}]_{jj} \approx 1/H_{jj}$$ 做替换，得到实用的近似形式：
 
 $$
-s_{ij} \;\approx\; \vertW_{ij}\vert \cdot \sqrt{H_{jj}} \;=\; \vertW_{ij}\vert \cdot \sqrt{\mathbb{E}_{x \sim \mathcal{D}}[x_j^2]}
+s_{ij} \;\approx\; \vert W_{ij}\vert \cdot \sqrt{H_{jj}} \;=\; \vert W_{ij}\vert \cdot \sqrt{\mathbb{E}_{x \sim \mathcal{D}}[x_j^2]}
 $$
 
 这个公式的直觉非常清晰：**一个权重敏感，当且仅当它自身幅值大，并且它乘的激活 $$x_j$$ 方差大**。激活方差大的通道正是 LLM 里臭名昭著的 outlier 通道（第 E1 篇 LLM.int8 的观察），SpQR 等于把"通道级 outlier"进一步细化到了"元素级敏感度"。
@@ -200,13 +200,13 @@ OWQ 的出发点是 LLM 量化社区的一个共识性观察：**异常值不是
 检测方法：在少量校准数据 $$\mathcal{D}$$ 上统计每个通道的激活幅度均值：
 
 $$
-\mu_j = \frac{1}{\vert\mathcal{D}\vert} \sum_{x \in \mathcal{D}} \vertx_j\vert, \qquad j = 1, \dots, d_{\text{in}}
+\mu_j = \frac{1}{\vert\mathcal{D}\vert} \sum_{x \in \mathcal{D}} \vert x_j\vert, \qquad j = 1, \dots, d_{\text{in}}
 $$
 
 然后设定阈值 $$\tau$$（取 $$\mu$$ 分布的高分位，例如 top 0.1%），outlier 通道集合为：
 
 $$
-C = \left\{ j : \mu_j > \tau \right\}, \qquad \vertC\vert / d_{\text{in}} \approx 0.1\% \sim 1\%
+C = \left\{ j : \mu_j > \tau \right\}, \qquad \vert C\vert / d_{\text{in}} \approx 0.1\% \sim 1\%
 $$
 
 论文还报告了两个支撑性观察：
