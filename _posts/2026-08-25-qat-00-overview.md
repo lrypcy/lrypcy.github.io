@@ -10,7 +10,7 @@ mathjax: true
 
 > **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 4 · QAT** ｜ 第 21 篇 / 共 26 篇
 >
-> ← 20 蒸馏 + QAT（待写） ｜ 22 Reasoning QAT →（待写）
+> [← 20 蒸馏 + QAT](/2026/09/19/llm-quant-20-distillation-qat/) ｜ [22 Reasoning LLM 低比特量化 →](/2026/09/19/llm-quant-22-reasoning-llm-lowbit/)
 
 ## TL;DR
 

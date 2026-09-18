@@ -10,7 +10,7 @@ mathjax: true
 
 > **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 4 · QAT** ｜ 第 18 篇 / 共 26 篇
 >
-> [← 17 伪量化算子](/2026/08/26/llm-quant-11-fake-quant-insertion/) ｜ 19 AdaRound/BRECQ/QDrop（待写）
+> [← 17 伪量化算子](/2026/08/26/llm-quant-11-fake-quant-insertion/) ｜ [19 AdaRound / BRECQ / QDrop →](/2026/09/19/llm-quant-19-adaround-brecq-qdrop/)
 
 > **TL;DR**
 >
@@ -682,7 +682,7 @@ class LSQLinear(torch.nn.Linear):                     # 用法：直接替换 nn
 **系列导航**
 
 - 系列规划：见站内 [模型量化课程路线图](/quantization-roadmap/)（全 26 篇目录与阅读路径）
-- 上一篇：[17 伪量化算子插入](/2026/08/26/llm-quant-11-fake-quant-insertion/) ｜ 下一篇：19 AdaRound / BRECQ / QDrop（待写）
+- 上一篇：[17 伪量化算子插入](/2026/08/26/llm-quant-11-fake-quant-insertion/) ｜ 下一篇：[19 AdaRound / BRECQ / QDrop](/2026/09/19/llm-quant-19-adaround-brecq-qdrop/)
 - 交叉引用：[01 篇 §4](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)（min-max vs MSE 最优 scale，本文 §4.2 的 4-bit 5.5 dB 差距是它在激活维度的投影）、[01 篇 §7.2](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)（scale 元数据税）、[24 篇](/2026/08/29/llm-quant-24-kv-cache/)（横向专题的诚实标注范式）
 
 **诚实标注**：本文所有**论文数字**均标注了出处与表号（LSQ Table 3 / DSQ Table 2,4,5,7），未做二次加工。所有标为"实测"的数字均为本文自己在 §2 的两个合成任务上跑出来的（numpy 2.1.1，代码见 §10），**不是真实模型的精度**。LSQ/PACT 的公式（Eq.1–4、$$g$$、初始化）与 DSQ 的公式（Eq.3–10）均已逐字符对照 arXiv 原文核验。文中明确标注为"预期""方向"的部分未做实验验证；§3.5、§4.3、§5.4 三节报告了**与我预期相反或未复现**的结果，均已如实说明。

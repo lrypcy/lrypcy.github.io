@@ -122,7 +122,7 @@ graph TD
 
 ## 参考文献与延伸阅读
 
-- 系列内交叉引用：执行器与阻抗控制的物理原理见 [01 篇](/2026/08/25/embodied-ai-01-control-foundations/)；sim-to-real 工程细节见 [02 篇](/2026/08/26/embodied-ai-02-rl-il-sim2real/)；数据战略定量证据见 [07 篇](/2026/08/31/embodied-ai-07-data-sim-benchmark/)。
+- 系列内交叉引用：执行器与阻抗控制的物理原理见 [01 篇](/2026/08/25/embodied-ai-01-control-foundations/)；sim-to-real 工程细节见 [02 篇](/2026/08/25/embodied-ai-02-rl-il-sim2real/)；数据战略定量证据见 [07 篇](/2026/08/25/embodied-ai-07-data-sim-benchmark/)。
 - 行情类信息时效性强：本篇所有公司动态均建议以官方渠道二次核实（官网链接均已给出，标注 ⚠️ 者为本地网络不可达但地址规范）。
 - 中文产业分析：《机器之心》《量子位》具身智能专题、甲子光年/信通院年度报告（检索标题获取最新版本）。
 

@@ -10,7 +10,7 @@ mathjax: true
 
 > **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **Part 5 · 横向专题** ｜ 第 24 篇 / 共 26 篇
 >
-> [← 23 LLM PTQ 统一视角](/2026/08/29/llm-quant-23-unified-view/) ｜ 25 Mixed-Precision（待写）
+> [← 23 LLM PTQ 统一视角](/2026/08/29/llm-quant-23-unified-view/) ｜ [25 Mixed-Precision →](/2026/09/19/llm-quant-25-mixed-precision/)
 
 > **TL;DR**
 >
@@ -568,7 +568,7 @@ KVQuant 的做法简单到几乎不算算法：**把第一个 token 排除在量
 
 论文的定位陈述很克制：WKVQuant 达到"接近 weight-activation 量化的显存节省，同时接近 weight-only 量化的精度"。
 
-**批评**：WKVQuant 的"联合"程度其实有限。它没有回答一个更重要的问题——**给定总显存预算 $$M$$，权重和 KV 各分几个 bit 才最优？** 这才是"联合量化"真正的含义，而它需要一个把两者放在同一个目标函数里的框架。这个框架是 [25 篇](/2026/08/29/llm-quant-25-mixed-precision/) 的主题。WKVQuant 做的更像是"两件事都做了，并且互相不打架"。
+**批评**：WKVQuant 的"联合"程度其实有限。它没有回答一个更重要的问题——**给定总显存预算 $$M$$，权重和 KV 各分几个 bit 才最优？** 这才是"联合量化"真正的含义，而它需要一个把两者放在同一个目标函数里的框架。这个框架是 [25 篇](/2026/09/19/llm-quant-25-mixed-precision/) 的主题。WKVQuant 做的更像是"两件事都做了，并且互相不打架"。
 
 一个有用的观察是：**W4 + KV4 与 W8 + KV2 的平均位宽可能相同，但精度差很远**，因为权重误差和 KV 误差的下游敏感度完全不同（§2.3）。这就需要一个跨两者的敏感度模型——目前还没有令人满意的公开工作。
 
@@ -875,7 +875,7 @@ $$b^{*} = \frac{295\cdot B_w}{2} \quad\Longrightarrow\quad
 **系列导航**
 
 - 系列规划：见站内 [模型量化课程路线图](/quantization-roadmap/)（全 26 篇目录与阅读路径）
-- 上一篇：[23 LLM PTQ 统一视角](/2026/08/29/llm-quant-23-unified-view/)｜下一篇：25 Mixed-Precision（待写）
+- 上一篇：[23 LLM PTQ 统一视角](/2026/08/29/llm-quant-23-unified-view/)｜下一篇：[25 Mixed-Precision](/2026/09/19/llm-quant-25-mixed-precision/)
 - 交叉引用：[01 篇 §6.2](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)（$$C$$ 加权损失与"重建误差 ≠ 输出误差"）、[16 篇 QServe](/2026/08/24/ptq-13-qserve-qqq/)（W4 在大 batch 下的失效）
 
 **诚实标注**：本篇所有**显存与带宽**数字均为本文自行推导（§1 的公式已用 KVQuant Table 8 反向校验）；所有**精度**数字（PPL / GSM8K / CoQA / RULER / 吞吐加速比）均标注了出处论文与表号，未做任何二次加工或外推。文中明确标注为"推导""估算""预期趋势"的部分，均未做实验验证。

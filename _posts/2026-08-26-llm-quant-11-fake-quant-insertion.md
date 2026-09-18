@@ -516,7 +516,7 @@ STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学�
 **系列导航**
 
 - 系列规划：见站内 [模型量化课程路线图](/quantization-roadmap/)（全 26 篇目录与阅读路径）
-- 上一篇：[15 GGUF k-quants / FP8 / MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/) ｜ 下一篇：**18 LSQ / PACT / DSQ**（待写）
+- 上一篇：[15 GGUF k-quants / FP8 / MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/) ｜ 下一篇：[18 LSQ / PACT / DSQ](/2026/08/29/llm-quant-18-lsq-pact-dsq/)
 - PTQ 部分（00–16 篇）提供量化器数学基础；本篇开启 QAT 部分
 
 **中文社区**：知乎上关于 QAT 和 STE 的讨论较多，尤其"量化感知训练为什么有效"类话题下有若干高质量回答；掘金上 PyTorch 量化实战教程覆盖了 torch.ao 的 eager mode 流程。本篇未能核验到稳定直链，暂不列出——诚实标注：本节为占位，非完整来源。
