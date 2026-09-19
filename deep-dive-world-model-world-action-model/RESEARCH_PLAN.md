@@ -239,7 +239,7 @@ WAM 不能被"画面像不像"单独评判，也不能只看任务成功率。**
 > 已按你的偏好调整：不再拆 01–07，写成一篇文章进 `_posts/`，本目录只留索引。
 
 ```
-_posts/2026-09-19-world-model-world-action-model-deep-dive.md   ← 单篇正文
+_posts/2026-09-05-world-model-world-action-model.md   ← 单篇正文（slug 复用 09-05 的低质量旧文）
 deep-dive-world-model-world-action-model/
 ├── README.md          ← 索引页（指向文章 + 论文速查表）
 ├── RESEARCH_PLAN.md   ← 本文件

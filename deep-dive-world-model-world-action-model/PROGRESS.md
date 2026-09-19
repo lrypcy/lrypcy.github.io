@@ -10,7 +10,7 @@
 | `README.md` | ✅ | 索引页：指向正文 + 概念速查 + 核心论文表 + 评测速查 |
 | `PROGRESS.md` | ✅ | 本文件 |
 | 文献调研（2025-2026 WAM 现状） | ✅ | 已核实 WAM Survey、DreamZero、Cosmos Policy、GE-Sim V2 / WorldArena、Genie 3 / Cosmos、Dreamer V3/V4、TD-MPC2 / IRIS、驾驶线 |
-| **`_posts/2026-09-19-world-model-world-action-model-deep-dive.md`** | ✅ | **正文已完成**：787 行 / 3.26 万字符，4 个 Lab 全部实跑并回填真实输出 |
+| **`_posts/2026-09-05-world-model-world-action-model.md`** | ✅ | **正文已完成**：787 行 / 3.26 万字符，4 个 Lab 全部实跑并回填真实输出 |
 
 ## 正文结构（与 RESEARCH_PLAN §7 对齐）
 

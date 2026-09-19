@@ -4,7 +4,7 @@
 
 ## 正文
 
-**→ [《世界模型与世界动作模型（WAM）：从 Dreamer V4 到 Cosmos Policy / DreamZero 的完整地图（2025–2026）》](/2026/09/19/world-model-world-action-model-deep-dive/)**
+**→ [《世界模型与世界动作模型（WAM）：从 Dreamer V4 到 Cosmos Policy / DreamZero 的完整地图（2025–2026）》](/2026/09/05/world-model-world-action-model/)**
 
 单篇长文（787 行 / 3.3 万字符），进 `_posts/`，由 GitHub Pages 自动构建。
 
