@@ -1,63 +1,66 @@
 # Progress Tracking
 
-> 结构已按"收紧成单篇"调整：不产 01–07 七篇，一篇文章进 `_posts/`，本目录只留索引。
-
 ## 状态
 
 | 项 | 状态 | 说明 |
 |:---|:---:|:---|
-| `RESEARCH_PLAN.md` | ✅ | v2（2026-09-19）：术语与形式化、三条谱系时间线、Cascaded vs Joint、双轴评测地图、12 条开放问题、Q1–Q12、产出结构、未验证清单、论文索引 |
-| `README.md` | ✅ | 索引页：指向正文 + 概念速查 + 核心论文表 + 评测速查 |
+| `RESEARCH_PLAN.md` | ✅ | v2：术语与形式化、三条谱系、Cascaded vs Joint、双轴评测、12 条开放问题、Q1–Q12、论文索引 |
+| `README.md` | ✅ | **v3（2026-09-19）**：新增十方向深潜系列索引、13 个 Lab 结果表、扩充后的论文表与评测四层框架 |
 | `PROGRESS.md` | ✅ | 本文件 |
-| 文献调研（2025-2026 WAM 现状） | ✅ | 已核实 WAM Survey、DreamZero、Cosmos Policy、GE-Sim V2 / WorldArena、Genie 3 / Cosmos、Dreamer V3/V4、TD-MPC2 / IRIS、驾驶线 |
-| **`_posts/2026-09-05-world-model-world-action-model.md`** | ✅ | **正文已完成**：787 行 / 3.26 万字符，4 个 Lab 全部实跑并回填真实输出 |
+| `_posts/2026-09-05-world-model-world-action-model.md` | ✅ | 单篇长文正文：787 行 / 3.26 万字符，4 个 Lab 实跑并回填 |
+| **WAM 十方向深潜系列 `00`–`11`** | ✅ | **本次新增**：12 篇，13 个 Lab 全部实跑 |
 
-## 正文结构（与 RESEARCH_PLAN §7 对齐）
+## 本轮产出：WAM 十方向深潜系列（2026-09-19）
 
-| 章节 | 内容 | 回答 |
-|:---|:---|:---|
-| §0 TL;DR | 5 条结论 | — |
-| §1 定义与形式化 | 三式 $p(a\mid o,l)$ / $p(o'\mid o,a)$ / $p(o',a\mid o,l)$；判定边界四条反例；变量映射表；"为什么是 2026"三前提 | Q1 |
-| §2 三条谱系 | latent MBRL（Dreamer V3/**V4**、IRIS、TD-MPC2）+ **Lab 1**；生成式（Genie 3 / Cosmos / 驾驶线 / GE-Sim V2）；VLA→WAM（Cosmos Policy / DreamZero）+ 时间线 mermaid | Q3, Q9, Q11 |
-| §3 架构 Cascaded vs Joint | **latent frame injection 详解 + Lab 2**；条件掩码三功能表；best-of-N 与双 checkpoint；DreamZero 联合流匹配 + KV cache 写回；对照表 | Q2, Q4, Q5 |
-| §4 评测双轴 | 世界建模三层次 + WorldArena + 策略基准家族 + **"世界模型当裁判" Lab 3（选优效率口径）** | Q8 |
-| §5 工程 | **模型误差累积 Lab 4**；38× 加速拆解；数据混合四类；成本；**与信用分配的接口 §5.3** | Q6, Q10, Q12 |
-| §6 开放问题与选型 | 12 条开放问题表 + "该不该上 WAM"决策表 + 最小可行路线 | Q7, Q12 |
-| §7 附录 | 论文索引 + 未验证清单 + Lab 清单 | — |
+来源：`congyuan_blogs/Clippings/WAM最新进展分析.md`（ChatGPT 对话归档）。用户要求：先整理方向文档，再对每个方向写含数学原理的深入技术文档。
 
-## 本轮新增核实的事实（写作前补的原文精读）
+| 文件 | 行数级 | 覆盖 | Lab |
+|:---|:---|:---|:---|
+| `00-wam-directions-map.md` | ~190 | 方向地图 + 论文总表 | — |
+| `01-math-foundations.md` | ~330 | 数学底座 | A / B / C |
+| `02-video-foundation-prior.md` | ~200 | D1 | D1 |
+| `03-action-conditioned-wm.md` | ~230 | D2 | D2 |
+| `04-joint-world-action.md` | ~230 | D3 | D3 |
+| `05-world-model-planning.md` | ~240 | D4 | D4b / D4c |
+| `06-neural-simulator.md` | ~250 | D5 | D5 |
+| `07-latent-jepa-wam.md` | ~240 | D6 | D6 |
+| `08-geometry-action-repr.md` | ~230 | D7 | D7 |
+| `09-efficient-inference.md` | ~250 | D8 | D8 |
+| `10-driving-wam.md` | ~230 | D9 | D9 |
+| `11-training-recipe-wm-rl.md` | ~240 | D10 | D10 |
 
-- **Dreamer V4**（arXiv:2509.24527，已精读方法与实验部分）：
-  - 三阶段：世界模型预训练 → Agent 微调（插入 task token 长出 policy/reward/value 头）→ 想象训练。
-  - **shortcut forcing** 明确在**数据空间**去噪，理由是"prevent accumulating errors caused by high-frequency network outputs"；训练时把步数 $d$ 作为条件，$K=4$ 次前向生成一帧 → 单 GPU 实时。
-  - tokenizer 用 masked autoencoding、causal attention 做时间压缩；多模态损失用 running RMS 归一。
-  - 离线挖钻：需选 **20,000+** 鼠标键盘动作序列；比 OpenAI VPT offline agent 少用 **100×** 数据。
-  - 数据混合 50% uniform + 50% relevant；BC loss 只在 relevant 上，dynamics loss 只在 uniform 上（避免乐观生成）。
-- **Cosmos Policy**（arXiv:2601.16163，已核对摘要与 §4/附录）：
-  - LIBERO **98.5%** / RoboCasa **67.1%** 是**摘要原文数字**（之前标"待验证"的这条可以去掉）。
-  - 11 帧潜序列布局（双第三方相机 + 腕相机）：blank / proprio / wrist / cam1 / cam2 / **action chunk** / future proprio / future wrist / future cam1 / future cam2 / **future value**。
-  - 训练数据混合 50/25/25（策略 / 世界模型 / 值函数）；噪声分布改为 0.7 log-normal + 0.3 U[1,85]；推理 $\sigma_{\min}$ 从 0.002 提到 4。
-  - **规划模式约 5 秒生成一个 action chunk**（论文自己写的限制）；直接模式 5 步去噪 + 并行解码。
-  - best-of-N 用两个 checkpoint（policy model + planning model），3×5=15 次预测 + majority mean 聚合。
+## 文献核实（本轮新增，全部逐条查证）
 
-## Lab 实跑结果（环境：miniconda python / numpy 2.1.1）
+Clipping 里的 arXiv 编号全部真实存在，且挖到若干 Clipping 未列出的重要工作：
 
-| Lab | 关键输出 |
-|:---|:---|
-| L1 §2.1 | 逐样本梯度 max/min：MSE **2.63e6** → symlog **4.26e2** → two-hot **6.07**；小量级子集（21.4%）相对误差 MSE **259.7** vs symlog **0.786** |
-| L2 §3.2 | 11 帧潜序列 shape `(11,16,28,16)`；action chunk 16×7=112 → 复制 64 次填满 7168；反解无需 VAE 解码 |
-| L3 §4.3 | 选优效率：eps=0.02 全程 **1.000**；eps=0.05 **0.955–0.984**；eps=0.10 **0.78–0.91**（Pearson 0.84） |
-| L4 §5.1 | 单步误差 0.02 下 32 步误差：ρ=0.90 **0.16**（有界）/ ρ=1.00 **9.20** / ρ=1.05 **42.69** |
+- **MotuBrain** 2604.27792（v5，2026-07）— UniDiffuser + 三流 MoT；RoboTwin 2.0 95.8/96.1；EWMScore；50–100 轨迹跨本体；>50× / 11 Hz
+- **τ₀-WM** 2606.01027（v2，2026-08）— VAM + ACVS 双接口；27,300 h（17.8k 遥操作 65% / 6.5k UMI 24% / 3.0k 人类视频 11%）
+- **OSCAR** 2606.04463 — 骨架条件；单 GH200 微调 Cosmos-Predict2.5-2B；PSNR 24.24 / SSIM 0.846 / LPIPS 0.094 / FVD 7.08；Spearman 0.750 / Pearson 0.852
+- **DriveWAM** 2605.28544 — Wan2.2-5B → 自回归 video-action policy；VLM chunk 引导；选择性 KV 记忆；4k→100k clips
+- **UNIVERSE** 2607.05133 — 单掩码调制 DiT + 模态解耦可见性掩码；91.0 PDMS（vs Two-DiT 89.6）；4.3×
+- **SimWAM** 2608.07468（v4）— 隔离注意力掩码；视频分支训练后丢弃；91.5 PDMS + RL
+- **WA-JEPA** 2608.20974（v2）— 未来掩码 + 潜空间条件流匹配 + 联合未来-动作预测；EPDMS 91.7；HUGSIM HD-Score 0.4462
+- **SG-WAM** 2608.01397（v2）— dynamics token + EMA 自引导 + 几何监督；0.9B；LIBERO 98.5 / LIBERO-Plus 73
+- **Faster-WAM** 2608.02365 — DoT（KV-Fusion + RoPE 对齐）；66.5 ms vs 211.7 ms；LIBERO 98.5 / RoboTwin 89.17 / LIBERO-Plus 75.0
+- **MM-Future** 2609.20377（2026-09-17，两天前）— 多模态配对假设 + MM-Tokens；94.0 PDMS / 91.5 EPDMS / 32.3 HD-Score
+- **WorldGym** 2506.00613（Stanford/NYU/GDM）— Clipping 里引用缺失，已补
+- **WALL-WM** 2606.01955、**JOPAT** 2605.23856、**VERA** 2605.27817 — 从 NUS survey 主页挖到，Clipping 未列
+- 两篇综述：**2609.16074**（机器人向，2026-09-13）+ **2606.20781**（NUS，109 篇，主页 world-action-models.github.io）
 
-## 踩坑记录
+## 踩坑记录（本轮）
 
-- **第一个 symlog 实验设计错了**：用标量预测去拟合跨量级分布，三种 loss 的相对误差都是 1.0，无区分度。改成"带特征的回归 + 按量级分桶"才有信号。
-- **想象步数扫描实验失败两次**：随机采样 shooting 的规划器在长视野下反而更差（选出的是"后期运气好"的序列，第一步动作是随机的）；换成 CEM 后结论仍被噪声淹没。最终放弃"扫描 H 找最优"，改成**两个确定性更强的实验**（误差累积的谱半径分析 + 裁判可靠性的选优效率）。
-- **教训**：要证明"模型误差随 H 累积"这种机制，直接测误差增长比测下游任务回报干净得多。
-- **粘贴输出前必须重跑正文里的代码**：本次因为文章里的代码块做了简化（变量顺序、`acts` 生成位置、`make_model` 是否扰动 B），4 个块里有 3 个的输出与 /tmp 版本不同，逐个校准后才一致。
+1. **可达矩阵列序写反**：`reach()` 里按 `[B, AB, A²B…]` 排列，但轨迹时序要求 `[A^{H-1}B, …, B]`。因为 $u$ 是自由向量，列置换不改变可达集，**所以 Oracle 上界看起来"正常"却拿不到 0 回报**——症状是 oracle 比模型还差。修正后 oracle 立刻回到 −0.000。教训：**先验证上界是否等于理论最优，再信下游数字**。
+2. **潜空间塌缩实验没复现**：线性 encoder + 线性 predictor 下不塌缩，而是尺度爆炸（std 1.7，特征值 5.26）。JEPA 塌缩需要非线性 predictor 才有常数解。已放弃该实验，换成"潜空间维度 k 的信息/噪声权衡"。
+3. **正则系数 λ 扫描引入选择噪声**：取 max over λ 会让小 k 看起来更好。改用固定任务集 + 明确标注 λ 的选择方式。
+4. **目标可达性**：随机采样 goal 时，"什么都不做"（−6.0）会打败所有规划器（−7.4），因为 2 个执行器 10 步到不了 6 维随机目标。改成**从随机动作序列反推可达目标**，oracle 才回到 0。
+5. **lstsq 的转置方向**：`lstsq([S,A], Sn)` 得到 $W$ 的形状是 $(d+d_a, d)$，取 $\hat A = W[:d]^\top$ 而不是 $W[:d]$。踩了两次。
+6. **动作头占比的基准要说清**："占 4%"（对 50 步基线）和"砍掉带来 2× 加速"（对 4 步基线）不矛盾，但必须在文中点明，否则读者会以为自相矛盾。
 
 ## 剩余待办
 
-- [ ] DreamZero 的 62.2% / 39.5% / +42% / 38× 数字仍为二手来源，未复现（已在 §7.2 标注）
 - [ ] Cosmos Policy 的"每任务 50 条演示"与"规划 +12.5%"未见于摘要，标为待验证
-- [ ] 需要 GPU 的实验（真实 LIBERO/RoboCasa 跑分、跨本体视频迁移）未做，正文给了 §6.3 最小可行路线
+- [ ] DreamZero 的 62.2% / 39.5% / +42% / 38× 数字仍为二手来源
+- [ ] `σ_min` 从 0.002 提到 4 的动机是**我的推断**（论文未解释），已在 11 §2.2 标注
+- [ ] Lab D6 的"有限数据下高维模型过拟合"在 toy 上没拿到稳定结论，已标注为定性判断
+- [ ] 需要 GPU 的实验（真实 LIBERO/RoboCasa 跑分、跨本体视频迁移）全部未做
+- [ ] 十三篇文档尚未决定是否发进 `_posts/`——等用户拍板
