@@ -24,6 +24,8 @@ mathjax: true
 
 ## 1. 为什么要写这一篇：论文列表化的陷阱
 
+配套实验代码：[experiments/quantization/unified_view/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/unified_view/)（纯 numpy，几秒复现全部表格与图表）
+
 这个系列写到第 22 篇的时候，出现了一个值得警惕的信号。
 
 如果我问"GPTQ 和 AWQ 有什么区别"，一个读完前面所有文章的人很可能回答："GPTQ 用 Hessian 做二阶补偿，AWQ 用激活幅度找显著通道。" 这个回答没错，但它是一个**记住了答案**的回答，而不是一个**能推导**的回答。

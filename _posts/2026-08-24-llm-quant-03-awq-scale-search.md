@@ -323,7 +323,7 @@ AWQ 论文的做法与此同宗：auto_clip 对每个输入通道在收缩系数
 
 ### 4.4 符号—代码映射与复现指南
 
-代码位于 `experiments/awq_scale_search/run.py`（纯 numpy + matplotlib，seed=0，数十秒复现全部图表与 `results.json`）。三个 Demo 与文章章节一一对应：Demo A ↔ §2.3，Demo B ↔ §3.5，Demo C ↔ §4.3。核心记号与代码变量的对照：
+代码位于 [experiments/quantization/awq_scale_search/run.py](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/awq_scale_search/run.py)（纯 numpy + matplotlib，seed=0，数十秒复现全部图表与 `results.json`）。三个 Demo 与文章章节一一对应：Demo A ↔ §2.3，Demo B ↔ §3.5，Demo C ↔ §4.3。核心记号与代码变量的对照：
 
 | 数学符号 | 代码变量 | Shape / 类型 | 说明 |
 |---|---|---|---|
@@ -399,7 +399,7 @@ AWQ 的工程贡献不止校准算法，还有一个访存优化（新符号 $$\
 
 **代码与规范**
 
-- 本篇配套实验：`technology/quantization/llm_quant_series/experiments/awq_scale_search/`（numpy + matplotlib，seed=0，数十秒复现全部图表与 `results.json`）
+- 本篇配套实验：[experiments/quantization/awq_scale_search/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/awq_scale_search/)（numpy + matplotlib，seed=0，数十秒复现全部图表与 `results.json`）
 - [mit-han-lab/llm-awq](https://github.com/mit-han-lab/llm-awq) —— 论文官方实现（校准流水线与 kernel）
 - [casper-hansen/AutoAWQ](https://github.com/casper-hansen/AutoAWQ) —— 生产级封装，`auto_clip` 与 GEMM/GEMV kernel 在此维护
 - [vLLM quantization 文档](https://docs.vllm.ai/en/latest/quantization/) —— `--quantization awq` 的生产引擎入口与格式约定

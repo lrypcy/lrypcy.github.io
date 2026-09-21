@@ -141,7 +141,7 @@ $$
 
 理解"误差 = 舍入 + 裁剪"的二分，几乎所有 PTQ 算法的动机都能一句话说清：**减小 $$s$$ 让舍入误差变小、但更多点撞上边界被裁剪；增大 $$s$$ 反之**。scale 的选择就是这个折衷的定价问题（§4），而粒度决定这个定价被重复使用多少次（§7）。
 
-把上面所有记号和配套实验代码钉在同一张映射表里（代码位于 `experiments/quantizer_granularity/run.py`）：
+把上面所有记号和配套实验代码钉在同一张映射表里（代码位于 [experiments/quantization/quantizer_granularity/run.py](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/quantizer_granularity/run.py)）：
 
 | 数学符号 | 代码变量 | Shape / 类型 | 说明 |
 |---|---|---|---|
@@ -428,7 +428,7 @@ $$g=128$$ 的元数据税只有 3%，换来的是 §7.3 里 9 dB 量级的精度
 
 **代码与规范**
 
-- 本篇配套实验：`technology/quantization/llm_quant_series/experiments/quantizer_granularity/`（numpy，4 秒复现全部图表）
+- 本篇配套实验：[experiments/quantization/quantizer_granularity/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/quantizer_granularity/)（numpy，4 秒复现全部图表）
 - [llama.cpp](https://github.com/ggerganov/llama.cpp) —— k-quants 分组量化的工程标杆
 - [mobiusml/hqq](https://github.com/mobiusml/hqq) —— data-free 解析 scale（§4.2 思想的工程化）
 - [TensorFlow Lite 量化规范](https://www.tensorflow.org/lite/performance/quantization_spec) —— 零点精确表示要求

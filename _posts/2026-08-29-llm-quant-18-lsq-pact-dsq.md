@@ -22,6 +22,8 @@ mathjax: true
 
 ## 0. 符号字典增量表
 
+配套实验代码：[experiments/quantization/lsq_learned_step_size/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/lsq_learned_step_size/) 和 [experiments/quantization/pact_learnable_clip/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/pact_learnable_clip/) 和 [experiments/quantization/dsq_soft_quant/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/dsq_soft_quant/)（纯 numpy，几秒复现全部表格与图表）
+
 [01 篇 §2](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 与 [17 篇 §2](/2026/08/26/llm-quant-11-fake-quant-insertion/) 已锁定的符号（$$x, W, s, z_p, b, \hat{x}, q, \mathcal{G}, \delta_{\mathrm{STE}}$$ 等）含义不变。本篇新增：
 
 | 符号 | 含义 | 易混淆提示 |

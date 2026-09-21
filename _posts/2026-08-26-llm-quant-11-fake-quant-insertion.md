@@ -157,7 +157,7 @@ $$
 
 ### 3.5 网格吸附效应：实验验证
 
-伪量化 round-trip 最直观的效果是**网格吸附**：非网格点被拉到最近的网格电平。01 篇 §4 证明 per-tensor 在 outlier 权重上 SNR 仅0.97 dB；本篇在含 outlier 通道的256×1024 权重矩阵上，系统对比三种粒度 × 三种位宽（配套实验 Demo A，`experiments/fake_quant_ste_check/run.py`）：
+伪量化 round-trip 最直观的效果是**网格吸附**：非网格点被拉到最近的网格电平。01 篇 §4 证明 per-tensor 在 outlier 权重上 SNR 仅0.97 dB；本篇在含 outlier 通道的256×1024 权重矩阵上，系统对比三种粒度 × 三种位宽（配套实验 Demo A，[experiments/quantization/fake_quant_ste/run.py](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_ste/run.py)）：
 
 ![伪量化 round-trip 误差随位宽和粒度变化：左图 SNR 在 4-bit 下从 per-tensor 的3.02 dB阶梯式爬升到 per-group 的14.10 dB；右图 MSE 对数坐标显示粒度细化的指数级收益](/assets/img/quant/fake_quant_roundtrip_error.png)
 
@@ -444,7 +444,7 @@ STE 的有偏性启发了两类改进方向：
 
 ### 7.1 实验环境与代码
 
-两个 Demo 均在纯 numpy 下实现（`experiments/fake_quant_ste_check/run.py`），无需 GPU，几秒出图。合成权重矩阵 $$W\in\mathbb{R}^{256\times1024}$$：基底 $$N(0,0.02^2)$$，注入8个整体×10的 outlier 通道和0.1%的×30极端权重。
+两个 Demo 均在纯 numpy 下实现（[experiments/quantization/fake_quant_ste/run.py](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_ste/run.py)），无需 GPU，几秒出图。合成权重矩阵 $$W\in\mathbb{R}^{256\times1024}$$：基底 $$N(0,0.02^2)$$，注入8个整体×10的 outlier 通道和0.1%的×30极端权重。
 
 ### 7.2 Demo A：伪量化误差特性
 
@@ -507,7 +507,7 @@ STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学�
 
 **代码与规范**
 
-- 本篇配套实验：`experiments/fake_quant_ste_check/`（numpy，几秒复现全部图表）
+- 本篇配套实验：[experiments/quantization/fake_quant_ste/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_ste/)（numpy，几秒复现全部图表）
 - [PyTorch torch.ao.quantization](https://pytorch.org/docs/stable/quantization.html) —— eager / FX mode 量化 API
 - [ONNX Quantization](https://onnx.ai/onnx/api/onnx_quantization.html) —— QDQ 图规范
 - [TVM QNN 文档](https://tvm.apache.org/docs/tutorial/quantization.html) —— relay qnn 三段式量化

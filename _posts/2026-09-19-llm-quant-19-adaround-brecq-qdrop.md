@@ -24,6 +24,8 @@ mathjax: true
 
 [01 篇](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 与 [17–18 篇](/2026/08/26/llm-quant-11-fake-quant-insertion/) 已锁定的符号（$x, W, s, z_p, b, \hat{x}, \Delta W, C$ 等）含义不变。本篇新增：
 
+配套实验代码：[experiments/quantization/adaround_brecq_qdrop/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/adaround_brecq_qdrop/)（纯 numpy，几秒复现全部表格与图表）
+
 | 符号 | 含义 | 易混淆提示 |
 |---|---|---|
 | $V$ | AdaRound 的连续舍入变量（soft variable） | **不是**量化后的权重；$V$ 是喂给 sigmoid 的实数 |

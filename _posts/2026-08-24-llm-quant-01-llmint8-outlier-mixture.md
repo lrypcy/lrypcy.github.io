@@ -160,7 +160,7 @@ $$
 
 ### 2.5 实验 A：合成数据的长尾复现
 
-配套实验 `experiments/llmint8_mixture/run.py` 的 `make_synth()` 构造 $$T=256$$、$$n=1024$$ 的激活矩阵：基底 $$N(0,1)$$，随机选 4 列（占比 0.391%）注入 $$N(100,\,10^2)$$ 的持久 outlier，权重 $$W\in\mathbb{R}^{1024\times128}$$ 取 $$N(0,1)$$：
+配套实验 [experiments/quantization/llmint8_mixture/run.py](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/llmint8_mixture/run.py) 的 `make_synth()` 构造 $$T=256$$、$$n=1024$$ 的激活矩阵：基底 $$N(0,1)$$，随机选 4 列（占比 0.391%）注入 $$N(100,\,10^2)$$ 的持久 outlier，权重 $$W\in\mathbb{R}^{1024\times128}$$ 取 $$N(0,1)$$：
 
 ![激活 outlier 长尾实证：左图为逐列最大绝对值的分布，干净列集中在 3 到 5 之间而 outlier 列孤立地落在 124 以上，阈值线落在两族之间的空带；右图为范数集中度曲线，top 0.39% 列贡献 33% 总范数](/assets/img/quant/activation_outlier_tail.png)
 
@@ -267,7 +267,7 @@ $$
 
 结论值得加粗：**分解不是一种精度优化技巧，而是动态量化的可行性前提。**时间轴上再细的粒度也救不了特征轴上的尖峰——这就是 §2.4「轴不对症」的定量版。
 
-把本篇全部新记号与实验代码钉在同一张映射表里（代码位于 `experiments/llmint8_mixture/run.py`）：
+把本篇全部新记号与实验代码钉在同一张映射表里（代码位于 [experiments/quantization/llmint8_mixture/run.py](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/llmint8_mixture/run.py)）：
 
 | 数学符号 | 代码变量 | Shape / 类型 | 说明 |
 |---|---|---|---|
@@ -410,7 +410,7 @@ $$
 
 **代码与规范**
 
-- 本篇配套实验：`technology/quantization/llm_quant_series/experiments/llmint8_mixture/`（numpy，几秒复现全部图表与表格）
+- 本篇配套实验：[experiments/quantization/llmint8_mixture/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/llmint8_mixture/)（numpy，几秒复现全部图表与表格）
 - [bitsandbytes](https://github.com/TimDettmers/bitsandbytes) —— LLM.int8() 的官方实现（自定义 INT8 kernel 与 outlier 处理）
 - [HuggingFace Transformers `load_in_8bit` 文档](https://huggingface.co/docs/transformers/quantization) —— 部署形态参考
 - [NVIDIA A100 白皮书](https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf) —— HBM 带宽与 INT8/FP16 吞吐口径

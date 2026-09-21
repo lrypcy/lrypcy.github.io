@@ -22,6 +22,8 @@ mathjax: true
 
 ## 0. 符号字典增量表
 
+配套实验代码：[experiments/quantization/distillation_qat/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/distillation_qat/)（纯 numpy，几秒复现全部表格与图表）
+
 | 符号 | 含义 | 易混淆提示 |
 |---|---|---|
 | $\pi_T(\cdot\mid x)$ | **教师**（FP16）在输入 $x$ 上的输出分布 | 下标 T = Teacher，不是温度 |

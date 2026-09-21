@@ -247,7 +247,7 @@ $$
 | 1.0（激活抹平） | $$2.4372\times10^{-3}$$ | ×10.5 |
 | 不做变换（naive） | $$2.4676\times10^{-3}$$ | ×10.7 |
 
-把本节全部记号与实验代码钉在同一张映射表里（代码位于 `experiments/smoothquant_alpha_sweep/run.py`；代码变量名 `alpha`/`s` 刻意沿用论文原记号以便对照，读时按本表换算）：
+把本节全部记号与实验代码钉在同一张映射表里（代码位于 [experiments/quantization/smoothquant_alpha_sweep/run.py](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/smoothquant_alpha_sweep/run.py)；代码变量名 `alpha`/`s` 刻意沿用论文原记号以便对照，读时按本表换算）：
 
 | 数学符号 | 代码变量 | Shape / 类型 | 说明 |
 |---|---|---|---|
@@ -396,7 +396,7 @@ $$
 
 **代码与规范**
 
-- 本篇配套实验：`technology/quantization/llm_quant_series/experiments/smoothquant_alpha_sweep/`（numpy，十余秒复现全部图表与 `results.json`）
+- 本篇配套实验：[experiments/quantization/smoothquant_alpha_sweep/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/smoothquant_alpha_sweep/)（numpy，十余秒复现全部图表与 `results.json`）
 - [mit-han-lab/smoothquant](https://github.com/mit-han-lab/smoothquant) —— 论文官方实现（INT8 GEMM kernel 与校准流水线）
 - [vLLM quantization 文档](https://docs.vllm.ai/en/latest/quantization/) —— 生产引擎中 W8A8/FP8 的 per-channel 权重 + per-token 激活标配
 - [NVIDIA A100 Datasheet](https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf) —— INT8/FP16 吞吐比口径

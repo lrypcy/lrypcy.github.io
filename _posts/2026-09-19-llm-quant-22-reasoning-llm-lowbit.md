@@ -22,6 +22,8 @@ mathjax: true
 
 ## 0. 符号字典增量表
 
+配套实验代码：[experiments/quantization/reasoning_llm_lowbit/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/reasoning_llm_lowbit/)（纯 numpy，几秒复现全部表格与图表）
+
 | 符号 | 含义 | 易混淆提示 |
 |---|---|---|
 | $\pi_T(\cdot\mid x)$ | FP16 教师分布 | 沿用 [20 篇](/2026/09/19/llm-quant-20-distillation-qat/) |

@@ -22,6 +22,8 @@ mathjax: true
 
 ## 0. 符号表
 
+配套实验代码：[experiments/quantization/kv_cache_quant/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/kv_cache_quant/)（纯 numpy，几秒复现全部表格与图表）
+
 本篇只**新增**与 KV cache 相关的记号，[01 篇 §2](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 与 [23 篇](/2026/08/29/llm-quant-23-unified-view/) 已锁定的符号（$$W, x, s, z_p, b, g, \epsilon, C$$ 等）含义不变，不重复列出。
 
 ### 0.1 模型与缓存的形状
