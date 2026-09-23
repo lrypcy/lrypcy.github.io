@@ -1,7 +1,8 @@
 ---
 title: "世界模型与世界动作模型（WAM）：从 Dreamer V4 到 Cosmos Policy / DreamZero 的完整地图（2025–2026）"
 date: 2026-09-05 16:00:00 +0800
-categories: [世界模型]
+categories:
+  - 具身智能
 tags: [世界模型, 世界动作模型, wam, vla, dreamer, cosmos, model-based-rl, robotics, survey]
 layout: post
 mathjax: true

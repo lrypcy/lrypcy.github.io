@@ -1,0 +1,243 @@
+# 首页「分类 × 知识图谱」的结构化数据
+# ------------------------------------------------------------------
+# categories : 分类元信息（图标 / 主题色 / 一句话定位），顺序即展示顺序
+# series     : 系列（知识图谱里的节点）。用 prefixes 匹配 _posts 文件名，
+#              新增文章只要文件名带对应前缀就会自动归入该系列。
+#              exclude 用于排除误命中（如 compiler- 会命中 chip-for-ai-compiler-*）
+#              node: false 表示只在「分类面板」里出现，不进图谱
+# links      : 知识图谱的边（from 基础 → to 上层），label 为依赖关系说明
+# paths      : 推荐学习路线（首页底部「学习路线」）
+# ------------------------------------------------------------------
+
+categories:
+  - name: 模型量化
+    icon: "🎯"
+    color: "#2563eb"
+    desc: 从 RTN/GPTQ/AWQ 的 PTQ，到 LSQ/PACT/DSQ 的 QAT，再到低比特部署与格式生态
+  - name: 编译器技术
+    icon: "🛠️"
+    color: "#7c3aed"
+    desc: 经典编译原理 → LLVM/GCC/TVM/MLIR → torch.compile / Triton 工程三件套
+  - name: 算子开发
+    icon: "⚙️"
+    color: "#0891b2"
+    desc: Roofline 建模、Kernel 语言三件套、Tiling/双缓冲优化与 GEMM/FlashAttention 实战
+  - name: 强化学习
+    icon: "🎮"
+    color: "#e11d48"
+    desc: MDP → 策略梯度 → TRPO/PPO → GRPO，加上 IRL、奖励设计与信用分配
+  - name: LLM算法
+    icon: "🧩"
+    color: "#d97706"
+    desc: 位置编码与长度外推的完整谱系，以及 Test-Time Training 这条新主线
+  - name: 芯片架构
+    icon: "🖥️"
+    color: "#0d9488"
+    desc: 给 AI 编译器工程师的芯片课：从晶体管到 Tensor Core、脉动阵列与互连
+  - name: 分布式训练
+    icon: "🚂"
+    color: "#4f46e5"
+    desc: DP / ZeRO / TP / PP / EP / SP 六种并行与集合通信的地基
+  - name: 具身智能
+    icon: "🤖"
+    color: "#16a34a"
+    desc: 控制地基、学习范式、感知操作、VLA 基础模型与产业版图的完整地图
+  - name: 模型蒸馏
+    icon: "🧪"
+    color: "#db2777"
+    desc: Dark Knowledge → On-Policy Distillation，蒸馏与 RL 的统一损失光谱
+  - name: 生成模型
+    icon: "🎨"
+    color: "#ea580c"
+    desc: 扩散模型全景与 Flow Matching 的算法演进、工业标准与应用落地
+  - name: 性能分析
+    icon: "📊"
+    color: "#9333ea"
+    desc: 从 nvidia-smi 到 Nsight Compute 的 NVIDIA 性能剖析工具链
+  - name: 深度学习
+    icon: "🧠"
+    color: "#0284c7"
+    desc: 扩散模型等深度学习主干知识的系统性梳理
+
+series:
+  # ---------- layer 0：硬件与系统底座 ----------
+  - id: chip
+    name: 给 AI 编译器工程师的芯片课
+    short: 芯片架构
+    category: 芯片架构
+    layer: 0
+    order: 0
+    prefixes: [chip-for-ai-compiler-]
+    desc: 10 讲。从沙子到流片、存储层次、ISA 与流水线、GPU 执行引擎、脉动阵列、互连与 Chiplet，最后落到协同设计与性能建模。
+
+  - id: compiler
+    name: 编译器知识体系深度解析
+    short: 编译器体系
+    category: 编译器技术
+    layer: 0
+    order: 1
+    prefixes: [compiler-]
+    exclude: [chip-for-ai, op-, xdsl]
+    desc: 13 讲。词法语法 → 语义与 IR → 数据流分析与中端优化 → 后端代码生成，再逐个解剖 GCC / LLVM / TVM / XLA-MLIR / torch.compile。
+
+  - id: op
+    name: 算子开发与优化
+    short: 算子开发
+    category: 算子开发
+    layer: 0
+    order: 2
+    prefixes: [op-]
+    desc: 14 讲。Roofline 上界预判 → 硬件执行模型 → CUDA/Triton/Ascend C → Profiling 工具链 → 优化技术体系 → GEMM/Attention/卷积案例 → 国产 NPU 与编译器集成。
+
+  - id: dist-train
+    name: 分布式训练全景
+    short: 分布式训练
+    category: 分布式训练
+    layer: 0
+    order: 3
+    prefixes: [dist-train-]
+    desc: 9 讲。DP → ZeRO/FSDP → TP → PP → SP → EP，加上集合通信数学与 2D/3D 并行组合实战。
+
+  # ---------- layer 1：核心算法 ----------
+  - id: posem
+    name: 大模型位置编码
+    short: 位置编码
+    category: LLM算法
+    layer: 1
+    order: 0
+    prefixes: [posem-]
+    desc: 8 讲。正余弦/可学习 → 相对位置 → RoPE → 长度外推（PI/NTK/YaRN/LongRoPE）→ ALiBi → 多模态 M-RoPE。
+
+  - id: distill
+    name: 模型蒸馏全景
+    short: 模型蒸馏
+    category: 模型蒸馏
+    layer: 1
+    order: 1
+    prefixes: [distillation-, online-distillation, on-policy-distillation, opd-one-year]
+    exclude: [llm-quant]
+    desc: 4 篇。Dark Knowledge 主线、在线蒸馏（MiniLLM/GKD）、On-Policy Distillation 深度剖析与一年后的生态现状。
+
+  - id: quant
+    name: 大模型量化算法
+    short: 大模型量化
+    category: 模型量化
+    layer: 1
+    order: 2
+    prefixes: [llm-quant-, ptq-, qat-]
+    desc: 30 篇。00–25 主线 + E1–E4 扩展篇：量化器数学地基 → PTQ 全家桶 → QAT/可学习 scale → KV Cache、混合精度、部署生态与 1-bit 前沿。
+
+  - id: mdp-grpo
+    name: 从 MDP 到 GRPO
+    short: MDP→GRPO
+    category: 强化学习
+    layer: 1
+    order: 3
+    prefixes: [mdp-to-grpo-]
+    desc: 5 讲。MDP 与贝尔曼方程 → REINFORCE 与方差 → TRPO 信任域 → PPO 截断 → GRPO 组相对优势，一条完整的策略优化演进链。
+
+  - id: ttt
+    name: Test-Time Training 全景
+    short: TTT
+    category: LLM算法
+    layer: 1
+    order: 4
+    prefixes: [ttt-]
+    desc: 4 篇。两条主线划分、fast weights 到对偶形式的数学推导、LLM 推理增强与 chunk 更新工程、前沿方向与实践指南。
+
+  - id: embodied
+    name: 具身智能全景
+    short: 具身智能
+    category: 具身智能
+    layer: 1
+    order: 5
+    prefixes: [embodied-ai-]
+    desc: 9 讲。控制地基 → 学习范式（RL/IL/Sim2Real）→ 感知与操作 → VLA 基础模型 → 导航规划 → 数据仿真评测 → 产业版图。
+
+  - id: flow
+    name: Flow Matching
+    short: Flow Matching
+    category: 生成模型
+    layer: 1
+    order: 6
+    prefixes: [flow-matching-]
+    desc: 2 篇。算法发展篇（CNF 与扩散的统一到 SD3 工业标准）与应用篇（从 SD3 到蛋白质设计）。
+
+  # ---------- layer 2：前沿专题 ----------
+  - id: rl-topics
+    name: RL 前沿专题
+    short: RL 前沿专题
+    category: 强化学习
+    layer: 2
+    order: 0
+    prefixes: [irl-, toolrl, search-rl, distill-rl-unified, self-improving-reward, rl-credit-assignment, rl-notation]
+    desc: 8 篇。逆强化学习两讲、ToolRL 奖励设计、Search RL、蒸馏与 RL 的统一损失光谱、自我改进奖励、信用分配与符号体系。
+
+  - id: wam
+    name: 世界模型与世界动作模型
+    short: 世界模型 WAM
+    category: 具身智能
+    layer: 2
+    order: 1
+    prefixes: [world-model]
+    desc: 1 篇长文。从 Dreamer V4 到 Cosmos Policy / DreamZero 的 2025–2026 完整地图。
+
+  # ---------- 单篇专题（只在分类面板出现） ----------
+  - id: xdsl
+    name: xDSL 编译器体系
+    short: xDSL
+    category: 编译器技术
+    node: false
+    prefixes: [xdsl-compiler]
+    desc: 纯 Python 重写的 MLIR 精神实现：IRDL、声明式装配格式与 PatternRewriteWalker。
+
+  - id: profiling
+    name: NVIDIA 性能剖析工具链
+    short: 性能剖析
+    category: 性能分析
+    node: false
+    prefixes: [nv-gpu-profiling]
+    desc: 从 nvidia-smi 到 Nsight Compute 的 profiling 工具全景。
+
+  - id: diffusion
+    name: 扩散模型算法全景
+    short: 扩散模型
+    category: 深度学习
+    node: false
+    prefixes: [diffusion-survey]
+    desc: 从噪声到数据：Diffusion 算法发展与应用全景。
+
+links:
+  - { from: chip,      to: op,         label: 存储层次与执行模型决定 Kernel 怎么写 }
+  - { from: chip,      to: compiler,   label: ISA 与内存层次是后端代码生成的靶子 }
+  - { from: chip,      to: dist-train, label: NVLink/RDMA 拓扑决定通信上界 }
+  - { from: compiler,  to: op,         label: torch.compile / Triton 生成 Kernel }
+  - { from: op,        to: dist-train, label: 通信与融合 Kernel }
+  - { from: compiler,  to: dist-train, label: 图切分与并行 Pass }
+  - { from: compiler,  to: quant,      label: 图改写与融合承载量化 Pass }
+  - { from: op,        to: quant,      label: 低比特 Kernel 是量化落地前提 }
+  - { from: dist-train,to: quant,      label: QAT 要在训练栈里插伪量化 }
+  - { from: dist-train,to: mdp-grpo,   label: RLHF/GRPO 训练依赖分布式栈 }
+  - { from: distill,   to: quant,      label: 蒸馏 + QAT 联合压缩 }
+  - { from: distill,   to: mdp-grpo,   label: 蒸馏与 RL 的统一损失光谱 }
+  - { from: posem,     to: quant,      label: KV Cache 量化与长上下文 }
+  - { from: posem,     to: ttt,        label: 上下文建模是 TTT 的底座 }
+  - { from: flow,      to: embodied,   label: Diffusion Policy 生成连续动作 }
+  - { from: mdp-grpo,  to: embodied,   label: RL / 模仿学习是具身的学习范式 }
+  - { from: mdp-grpo,  to: wam,        label: WAM 用 RL 训练动作模型 }
+  - { from: embodied,  to: wam,        label: 世界模型驱动具身决策 }
+  - { from: flow,      to: wam,        label: 生成式世界模型（Cosmos / DreamZero） }
+
+paths:
+  - name: AI Infra 工程师主线
+    desc: 先懂硬件，再懂编译与算子，最后落到训练系统与量化部署
+    steps: [chip, compiler, op, dist-train, quant]
+  - name: 大模型算法与后训练
+    desc: 位置编码打底 → 策略优化 → 蒸馏与量化，覆盖 post-training 全链路
+    steps: [posem, mdp-grpo, distill, quant]
+  - name: 具身智能与世界模型
+    desc: 硬件与算子打底 → 具身全景 → 世界模型这条 2025–2026 新主线
+    steps: [chip, op, embodied, wam]
+  - name: 生成模型与扩散
+    desc: 从扩散全景到 Flow Matching，再到生成式策略与世界模型
+    steps: [diffusion, flow, wam]

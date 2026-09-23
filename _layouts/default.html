@@ -118,5 +118,8 @@
 
   {% include mathjax.html %}
   <script src="/assets/js/search.js" defer></script>
+  {% if page.url == '/' or page.url == '/index.html' %}
+  <script src="/assets/js/knowledge-graph.js" defer></script>
+  {% endif %}
 </body>
 </html>

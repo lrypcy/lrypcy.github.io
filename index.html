@@ -2,59 +2,168 @@
 layout: default
 title: 首页
 ---
-<!-- Hero 区 -->
+{% assign graph = site.data.knowledge_graph %}
+
+{%- assign is_first_page = true -%}
+{%- if paginator.page > 1 -%}{%- assign is_first_page = false -%}{%- endif -%}
+
+<!-- ============ Hero ============ -->
+{%- if is_first_page -%}
 <div class="blog-hero">
   <h1 class="blog-hero-title">{{ site.title }}</h1>
   <p class="blog-hero-subtitle">{{ site.subtitle }}</p>
+  <p class="hero-about">{{ site.about }}</p>
   <div class="hero-stats">
     <span class="hero-stat"><b>{{ site.posts | size }}</b> 篇文章</span>
     <span class="hero-stat-sep">·</span>
-    <span class="hero-stat"><b>{{ site.categories | size }}</b> 个专栏</span>
+    <span class="hero-stat"><b>{{ graph.series | size }}</b> 个系列</span>
+    <span class="hero-stat-sep">·</span>
+    <span class="hero-stat"><b>{{ site.categories | size }}</b> 个分类</span>
     <span class="hero-stat-sep">·</span>
     <span class="hero-stat"><b>{{ site.tags | size }}</b> 个标签</span>
   </div>
 </div>
 
-<!-- 分类卡片（按文章数降序 + 差异化图标） -->
+{%- endif -%}
+
+<!-- ============ 知识图谱 ============ -->
+{%- if is_first_page -%}
+{%- capture kg_nodes -%}
+{%- assign rendered = 0 -%}
+{%- for s in graph.series -%}
+{%- unless s.node == false -%}
+{%- assign n = 0 -%}
+{%- for p in site.posts -%}
+{%- assign pp = p.relative_path | default: p.path -%}
+{%- assign hit = false -%}
+{%- for pre in s.prefixes -%}{%- if pp contains pre -%}{%- assign hit = true -%}{%- endif -%}{%- endfor -%}
+{%- if hit and s.exclude -%}{%- for ex in s.exclude -%}{%- if pp contains ex -%}{%- assign hit = false -%}{%- endif -%}{%- endfor -%}{%- endif -%}
+{%- if hit -%}{%- assign n = n | plus: 1 -%}{%- endif -%}
+{%- endfor -%}
+{%- assign scolor = '#3b82f6' -%}
+{%- for c in graph.categories -%}{%- if c.name == s.category -%}{%- assign scolor = c.color -%}{%- endif -%}{%- endfor -%}
+{%- if rendered > 0 -%},{%- endif -%}{%- assign rendered = rendered | plus: 1 -%}{"id":{{ s.id | jsonify }},"name":{{ s.name | jsonify }},"short":{{ s.short | jsonify }},"cat":{{ s.category | jsonify }},"count":{{ n }},"layer":{{ s.layer }},"order":{{ s.order }},"desc":{{ s.desc | jsonify }},"color":{{ scolor | jsonify }}}
+{%- endunless -%}
+{%- endfor -%}
+{%- endcapture -%}
+
+<script type="application/json" id="kg-data">
+{
+  "nodes": [{{ kg_nodes | strip_newlines }}],
+  "links": {{ graph.links | jsonify }},
+  "cats": [{% for c in graph.categories %}{"name":{{ c.name | jsonify }},"color":{{ c.color | jsonify }},"icon":{{ c.icon | jsonify }},"count":{{ site.categories[c.name].size | default: 0 }}}{% unless forloop.last %},{% endunless %}{% endfor %}]
+}
+</script>
+
 <section class="home-section">
-  <h2 class="section-title"><span class="section-mark">✦</span> 分类</h2>
-  {% assign goods = '' | split: ',' %}
-  {% for cat in site.categories %}
-    {% assign nn = cat[1] | size | prepend: '00' | slice: -2, 2 %}
-    {% assign item = nn | append: ':' | append: cat[0] %}
-    {% assign item_arr = item | split: '|' %}
-    {% assign goods = goods | concat: item_arr %}
-  {% endfor %}
-  {% assign goods = goods | sort | reverse %}
-  <div class="category-grid">
-    {% for item in goods %}
-      {% assign parts = item | split: ':' %}
-      {% assign cat_name = parts[1] %}
-      {% assign cat_count = parts[0] | plus: 0 %}
-      {% assign icon = '📁' %}
-      {% if cat_name == '分布式训练' %}{% assign icon = '🚂' %}
-      {% elsif cat_name == '强化学习' %}{% assign icon = '🎮' %}
-      {% elsif cat_name == '芯片架构' %}{% assign icon = '🖥️' %}
-      {% elsif cat_name == '生成模型' %}{% assign icon = '🎨' %}
-      {% elsif cat_name == '模型量化' %}{% assign icon = '🎯' %}
-      {% elsif cat_name == '深度学习' %}{% assign icon = '🧠' %}
-      {% elsif cat_name == '模型蒸馏' %}{% assign icon = '🧪' %}
-      {% elsif cat_name == '具身智能' %}{% assign icon = '🤖' %}
-      {% elsif cat_name == '编译器技术' %}{% assign icon = '🛠️' %}
-      {% elsif cat_name == '性能分析' %}{% assign icon = '📊' %}
-      {% elsif cat_name == 'LLM算法' %}{% assign icon = '🧩' %}
-      {% elsif cat_name == '算子开发' %}{% assign icon = '⚙️' %}
+  <h2 class="section-title"><span class="section-mark">✦</span> 知识图谱</h2>
+  <p class="section-desc">
+    {{ graph.series | size }} 个系列、{{ site.posts | size }} 篇文章之间的依赖关系：圆圈内是<b>篇数</b>，箭头由「基础」指向「上层」。
+    悬停查看关系说明，<b>点击节点</b>可跳转到下方对应系列，节点可自由拖动。
+  </p>
+
+  <div class="kg-card">
+    <div class="kg-toolbar">
+      <div class="kg-legend" id="kg-legend"></div>
+      <div class="kg-actions">
+        <button class="kg-btn" id="kg-expand" type="button">展开全部文章</button>
+        <button class="kg-btn" id="kg-reset" type="button">重置布局</button>
+      </div>
+    </div>
+    <div class="kg-scroll">
+      <svg id="kg-svg" viewBox="0 0 900 566" role="img" aria-label="站点知识图谱"></svg>
+    </div>
+    <div class="kg-tip" id="kg-tip" hidden></div>
+    <p class="kg-hint">提示：图谱按「硬件与系统底座 → 核心算法 → 前沿专题」三层排布，纵向即学习顺序。</p>
+  </div>
+
+  <details class="kg-links">
+    <summary>关系清单（{{ graph.links | size }} 条依赖）</summary>
+    <ul>
+      {% for l in graph.links %}
+      {% assign sname = '' %}{% assign tname = '' %}
+      {% for s in graph.series %}{% if s.id == l.from %}{% assign sname = s.short %}{% endif %}{% if s.id == l.to %}{% assign tname = s.short %}{% endif %}{% endfor %}
+      <li><b>{{ sname }}</b> → <b>{{ tname }}</b>：{{ l.label }}</li>
+      {% endfor %}
+    </ul>
+  </details>
+</section>
+
+<!-- ============ 分类 × 系列 ============ -->
+<section class="home-section">
+  <h2 class="section-title"><span class="section-mark">✦</span> 分类 × 系列</h2>
+  <p class="section-desc">按分类浏览全部文章，每个分类下按「系列」归拢，系列内按发布顺序排列——这是本站的完整阅读地图。</p>
+
+  <div class="cat-tabs" id="cat-tabs">
+    <button class="cat-tab is-active" type="button" data-cat="__all__">全部<em>{{ site.posts | size }}</em></button>
+    {% for c in graph.categories %}
+    <button class="cat-tab" type="button" data-cat="{{ c.name }}">
+      <span class="cat-dot" style="background: {{ c.color }}"></span>{{ c.name }}<em>{{ site.categories[c.name].size | default: 0 }}</em>
+    </button>
+    {% endfor %}
+  </div>
+
+  <div id="cat-panels">
+    {% for c in graph.categories %}
+    {%- assign nseries = 0 -%}
+    {%- for s in graph.series -%}{%- if s.category == c.name -%}{%- assign nseries = nseries | plus: 1 -%}{%- endif -%}{%- endfor -%}
+    <div class="cat-panel" data-cat="{{ c.name }}" style="--cat-color: {{ c.color }}">
+      <div class="cat-panel-head">
+        <span class="cat-panel-icon">{{ c.icon }}</span>
+        <h3>{{ c.name }}<em>{{ site.categories[c.name].size | default: 0 }} 篇 · {{ nseries }} 个系列</em></h3>
+        <p>{{ c.desc }}</p>
+      </div>
+
+      {% for s in graph.series %}
+      {% if s.category == c.name %}
+      {%- capture slist -%}{% for p in site.posts %}{% assign pp = p.relative_path | default: p.path %}{% assign hit = false %}{% for pre in s.prefixes %}{% if pp contains pre %}{% assign hit = true %}{% endif %}{% endfor %}{% if hit and s.exclude %}{% for ex in s.exclude %}{% if pp contains ex %}{% assign hit = false %}{% endif %}{% endfor %}{% endif %}{% if hit %}{{ p.date | date: "%Y-%m-%d" }}@@{{ p.url }}@@{{ p.title }}||{% endif %}{% endfor %}{%- endcapture -%}
+      {%- assign sitems = slist | split: '||' | sort -%}
+      {%- assign scount = 0 -%}{% for it in sitems %}{% unless it == '' %}{% assign scount = scount | plus: 1 %}{% endunless %}{% endfor %}
+      <div class="series-block" id="series-{{ s.id }}" data-series="{{ s.id }}">
+        <div class="series-head">
+          <span class="series-dot" style="background: {{ c.color }}"></span>
+          <h4>{{ s.name }}</h4>
+          <span class="series-count">{{ scount }} 篇</span>
+        </div>
+        <p class="series-desc">{{ s.desc }}</p>
+        <ol class="series-posts">
+          {% for it in sitems %}{% unless it == '' %}{% assign f = it | split: '@@' %}
+          <li><a href="{{ f[1] }}">{{ f[2] }}</a><time>{{ f[0] }}</time></li>
+          {% endunless %}{% endfor %}
+        </ol>
+        {% if scount > 6 %}<button class="series-toggle" type="button">展开全部 {{ scount }} 篇 ↓</button>{% endif %}
+      </div>
       {% endif %}
-      <a class="category-card" href="/categories/#{{ cat_name | url_encode }}">
-        <span class="category-card-icon">{{ icon }}</span>
-        <h3 class="category-card-name">{{ cat_name }}</h3>
-        <span class="category-card-count">{{ cat_count }} 篇</span>
-      </a>
+      {% endfor %}
+    </div>
     {% endfor %}
   </div>
 </section>
 
-<!-- 文章流（分页） -->
+<!-- ============ 学习路线 ============ -->
+<section class="home-section">
+  <h2 class="section-title"><span class="section-mark">✦</span> 学习路线</h2>
+  <p class="section-desc">不知道从哪读起？按下面四条路线走，每条都是一个由浅入深的系列序列。</p>
+  <div class="road-grid">
+    {% for path in graph.paths %}
+    <div class="road-card">
+      <h3>{{ path.name }}</h3>
+      <p>{{ path.desc }}</p>
+      <div class="road-steps">
+        {% for sid in path.steps %}
+        {% for s in graph.series %}{% if s.id == sid %}
+        <a class="road-step" href="#series-{{ s.id }}" data-target="{{ s.id }}">{{ s.short }}</a>
+        <span class="road-arrow">→</span>
+        {% endif %}{% endfor %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- ============ 最新文章（分页） ============ -->
+{%- endif -%}
 <section class="home-section">
   <h2 class="section-title"><span class="section-mark">✦</span> 最新文章</h2>
   <div class="post-list">
