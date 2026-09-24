@@ -224,6 +224,9 @@ links:
   - { from: posem,     to: ttt,        label: 上下文建模是 TTT 的底座 }
   - { from: flow,      to: embodied,   label: Diffusion Policy 生成连续动作 }
   - { from: mdp-grpo,  to: embodied,   label: RL / 模仿学习是具身的学习范式 }
+  - { from: mdp-grpo,  to: rl-topics,  label: GRPO 主干通向 RLVR / 信用分配专题 }
+  - { from: distill,   to: rl-topics,  label: 蒸馏、DPO 与 RL 的目标函数同源 }
+  - { from: rl-topics, to: wam,        label: 想象轨迹里的信用分配 }
   - { from: mdp-grpo,  to: wam,        label: WAM 用 RL 训练动作模型 }
   - { from: embodied,  to: wam,        label: 世界模型驱动具身决策 }
   - { from: flow,      to: wam,        label: 生成式世界模型（Cosmos / DreamZero） }

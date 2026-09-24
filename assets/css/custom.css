@@ -1758,6 +1758,16 @@ a { color: var(--primary); }
   font-variant-numeric: tabular-nums;
 }
 .series-block:not(.is-open) .series-posts li:nth-child(n+7) { display: none; }
+.series-orphan { border-style: dashed; background: #fbfdff; }
+.series-orphan .series-desc code,
+.cat-panel-head p code {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 5px;
+}
 .series-toggle {
   margin: 8px 0 0 12px;
   font-family: inherit;

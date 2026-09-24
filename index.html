@@ -101,6 +101,17 @@ title: 首页
       <span class="cat-dot" style="background: {{ c.color }}"></span>{{ c.name }}<em>{{ site.categories[c.name].size | default: 0 }}</em>
     </button>
     {% endfor %}
+    <!-- 兜底：站点里出现但 yml 未配置的分类，同样出现在 tab 里 -->
+    {% for cat in site.categories %}
+    {%- assign cname = cat[0] -%}
+    {%- assign is_known = false -%}
+    {%- for c in graph.categories -%}{%- if c.name == cname -%}{%- assign is_known = true -%}{%- endif -%}{%- endfor -%}
+    {%- unless is_known -%}
+    <button class="cat-tab" type="button" data-cat="{{ cname }}">
+      <span class="cat-dot" style="background: #94a3b8"></span>{{ cname }}<em>{{ cat[1] | size }}</em>
+    </button>
+    {%- endunless -%}
+    {% endfor %}
   </div>
 
   <div id="cat-panels">
@@ -113,6 +124,9 @@ title: 首页
         <h3>{{ c.name }}<em>{{ site.categories[c.name].size | default: 0 }} 篇 · {{ nseries }} 个系列</em></h3>
         <p>{{ c.desc }}</p>
       </div>
+
+      {%- capture claimed -%}{% for s in graph.series %}{% if s.category == c.name %}{% for p in site.posts %}{% assign pp = p.relative_path | default: p.path %}{% assign hit = false %}{% for pre in s.prefixes %}{% if pp contains pre %}{% assign hit = true %}{% endif %}{% endfor %}{% if hit and s.exclude %}{% for ex in s.exclude %}{% if pp contains ex %}{% assign hit = false %}{% endif %}{% endfor %}{% endif %}{% if hit %};{{ p.url }};{% endif %}{% endfor %}{% endif %}{% endfor %}{%- endcapture -%}
+      {%- assign orphans = 0 -%}{% for p in site.categories[c.name] %}{% assign key = p.url | prepend: ';' | append: ';' %}{% unless claimed contains key %}{% assign orphans = orphans | plus: 1 %}{% endunless %}{% endfor %}
 
       {% for s in graph.series %}
       {% if s.category == c.name %}
@@ -135,7 +149,52 @@ title: 首页
       </div>
       {% endif %}
       {% endfor %}
+
+      {%- if orphans > 0 -%}
+      <div class="series-block series-orphan">
+        <div class="series-head">
+          <span class="series-dot" style="background: #94a3b8"></span>
+          <h4>未归系列的文章</h4>
+          <span class="series-count">{{ orphans }} 篇</span>
+        </div>
+        <p class="series-desc">这些文章还没匹配到任何系列规则，先在分类里兜底展示，不会丢失。若要让它进入知识图谱，在 <code>_data/knowledge_graph.yml</code> 里补一条 series 前缀规则。</p>
+        <ol class="series-posts">
+          {% for p in site.categories[c.name] %}{% assign key = p.url | prepend: ';' | append: ';' %}{% unless claimed contains key %}
+          <li><a href="{{ p.url }}">{{ p.title }}</a><time>{{ p.date | date: "%Y-%m-%d" }}</time></li>
+          {% endunless %}{% endfor %}
+        </ol>
+      </div>
+      {%- endif -%}
     </div>
+    {% endfor %}
+
+    <!-- 兜底：站点里出现、但 yml 未配置的分类（新增分类时无需先改配置） -->
+    {% for cat in site.categories %}
+    {%- assign cname = cat[0] -%}
+    {%- assign is_known = false -%}
+    {%- for c in graph.categories -%}{%- if c.name == cname -%}{%- assign is_known = true -%}{%- endif -%}{%- endfor -%}
+    {%- unless is_known -%}
+    <div class="cat-panel" data-cat="{{ cname }}" style="--cat-color: #94a3b8">
+      <div class="cat-panel-head">
+        <span class="cat-panel-icon">📌</span>
+        <h3>{{ cname }}<em>{{ cat[1] | size }} 篇 · 待配置</em></h3>
+        <p>这个分类还没写进 <code>_data/knowledge_graph.yml</code>（图标 / 主题色 / 定位描述），首页用兜底样式先展示全部文章。</p>
+      </div>
+      <div class="series-block">
+        <div class="series-head">
+          <span class="series-dot" style="background: #94a3b8"></span>
+          <h4>全部文章</h4>
+          <span class="series-count">{{ cat[1] | size }} 篇</span>
+        </div>
+        <ol class="series-posts">
+          {% for p in cat[1] %}
+          <li><a href="{{ p.url }}">{{ p.title }}</a><time>{{ p.date | date: "%Y-%m-%d" }}</time></li>
+          {% endfor %}
+        </ol>
+        {% if cat[1].size > 6 %}<button class="series-toggle" type="button">展开全部 {{ cat[1] | size }} 篇 ↓</button>{% endif %}
+      </div>
+    </div>
+    {%- endunless -%}
     {% endfor %}
   </div>
 </section>
