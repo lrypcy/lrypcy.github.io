@@ -1782,6 +1782,55 @@ a { color: var(--primary); }
 }
 .series-toggle:hover { background: var(--primary-soft); }
 
+/* ---------- 分类页：先卡片、后详情 ---------- */
+.page-desc { font-size: 13.5px; color: var(--text-light); line-height: 1.85; margin: 0 0 18px; }
+.page-desc b { color: var(--text); }
+.cat-nav-card {
+  border-left: 3px solid var(--cat-color, var(--primary));
+  cursor: pointer;
+  position: relative;
+}
+.cat-nav-card.is-active {
+  border-color: var(--cat-color, var(--primary));
+  background: #fff;
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-3px);
+}
+.cat-nav-card.is-active .category-card-name { color: var(--cat-color, var(--primary)); }
+.cat-nav-card.is-active::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--cat-color, var(--primary));
+}
+.cat-detail { margin-top: 30px; }
+.cat-detail[hidden] { display: none; }
+.cat-detail-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--border);
+}
+.cat-back-btn {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 20px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.cat-back-btn:hover { background: var(--primary); color: #fff; }
+.cat-detail-tip { font-size: 12px; color: var(--text-light); }
+
 /* ---------- 学习路线 ---------- */
 .road-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .road-card {
