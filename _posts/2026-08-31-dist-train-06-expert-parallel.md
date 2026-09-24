@@ -15,7 +15,7 @@ mathjax: true
 **TL;DR**
 > * **专家并行（EP）**是唯一为 **Mixture-of-Experts（MoE）**定制的并行：把 $E$ 个专家（FFN 子网络）**切到 $N$ 张卡**，每卡一组专家，token 按路由决策**现场搬到对应卡**——通信原语是 **All-to-All**（区别于 DP/TP 的 All-Reduce）。
 > * 其他并行策略处理 MoE 都别扭：DP 会让每张卡复制全部专家（显存爆炸）；TP 会把每个专家切碎（专家太小，切分收益趋零）；PP 会把专家按层固定（路由跨节点就瘫痪）。**只有 EP 让"token 流动、专家不流动"。**
-> * **核心数学**：设每 token 激活 $k$ 个专家、token 总数 $T$，则**搬运量 $\approx k \cdot T$ 个 token-专家对**。对上 All-to-All（每个 rank 同时向所有人收发不等量数据）体现为 $\sum_j |\text{从 }i\text{ 到 }j|$ 的通信矩阵。**路由越均衡，通信越接近最优；路由倾斜（某个专家过热），最热的卡成为瓶颈。**
+> * **核心数学**：设每 token 激活 $k$ 个专家、token 总数 $T$，则**搬运量 $\approx k \cdot T$ 个 token-专家对**。对上 All-to-All（每个 rank 同时向所有人收发不等量数据）体现为 $\sum_j \lvert\text{从 }i\text{ 到 }j\rvert$ 的通信矩阵。**路由越均衡，通信越接近最优；路由倾斜（某个专家过热），最热的卡成为瓶颈。**
 > * **负载均衡是 EP 的唯一真正敌人**：专家过热 → 单卡 token 堆积 → All-to-All 带宽空耗 + 计算不并行 + 掉队者拖慢全局 step。解法：**辅助平衡损失（aux loss，router 惩罚过热专家）**、专家容量（expert capacity）限制、token drop / overflow 丢弃、以及 DeepSeek-V3 的 **细粒度专家 + 无辅助损失的负载均衡**（DSA 架构）。
 > * **什么时候不该用 EP**：确认型（每个 token 只走一个专家）但专家很小 → TP 内并并行即可；路由对性能不敏感（如只有 2 个专家）→ 用 TP 更省事。**EP 的甜点区：专家数量大（几十~几千）、token 量大、专家间负载可控。**
 

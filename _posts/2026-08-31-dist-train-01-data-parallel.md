@@ -43,7 +43,7 @@ flowchart TD
 
 $$g = \frac{1}{B}\sum_{j=1}^{B} \nabla_\theta \mathcal{L}(x_{b_j}, \theta)$$
 
-数据并行把 $\mathcal{B}$ 均匀切成 $N$ 份，第 $i$ 张卡持有 $\mathcal{B}_i$（$|\mathcal{B}_i| = B/N$），算本地梯度：
+数据并行把 $\mathcal{B}$ 均匀切成 $N$ 份，第 $i$ 张卡持有 $\mathcal{B}_i$（$\lvert\mathcal{B}_i\rvert = B/N$），算本地梯度：
 
 $$g_i = \frac{1}{B/N}\sum_{j \in \mathcal{B}_i} \nabla_\theta \mathcal{L}(x_{b_j}, \theta)$$
 
@@ -51,7 +51,7 @@ $$g_i = \frac{1}{B/N}\sum_{j \in \mathcal{B}_i} \nabla_\theta \mathcal{L}(x_{b_j
 
 $$g = \frac{1}{N} \sum_{i=1}^{N} g_i$$
 
-证明：$\frac{1}{N}\sum_i g_i = \frac{1}{N}\sum_i \frac{N}{B}\sum_{j\in\mathcal{B}_i} \nabla = \frac{1}{B}\sum_{j=1}^{B} \nabla = g$。**所以只要把 $N$ 张卡的梯度加起来除以 $N$，就得到与单卡完全一致的梯度**。这正是 All-Reduce（求和 ÷ N）做的事。
+证明：$$\frac{1}{N}\sum_i g_i = \frac{1}{N}\sum_i \frac{N}{B}\sum_{j\in\mathcal{B}_i} \nabla = \frac{1}{B}\sum_{j=1}^{B} \nabla = g$$。**所以只要把 $N$ 张卡的梯度加起来除以 $N$，就得到与单卡完全一致的梯度**。这正是 All-Reduce（求和 ÷ N）做的事。
 
 > **注意**：每个 worker 的本地 batch 大小是 $B/N$，因此本地梯度计算用的是 $\frac{1}{B/N}$ 归一。如果写成 $g_i = \frac{1}{B}\sum_{\mathcal{B}_i}$（除以全局 B），则换算公式变成 $g = \sum_i g_i$。**归一化方式决定了是"求和"还是"求平均"——这是 DDP 实现里最容易出错的 1 行。**
 

@@ -31,7 +31,7 @@ mathjax: true
 | $y^*$ | 参考（正确）答案序列 | 奖励修正里的监督目标 |
 | $y$ | 模型采样出的序列 | 与 $y^*$ 区分 |
 | $\mathrm{sg}(\cdot)$ | stop-gradient | 保证 reweighting 系数**不产生梯度** |
-| $\mathcal{D}_{\mathrm{pt}}$, $\mathcal{D}_{\mathrm{rs}}$ | 预训练域 / 推理域校准数据 | $\mathrm{rs}$ = reasoning |
+| $$\mathcal{D}_{\mathrm{pt}}$$, $$\mathcal{D}_{\mathrm{rs}}$$ | 预训练域 / 推理域校准数据 | $\mathrm{rs}$ = reasoning |
 | $\rho$ | 混合校准集中推理数据占比 | ReasoningQAT 取 0.8 |
 | $L$ | 思维链长度（token 数） | 决定误差放大倍数的关键量 |
 | $\varepsilon$ | 单步的采样分布误差 | 链越长，累积越严重 |
@@ -169,7 +169,7 @@ UPQ 的数据（2-bit 指令模型 MMLU）：
 
 ### 5.1 从 SFT 到「类 RL」的一步之遥
 
-标准的 SFT 损失是 $\mathcal{L}_{\mathrm{SFT}} = -\log \pi_\theta(y^*\mid x)$。它对**每个 token 一视同仁**，不区分「模型本来就会的」和「模型差的」。
+标准的 SFT 损失是 $$\mathcal{L}_{\mathrm{SFT}} = -\log \pi_\theta(y^*\mid x)$$。它对**每个 token 一视同仁**，不区分「模型本来就会的」和「模型差的」。
 
 **Reward rectification** 的思路是给损失加一个动态权重：
 

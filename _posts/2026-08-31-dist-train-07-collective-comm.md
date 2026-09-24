@@ -50,7 +50,7 @@ flowchart LR
 
 ## 2. Ring All-Reduce 的完整推导
 
-**设定**：$N$ 张卡组成环（逻辑顺序 $0 \to 1 \to \cdots \to N-1 \to 0$）。每卡持有梯度向量 $g^{(i)} \in \mathbb{R}^{D}$，切成 $N$ 块 $g^{(i)} = (g^{(i)}_0, \dots, g^{(i)}_{N-1})$，每块大小 $D/N$。
+**设定**：$N$ 张卡组成环（逻辑顺序 $0 \to 1 \to \cdots \to N-1 \to 0$）。每卡持有梯度向量 $g^{(i)} \in \mathbb{R}^{D}$，切成 $N$ 块 $$g^{(i)} = (g^{(i)}_0, \dots, g^{(i)}_{N-1})$$，每块大小 $D/N$。
 
 ### 阶段一：Reduce-Scatter（把每块的全局和"转"到对应卡）
 

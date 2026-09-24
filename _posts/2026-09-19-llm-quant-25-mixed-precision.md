@@ -121,7 +121,7 @@ $$\Lambda_\ell \propto \mathrm{tr}(H_\ell)\quad \text{或}\quad \lambda_{\max}(H
 直接测：把第 $\ell$ 层量化到 $b$ bit，其余不变，测**最终输出**的误差增量 $\mathcal{E}_\ell(b)$。
 
 * 优点：定义无歧义，与你的目标指标完全一致；
-* 缺点：**成本是 $O(L \times |\mathcal{B}|)$**——$L$ 层 × 候选比特数，每层都要跑一遍完整前向。
+* 缺点：**成本是 $O(L \times \lvert\mathcal{B}\rvert)$**——$L$ 层 × 候选比特数，每层都要跑一遍完整前向。
 
 **这就是 §2 里说的「误差表 $\mathcal{E}_\ell(b)$」的来源，也是混合精度最主要的成本项。**
 
@@ -182,7 +182,7 @@ $$\min_{b_1,\dots,b_L} \ \sum_{\ell=1}^{L} \mathcal{E}_\ell(b_\ell) \quad \text{
 按 Λ_ℓ 降序，逐个把 bit 提高一档，直到预算耗尽
 ```
 
-* 复杂度 $O(L \log L + L\cdot|\mathcal{B}|)$；
+* 复杂度 $O(L \log L + L\cdot\lvert\mathcal{B}\rvert)$；
 * **缺点**：假设「误差下降速率」对各单元相同，实际不成立。
 
 ### 4.2 拉格朗日松弛（实践最优）
@@ -192,7 +192,7 @@ $$\min_{b} \ \sum_\ell \Big[\mathcal{E}_\ell(b_\ell) + \lambda\, \mathcal{S}_\el
 对每个 $\lambda$ 独立求解每个单元（因为目标可分离），扫描 $\lambda$ 得到**Pareto 前沿**，再挑选满足预算的点。
 
 **这是工业界最常用的方法**，因为：
-* 复杂度 $O(|\Lambda\text{网格}| \times L \times |\mathcal{B}|)$，很便宜；
+* 复杂度 $O(\lvert\Lambda\text{网格}\rvert \times L \times \lvert\mathcal{B}\rvert)$，很便宜；
 * 顺手给出了完整的精度-体积权衡曲线，便于调预算。
 
 ### 4.3 整数规划（ILP）

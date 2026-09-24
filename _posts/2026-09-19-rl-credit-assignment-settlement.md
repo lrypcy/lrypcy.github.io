@@ -255,7 +255,7 @@ for mode in ("grpo", "dapo", "drgrpo"):
 drgrpo: 正占比=0.0962  负占比=0.9038  负/正=9.40x
 ```
 
-注意 DAPO 与 Dr.GRPO 的**相对权重完全一致**（都是"每 token 常数权重"，差别只在 loss 整体尺度；DAPO 多除一个 $\sum_j|o_j|$，对 Adam 的学习率更友好）。而 GRPO 是唯一"每条序列等权"的那个。
+注意 DAPO 与 Dr.GRPO 的**相对权重完全一致**（都是"每 token 常数权重"，差别只在 loss 整体尺度；DAPO 多除一个 $\sum_j\lvert o_j\rvert$，对 Adam 的学习率更友好）。而 GRPO 是唯一"每条序列等权"的那个。
 
 > ⚠️ **结论是数据集相关的**：这里是"错误回答更长"的情形，DAPO 强化对长错误回答的惩罚是对的；**如果你的数据集是正确回答更长**（长 CoT 里很常见），结论会翻转。别盲目抄配置——先打印你自己的 `len(correct)` vs `len(wrong)` 分布。
 
@@ -654,7 +654,7 @@ $$A^{\text{GACA}}=\big(1-\lambda(s_t,a_t)\big)A^{E}+\lambda(s_t,a_t)A^{S},\qquad
 
 [SR-PPO（arXiv:2606.25451）](https://arxiv.org/html/2606.25451v1) 解决的是反面问题：group-based 太贵，而且**rollout 之间的推理前缀很快就发散，横向比较本身不可靠**。方案：**每个 prompt 只采一条 rollout**，训一个 token 级 critic 预测前缀处的 **Pass@$k$ 成功概率**。
 
-为什么是 Pass@$k$：Pass@1 对"已经能轻松做对"的前缀给高值 → 学不到东西；而随 $k$ 增大，$\text{Pass@}k$ 收敛到一个**可达性指示量**——这个前缀存不存在通往成功的续写。因此它**对容易的前缀打折、把信号集中到成功概率仍处在边缘的困难前缀**。作者还证明了 $k\to\infty$ 的极限在显式状态图上可以 $O(|V|+|E|)$ 算出。
+为什么是 Pass@$k$：Pass@1 对"已经能轻松做对"的前缀给高值 → 学不到东西；而随 $k$ 增大，$\text{Pass@}k$ 收敛到一个**可达性指示量**——这个前缀存不存在通往成功的续写。因此它**对容易的前缀打折、把信号集中到成功概率仍处在边缘的困难前缀**。作者还证明了 $k\to\infty$ 的极限在显式状态图上可以 $O(\lvert V\rvert+\lvert E\rvert)$ 算出。
 
 ```mermaid
 graph TD
