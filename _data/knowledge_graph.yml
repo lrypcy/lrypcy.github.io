@@ -1,4 +1,9 @@
 # 首页「分类 × 知识图谱」的结构化数据
+#
+# 提交时会自动体检（发现未归系列的文章 / 未配置分类 / 孤立系列 / 建议补的依赖边）：
+#   python3 tools/graph_sync.py --links          # 完整报告
+#   python3 tools/graph_sync.py --suggest-yml    # 打印可粘贴的 yml 片段
+# hook 安装：bash tools/install_hooks.sh（严格模式：GRAPH_SYNC_STRICT=1 git commit）
 # ------------------------------------------------------------------
 # categories : 分类元信息（图标 / 主题色 / 一句话定位），顺序即展示顺序
 # series     : 系列（知识图谱里的节点）。用 prefixes 匹配 _posts 文件名，
