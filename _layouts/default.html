@@ -8,6 +8,17 @@
   <link rel="icon" href="/images/favicon-32x32-next.png" sizes="32x32">
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/assets/css/custom.css">
+  <script>
+  /* 阅读偏好（正文宽度 / 右侧评论区显隐）尽早落地到 <html> 上，避免首屏闪烁 */
+  (function () {
+    try {
+      var p = JSON.parse(localStorage.getItem('pcy-read-pref') || '{}');
+      var d = document.documentElement;
+      if (p.width) d.classList.add('post-' + p.width);
+      if (p.sidebar === false) d.classList.add('hide-sidebar');
+    } catch (e) {}
+  })();
+  </script>
   <script src="/assets/js/main.js" defer></script>
   <script src="/assets/js/zoom.js" defer></script>
 </head>

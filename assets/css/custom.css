@@ -91,6 +91,58 @@ a { color: var(--primary); }
   line-height: 1.7;
   margin: 10px 0 0;
 }
+/* 正文宽度三档（<html> 上的 post-narrow / post-normal / post-wide） */
+html.post-narrow .layout-grid.layout-post { max-width: 1040px; grid-template-columns: minmax(0, 1fr) 320px; }
+html.post-wide  .layout-grid.layout-post { max-width: 1600px; }
+html.post-narrow .post-body table,
+html.post-narrow .post-body pre { display: block; overflow-x: auto; }
+/* 隐藏右侧栏（评论） */
+html.hide-sidebar .layout-grid.layout-post { grid-template-columns: 1fr; }
+html.hide-sidebar .sidebar { display: none; }
+
+/* 阅读设置工具条（右下角） */
+.read-ctrl {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 95;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.read-ctrl[hidden] { display: none; }
+.read-ctrl-group {
+  display: flex;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-hover);
+  overflow: hidden;
+}
+.read-ctrl-btn {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-light);
+  background: #fff;
+  border: none;
+  padding: 6px 13px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.read-ctrl-btn:hover { color: var(--primary); background: var(--primary-soft); }
+.read-ctrl-btn.is-active { background: var(--primary); color: #fff; font-weight: 600; }
+.read-ctrl-side {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 14px;
+  box-shadow: var(--shadow-hover);
+}
+.read-ctrl-side.is-off { color: #9aa8b8; }
+@media (max-width: 768px) {
+  .read-ctrl { right: 12px; bottom: 12px; }
+  .read-ctrl-btn { padding: 5px 11px; font-size: 12px; }
+}
+
 @media (max-width: 1120px) {
   .layout-grid.layout-post { grid-template-columns: minmax(0, 1fr) 330px; }
 }
@@ -1883,4 +1935,15 @@ a { color: var(--primary); }
   .series-posts li { flex-wrap: wrap; }
   .series-posts li time { width: 100%; padding-left: 30px; }
   #kg-svg { min-width: 620px; }
+}
+
+/* 移动端：无论宽/窄幅或是否隐藏侧栏，一律单列（优先级与 html.post-* 规则对齐，放最后生效） */
+@media (max-width: 768px) {
+  html.post-narrow .layout-grid.layout-post,
+  html.post-normal .layout-grid.layout-post,
+  html.post-wide .layout-grid.layout-post,
+  html.hide-sidebar .layout-grid.layout-post,
+  .layout-grid.layout-post { grid-template-columns: 1fr; }
+  html.post-narrow .layout-grid.layout-post,
+  html.post-wide .layout-grid.layout-post { max-width: 100%; }
 }

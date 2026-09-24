@@ -48,6 +48,16 @@ layout: default
 {% comment %} 评论区已挪到 default.html 的右侧 sidebar（仅文章页），此处不再渲染 {% endcomment %}
 
 {% if page.layout == 'post' %}
+<!-- 阅读设置：正文宽度（窄/标准/宽） + 右侧评论区显隐，选择记在 localStorage -->
+<div class="read-ctrl" id="readCtrl" hidden>
+  <div class="read-ctrl-group" role="group" aria-label="正文宽度">
+    <button class="read-ctrl-btn" type="button" data-width="narrow" title="窄幅：正文更窄，适合长时间阅读">窄</button>
+    <button class="read-ctrl-btn" type="button" data-width="normal" title="标准宽度">标</button>
+    <button class="read-ctrl-btn" type="button" data-width="wide" title="宽幅：表格与代码块能铺开">宽</button>
+  </div>
+  <button class="read-ctrl-btn read-ctrl-side" type="button" id="sidebarToggle" title="显示 / 隐藏右侧评论区">评论</button>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>
 (function () {
@@ -200,9 +210,50 @@ layout: default
     } catch (e) { done(); }
   }
 
+  // 阅读设置：宽度模式 + 右侧评论区显隐
+  function initReadCtrl() {
+    var ctrl = document.getElementById('readCtrl');
+    if (!ctrl) return;
+    var KEY = 'pcy-read-pref';
+    var pref = { width: 'normal', sidebar: true };
+    try {
+      var saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+      if (saved.width) pref.width = saved.width;
+      if (typeof saved.sidebar === 'boolean') pref.sidebar = saved.sidebar;
+    } catch (e) {}
+
+    var root = document.documentElement;
+    function apply() {
+      root.classList.remove('post-narrow', 'post-normal', 'post-wide');
+      root.classList.add('post-' + pref.width);
+      root.classList.toggle('hide-sidebar', !pref.sidebar);
+      [].slice.call(ctrl.querySelectorAll('[data-width]')).forEach(function (b) {
+        b.classList.toggle('is-active', b.getAttribute('data-width') === pref.width);
+      });
+      var t = document.getElementById('sidebarToggle');
+      if (t) {
+        t.classList.toggle('is-off', !pref.sidebar);
+        t.textContent = pref.sidebar ? '评论 ✓' : '评论 ✕';
+        t.title = pref.sidebar ? '隐藏右侧评论区' : '显示右侧评论区';
+      }
+      try { localStorage.setItem(KEY, JSON.stringify(pref)); } catch (e) {}
+    }
+
+    [].slice.call(ctrl.querySelectorAll('[data-width]')).forEach(function (b) {
+      b.addEventListener('click', function () { pref.width = b.getAttribute('data-width'); apply(); });
+    });
+    var tg = document.getElementById('sidebarToggle');
+    if (tg) {
+      tg.addEventListener('click', function () { pref.sidebar = !pref.sidebar; apply(); });
+    }
+    ctrl.hidden = false;
+    apply();
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     buildToc();
     renderMermaid();
+    initReadCtrl();
   });
 })();
 </script>
