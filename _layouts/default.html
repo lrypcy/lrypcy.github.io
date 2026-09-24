@@ -34,12 +34,22 @@
     </div>
   </header>
 
-  <main class="layout-grid">
+  <main class="layout-grid{% if page.layout == 'post' %} layout-post{% endif %}">
     <div class="layout-main">
       {{ content }}
     </div>
 
     <aside class="sidebar">
+      {% if page.layout == 'post' %}
+      {%- assign giscus_id = site.giscus.category_id | default: "" -%}
+      {%- if page.comments != false and giscus_id != "" and giscus_id != "__GISCUS_CATEGORY_ID__" -%}
+      <div class="sidebar-section sidebar-comments">
+        <h3 class="sidebar-title">💬 评论</h3>
+        {% include giscus.html %}
+        <p class="sidebar-comments-hint">使用 GitHub 账号登录即可评论，数据存于本仓库 Discussions。</p>
+      </div>
+      {%- endif -%}
+      {% else %}
       <div class="sidebar-section">
         <h3 class="sidebar-title">关于</h3>
         <p class="sidebar-site-name">{{ site.title }}</p>
@@ -92,6 +102,7 @@
           {% endfor %}
         </ul>
       </div>
+      {% endif %}
     </aside>
   </main>
 

@@ -80,6 +80,24 @@ a { color: var(--primary); }
 }
 .content-wrap { background: transparent; }
 
+/* ========== 文章页：右侧栏 = 评论区 ========== */
+.layout-post { max-width: 1320px; grid-template-columns: minmax(0, 1fr) 360px; }
+.sidebar-comments { padding-bottom: 14px; }
+.sidebar-comments .giscus,
+.sidebar-comments iframe.giscus-frame { width: 100%; }
+.sidebar-comments-hint {
+  font-size: 11.5px;
+  color: var(--text-light);
+  line-height: 1.7;
+  margin: 10px 0 0;
+}
+@media (max-width: 1120px) {
+  .layout-post { grid-template-columns: minmax(0, 1fr) 330px; }
+}
+@media (max-width: 768px) {
+  .layout-post { grid-template-columns: 1fr; }
+}
+
 /* ========== 双栏布局：左侧文章流 + 右侧 sidebar ========== */
 .layout-grid {
   display: grid;
