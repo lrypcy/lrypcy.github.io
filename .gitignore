@@ -8,3 +8,7 @@ _site/
 .workbuddy/
 .codegraph
 Clippings/
+
+# macOS 与其他无关文件
+.DS_Store
+*.base
