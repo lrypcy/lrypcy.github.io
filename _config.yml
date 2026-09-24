@@ -44,6 +44,8 @@ giscus:
 # 构建排除
 exclude:
   - README.md
+  - tools
+  - .githooks
   - Gemfile
   - Gemfile.lock
   - vendor

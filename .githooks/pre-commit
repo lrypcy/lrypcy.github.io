@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# pre-commit：文章或知识图谱配置有变动时，自动体检首页知识图谱
+#
+# 行为：
+#   - 只在 _posts/*.md 或 _data/knowledge_graph.yml 进入暂存区时才跑，其他提交零开销
+#   - 默认只提示、不阻断提交（写得再烂也能提交，WIP 不受影响）
+#   - GRAPH_SYNC_STRICT=1 时切换为严格模式：有必须处理项就阻断
+#   - 配置文件本身坏了（yml 解析失败 / 边指向不存在的系列）一定阻断
+#   - 临时跳过：git commit --no-verify
+#
+# 安装：bash tools/install_hooks.sh
+set -u
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$ROOT" || exit 0
+
+changed="$(git diff --cached --name-only --diff-filter=ACM \
+  | grep -E '^(_posts/[^/]+\.md|_data/knowledge_graph\.yml)$' || true)"
+if [ -z "$changed" ]; then
+  exit 0
+fi
+
+# 找一个带 PyYAML 的 python（系统 python3 通常没装 yaml）
+PY="${GRAPH_SYNC_PYTHON:-}"
+if [ -z "$PY" ]; then
+  for cand in "$HOME/Software/miniconda3/bin/python3" "$(command -v python3 || true)" "$(command -v python || true)"; do
+    if [ -n "$cand" ] && [ -x "$cand" ] && "$cand" -c "import yaml" >/dev/null 2>&1; then
+      PY="$cand"
+      break
+    fi
+  done
+fi
+if [ -z "$PY" ]; then
+  echo "knowledge-graph: 未找到带 PyYAML 的 python3，跳过体检（可用 GRAPH_SYNC_PYTHON=/path/to/python 指定）"
+  exit 0
+fi
+
+echo "knowledge-graph: 检测到 $(printf '%s\n' "$changed" | wc -l | tr -d ' ') 个文章/配置变更，开始体检…"
+"$PY" tools/graph_sync.py --quiet
+status=$?
+
+if [ "$status" -eq 2 ]; then
+  echo ""
+  echo "knowledge-graph: 配置文件有问题，已阻断提交。"
+  echo "                 修好 _data/knowledge_graph.yml 再提交，或用 git commit --no-verify 临时跳过。"
+  exit 1
+fi
+
+if [ "$status" -eq 1 ]; then
+  echo ""
+  echo "knowledge-graph: 严格模式（GRAPH_SYNC_STRICT=1）下存在必须处理项，已阻断提交。"
+  echo "                 处理完再提交，或用 git commit --no-verify 临时跳过。"
+  exit 1
+fi
+
+exit 0
