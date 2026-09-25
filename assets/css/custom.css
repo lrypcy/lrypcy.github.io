@@ -2086,3 +2086,41 @@ html.hide-sidebar .sidebar { display: none; }
   padding: 10px 16px;
   line-height: 1.85;
 }
+
+/* 关于页：微信群二维码卡片 */
+.about-wechat {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 26px;
+  box-shadow: var(--shadow);
+}
+.about-wechat-qr {
+  flex-shrink: 0;
+  width: 190px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  box-shadow: var(--shadow-sm);
+}
+.about-wechat-qr img { display: block; width: 100%; height: auto; border-radius: 4px; }
+.about-wechat-info { flex: 1; min-width: 240px; }
+.about-wechat-info h3 { font-size: 16.5px; font-weight: 700; color: var(--text); margin: 0 0 8px; }
+.about-wechat-info p { font-size: 13.5px; color: var(--text-light); line-height: 1.85; margin: 0 0 8px; }
+.about-wechat-tip {
+  background: var(--quote-bg);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 8px 14px;
+  margin-top: 6px;
+}
+.about-wechat-tip b { color: var(--primary); }
+
+@media (max-width: 640px) {
+  .about-wechat { flex-direction: column; }
+}

@@ -69,3 +69,14 @@ permalink: /about/
 <p class="about-note">
   文章有误、想讨论技术、或者单纯打个招呼，欢迎在任意文章底部留言（GitHub 账号登录即可评论），也可以到 <a href="https://github.com/lrypcy" target="_blank" rel="noopener">GitHub</a> 提 Issue。
 </p>
+
+<div class="about-wechat">
+  <div class="about-wechat-qr">
+    <img src="/images/wechat-aiinfra-group.png" alt="AI infra 交流群二维码" loading="lazy">
+  </div>
+  <div class="about-wechat-info">
+    <h3>🧑‍💻 AI infra 交流群</h3>
+    <p>量化、编译器、算子、分布式训练、RL——聊得来的都在群里，欢迎来吹水与切磋。</p>
+    <p class="about-wechat-tip">⚠️ 微信群二维码 <b>7 天有效</b>。如果二维码已过期，可以加我微信<b>备注「lrypcy」</b>，看到后我会手动拉你进群。</p>
+  </div>
+</div>
