@@ -33,6 +33,7 @@
           <li class="menu-item"><a href="/archives/">归档</a></li>
           <li class="menu-item"><a href="/categories/">分类</a></li>
           <li class="menu-item"><a href="/tags/">标签</a></li>
+          <li class="menu-item"><a href="/about/">关于</a></li>
         </ul>
       </nav>
       <button class="search-trigger" aria-label="搜索" title="搜索 (Ctrl+K)">
@@ -62,7 +63,7 @@
       {%- endif -%}
       {% else %}
       <div class="sidebar-section">
-        <h3 class="sidebar-title">关于</h3>
+        <h3 class="sidebar-title">关于 <a class="sidebar-more" href="/about/">了解我 →</a></h3>
         <p class="sidebar-site-name">{{ site.title }}</p>
         <p class="sidebar-subtitle">{{ site.subtitle }}</p>
         <p class="sidebar-desc">{{ site.about }}

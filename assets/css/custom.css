@@ -1947,3 +1947,142 @@ html.hide-sidebar .sidebar { display: none; }
   html.post-narrow .layout-grid.layout-post,
   html.post-wide .layout-grid.layout-post { max-width: 100%; }
 }
+
+/* ========== 关于页 ========== */
+.about-hero {
+  display: flex;
+  gap: 26px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, var(--primary-soft) 0%, var(--card-bg) 60%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 30px 32px;
+  box-shadow: var(--shadow);
+  margin-bottom: 22px;
+}
+.about-avatar {
+  width: 118px;
+  height: 118px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #fff;
+  box-shadow: 0 4px 14px rgba(30, 40, 60, 0.12);
+  flex-shrink: 0;
+}
+.about-intro { flex: 1; min-width: 240px; }
+.about-name {
+  font-size: 24px;
+  font-weight: 800;
+  margin: 0 0 6px;
+  color: var(--text);
+}
+.about-handle {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--tag-bg);
+  border-radius: 20px;
+  padding: 2px 10px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.about-tagline { font-size: 14px; color: var(--text-light); font-weight: 600; margin: 0 0 8px; }
+.about-bio {
+  font-size: 13.5px;
+  color: var(--text-light);
+  line-height: 1.85;
+  margin: 0 0 14px;
+  max-width: 560px;
+}
+.about-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.about-links a {
+  font-size: 12.5px;
+  color: var(--primary);
+  text-decoration: none;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 14px;
+  transition: var(--transition);
+}
+.about-links a:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+.about-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 12px;
+  margin-bottom: 30px;
+}
+.about-stat {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 10px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+.about-stat b { display: block; font-size: 20px; color: var(--primary); font-weight: 800; }
+.about-stat span { font-size: 12px; color: var(--text-light); }
+
+.about-section-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 30px 0 14px;
+  padding-left: 12px;
+  border-left: 4px solid var(--primary);
+}
+.about-desc { font-size: 13.5px; color: var(--text-light); margin: -6px 0 14px; padding-left: 16px; }
+
+.about-cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.about-cat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px 16px 13px 18px;
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+}
+.about-cat::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--cat-color, var(--primary));
+  opacity: 0.85;
+}
+.about-cat:hover { box-shadow: var(--shadow-hover); transform: translateY(-3px); }
+.about-cat-head { display: flex; align-items: center; gap: 8px; }
+.about-cat-icon { font-size: 17px; }
+.about-cat-name { font-size: 14.5px; font-weight: 700; color: var(--cat-color, var(--primary)); }
+.about-cat-count {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-light);
+  background: var(--bg);
+  border-radius: 12px;
+  padding: 1px 8px;
+}
+.about-cat-desc { font-size: 12px; color: var(--text-light); line-height: 1.7; }
+
+.about-ol { padding-left: 24px; margin: 0; }
+.about-ol li { margin: 8px 0; font-size: 14px; color: var(--text); line-height: 1.85; }
+.about-ol li b { color: var(--primary); }
+.about-note {
+  font-size: 13px;
+  color: var(--text-light);
+  background: var(--quote-bg);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 10px 16px;
+  line-height: 1.85;
+}
