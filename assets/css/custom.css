@@ -2125,3 +2125,42 @@ html.hide-sidebar .sidebar { display: none; }
 @media (max-width: 640px) {
   .about-wechat { flex-direction: column; }
 }
+
+/* ========== 站点标题字体：柳建草书 Liu Jian Mao Cao（OFL，子集化） ========== */
+@font-face {
+  font-family: "PCY Brand";
+  src: url("/assets/fonts/pcy-brand.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+:root {
+  --font-brand: "PCY Brand", "STXingkai", "Kaiti SC", "STKaiti", "KaiTi", serif;
+}
+.header .brand,
+.blog-hero-title,
+.sidebar-site-name {
+  font-family: var(--font-brand);
+  font-weight: 400;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+}
+.header .brand {
+  font-size: 23px;
+  letter-spacing: 3px;
+  text-shadow: 0 1px 0 rgba(30, 41, 59, 0.06);
+}
+.blog-hero-title {
+  font-size: 46px;
+  letter-spacing: 6px;
+  line-height: 1.4;
+  padding-bottom: 4px;
+}
+.sidebar-site-name {
+  font-size: 17px;
+  letter-spacing: 2px;
+}
+@media (max-width: 640px) {
+  .header .brand { font-size: 21px; letter-spacing: 2px; }
+  .blog-hero-title { font-size: 34px; letter-spacing: 3px; }
+}

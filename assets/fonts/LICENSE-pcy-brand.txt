@@ -1,0 +1,9 @@
+pcy-brand.woff2
+
+Source font : Liu Jian Mao Cao (柳建草书) Regular
+Copyright   : Copyright 2018 The LiuJianMaoCao Project Authors
+License     : SIL Open Font License 1.1
+              https://github.com/google/fonts/blob/main/ofl/liujianmaocao/OFL.txt
+
+This file is a glyph-subset ("一身骄傲" + basic Latin) generated with
+pyftsubset for use as the site title font only.
