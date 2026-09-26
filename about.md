@@ -11,9 +11,9 @@ permalink: /about/
 {% assign write_days = now_ts | minus: first_ts | divided_by: 86400 | at_least: 1 %}
 
 <div class="about-hero">
-  <img class="about-avatar" src="/images/touxiang.jpg" alt="{{ site.author }}">
+  <img class="about-avatar" src="/images/touxiang.jpg" alt="博主头像">
   <div class="about-intro">
-    <h2 class="about-name">{{ site.author }}<span class="about-handle">GitHub @lrypcy</span></h2>
+    <h2 class="about-name"><span class="about-handle">GitHub @lrypcy</span></h2>
     <p class="about-tagline">{{ site.subtitle }}</p>
     <p class="about-bio">{{ site.about }}</p>
     <div class="about-links">

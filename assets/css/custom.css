@@ -1987,6 +1987,7 @@ html.hide-sidebar .sidebar { display: none; }
   margin-left: 8px;
   vertical-align: middle;
 }
+.about-name .about-handle:only-child { margin-left: 0; }
 .about-tagline { font-size: 14px; color: var(--text-light); font-weight: 600; margin: 0 0 8px; }
 .about-bio {
   font-size: 13.5px;
