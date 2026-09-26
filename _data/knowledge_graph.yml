@@ -187,6 +187,15 @@ series:
     prefixes: [world-model]
     desc: 1 篇长文。从 Dreamer V4 到 Cosmos Policy / DreamZero 的 2025–2026 完整地图。
 
+  - id: transcendental
+    name: 超越函数与 softmax 的硬件实现
+    short: 超越函数
+    category: 芯片架构
+    layer: 2
+    order: 2
+    prefixes: [gpu-transcendental]
+    desc: 1 篇纵深长文。归约—逼近—重建三步算法、MUFU/SFU 的微架构选择、H100 上 989 vs 3.9 的吞吐悬崖，以及 FlashAttention-3 与 RoPE 长上下文的数值陷阱；含 5 组可复现实验。是 op 系列第 10 篇的续篇。
+
   # ---------- 单篇专题（只在分类面板出现） ----------
   - id: xdsl
     name: xDSL 编译器体系
@@ -235,6 +244,8 @@ links:
   - { from: mdp-grpo,  to: wam,        label: WAM 用 RL 训练动作模型 }
   - { from: embodied,  to: wam,        label: 世界模型驱动具身决策 }
   - { from: flow,      to: wam,        label: 生成式世界模型（Cosmos / DreamZero） }
+  - { from: chip,      to: transcendental, label: SFU / MUFU 的吞吐是超越函数的物理上界 }
+  - { from: op,        to: transcendental, label: Softmax / RoPE 的指令级实现与数值陷阱 }
 
 paths:
   - name: AI Infra 工程师主线
