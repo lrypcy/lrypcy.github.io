@@ -14,7 +14,7 @@ mathjax: true
 
 **TL;DR**
 > * **专家并行（EP）**是唯一为 **Mixture-of-Experts（MoE）**定制的并行：把 $E$ 个专家（FFN 子网络）**切到 $N$ 张卡**，每卡一组专家，token 按路由决策**现场搬到对应卡**——通信原语是 **All-to-All**（区别于 DP/TP 的 All-Reduce）。
-> * 其他并行策略处理 MoE 都别扭：DP 会让每张卡复制全部专家（显存爆炸）；TP 会把每个专家切碎（专家太小，切分收益趋零）；PP 会把专家按层固定（路由跨节点就瘫痪）。**只有 EP 让"token 流动、专家不流动"。**
+> * 其他并行策略处理 MoE 都别扭：DP 会让每张卡复制全部专家（显存爆炸）；TP 会把每个专家切碎（专家太小，切分收益趋零）；PP 会把专家按层固定（路由跨节点就瘫痪）。**只有 EP 让“token 流动、专家不流动”。**
 > * **核心数学**：设每 token 激活 $k$ 个专家、token 总数 $T$，则**搬运量 $\approx k \cdot T$ 个 token-专家对**。对上 All-to-All（每个 rank 同时向所有人收发不等量数据）体现为 $\sum_j \lvert\text{从 }i\text{ 到 }j\rvert$ 的通信矩阵。**路由越均衡，通信越接近最优；路由倾斜（某个专家过热），最热的卡成为瓶颈。**
 > * **负载均衡是 EP 的唯一真正敌人**：专家过热 → 单卡 token 堆积 → All-to-All 带宽空耗 + 计算不并行 + 掉队者拖慢全局 step。解法：**辅助平衡损失（aux loss，router 惩罚过热专家）**、专家容量（expert capacity）限制、token drop / overflow 丢弃、以及 DeepSeek-V3 的 **细粒度专家 + 无辅助损失的负载均衡**（DSA 架构）。
 > * **什么时候不该用 EP**：确认型（每个 token 只走一个专家）但专家很小 → TP 内并并行即可；路由对性能不敏感（如只有 2 个专家）→ 用 TP 更省事。**EP 的甜点区：专家数量大（几十~几千）、token 量大、专家间负载可控。**
@@ -37,13 +37,13 @@ flowchart TD
 
 ---
 
-## 1. MoE 复习：为什么 EP 是"刚需"
+## 1. MoE 复习：为什么 EP 是“刚需”
 
 MoE 层 = 一个 router（$g(x)$ 把 token 分给 $k$ 个专家）+ $E$ 个专家 FFN（通常被 $k$ 个 token 复用）。经典配置（GShard / Switch Transformer）：$E \approx 64\mathord{\sim}512$，$k=1\mathord{\sim}2$。
 
 - 单卡放不下全部 $E$ 个专家 → 需要跨卡。
 - 每个 token **只需要 $k/E$ 的专家参与** → 每卡算力按需占用，理论上总 FLOPs 比稠密模型同规模低。
-- 关键：**token 到专家的映射是动态的**（依赖输入），不可能像 TP/PP 那样静态切分 → **数据必须"跟着路由走"** → All-to-All。
+- 关键：**token 到专家的映射是动态的**（依赖输入），不可能像 TP/PP 那样静态切分 → **数据必须“跟着路由走”** → All-to-All。
 
 **为什么 TP 对 MoE 无解**：TP 切的是矩阵，一个专家 FFN 就是个小矩阵（几十 MB），切 8 份后每份小到 kernel 都填不满 SM——**粒度太细**。TP 的 All-Reduce 也是全卡同步，而 MoE 是异步激活。**EP + TP（专家内做 TP、专家间做 EP）是现代超大 MoE（Switch、GShard、Mixtral、DeepSeek）的标准姿势。**
 
@@ -74,7 +74,7 @@ $$\mathcal{L}_{\text{aux}} = \alpha \cdot E \sum_{e=1}^{E} \bar{f}_e \cdot \bar{
 
 其中 $\bar{f}_e$ = 专家 $e$ 实际分到的 token 比例（聚合），$\bar{P}_e$ = router 给专家 $e$ 的平均概率。当分布均匀时 $\sum_e \bar f_e \bar P_e = \frac{1}{E} \cdot E = 1$，达到下界；一旦倾斜（某专家概率高且分到的多），乘积陡增——**梯度推动 router 平摊概率**。$\alpha$ 通常是 0.01 量级（太大伤害模型质量，太小不管用）。
 
-**专家容量（capacity）**：每个专家每轮最多处理 $C = \lceil k \cdot \frac{T}{E} \rceil$ 个 token，超出即丢弃（overflow）。它是"硬性负载均衡"——宁可丢 token 也不能让某卡撑爆。Switch 论文发现 overflow 通常 < 5%，几乎无损。
+**专家容量（capacity）**：每个专家每轮最多处理 $C = \lceil k \cdot \frac{T}{E} \rceil$ 个 token，超出即丢弃（overflow）。它是“硬性负载均衡”——宁可丢 token 也不能让某卡撑爆。Switch 论文发现 overflow 通常 < 5%，几乎无损。
 
 **DeepSeek-V3 的 DSA（DeepSeek Sparse Attention 的兄弟，指 DeepSeekMoE 的细粒度专家 + 共享专家）**：
 - **细粒度专家**（把 1 个大专家拆成多个小专家）→ 路由粒度更细，倾斜更易平摊；
@@ -89,11 +89,11 @@ $$\mathcal{L}_{\text{aux}} = \alpha \cdot E \sum_{e=1}^{E} \bar{f}_e \cdot \bar{
 MoE 大模型的通用编排（DeepSeek-V3、Mixtral）：
 
 - **专家内**：一个专家 FFN 尺寸仍大 → 内部再套 **TP=2/4**（专家权重分片）；
-- **专家间**：$E$ 个专家（每组内 TP）分布在 $N_{\text{ep}}$ 张卡，**按"组"划 EP**；
+- **专家间**：$E$ 个专家（每组内 TP）分布在 $N_{\text{ep}}$ 张卡，**按“组”划 EP**；
 - **非专家层**（attention / router / norm）：DP+TP 常规处理；
 - **token 流动**：每层 MoE 前 All-to-All \* 2（去 + 回）。
 
-**DeepSeek-V3 的关键扩展**：EP 粒度 = **单卡一个专家组**，attn 层不用 TP（用 attention 的 Multi-Head Latent Attention + Sparse Attention 把 KV 显存打下来），从而把 EP 的 All-to-All 限制在 NVLink 内——**这是"EP 必须贴近硬件拓扑"的范例**。
+**DeepSeek-V3 的关键扩展**：EP 粒度 = **单卡一个专家组**，attn 层不用 TP（用 attention 的 Multi-Head Latent Attention + Sparse Attention 把 KV 显存打下来），从而把 EP 的 All-to-All 限制在 NVLink 内——**这是“EP 必须贴近硬件拓扑”的范例**。
 
 通信量估算（每 token 每专家往返）：设 $\bar{k}=2$、token $T$=1M、每 token 128B 向量：总搬运 $\approx 2 \times 2 \times 1M \times 128B = 512$ MB/层/step——**与 DP 的 $2\Phi$ 同量级，但好处是它只发生在 MoE 层**（attention 层仍是 DP/TP 的经济通信）。
 

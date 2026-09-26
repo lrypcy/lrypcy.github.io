@@ -35,7 +35,7 @@ graph LR
 
 | 概念 | 一句话总结 | 详见 |
 |:---|:---|:---|
-| **Fast weights** | 在 test time 更新的"隐藏状态"模型 | 00, 01 |
+| **Fast weights** | 在 test time 更新的“隐藏状态”模型 | 00, 01 |
 | **Slow weights** | 预训练模型参数，test time 冻结 | 00 |
 | **双偶形式** | 将顺序更新转化为矩阵乘法，5x 加速 | 01 |
 | **TTT-NN** | 检索近邻微调模型，代码生成 -70% | 02 |
@@ -85,7 +85,7 @@ def ttt_linear_forward(x, W_init=0, eta=1.0):
 
 ## 未验证声明
 
-以下内容引用了无法在当前环境直接验证的论文细节，标记为"未验证"：
+以下内容引用了无法在当前环境直接验证的论文细节，标记为“未验证”：
 
 - TTT-Linear/MLP 各上下文长度下的精确 perplexity 数值（来自论文摘要及公开资料）
 - MesaNet 的 CG 方法与 Gated Linear Attention 的精确等价关系

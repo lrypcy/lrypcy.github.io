@@ -420,14 +420,14 @@ ncu --metrics sm__warps_active.avg.pct_of_peak_sustained_active,smsp__issue_acti
 
 | 主题 | 链接 |
 |:---|:---|
-| Lindholm et al., "NVIDIA Tesla: A Unified Graphics and Computing Architecture"（IEEE Micro 2008，SIMT/warp scheduler 的官方奠基论文） | 可搜标题获取 |
+| Lindholm et al., “NVIDIA Tesla: A Unified Graphics and Computing Architecture”（IEEE Micro 2008，SIMT/warp scheduler 的官方奠基论文） | 可搜标题获取 |
 | CUDA C++ Programming Guide（warp=32、compute capability 表、cp.async 语义官方出处） | <https://docs.nvidia.com/cuda/cuda-c-programming-guide/> |
 | PTX ISA 文档（mma/ldmatrix/cp.async/commit_group/wait_group/mbarrier 语义权威出处） | <https://docs.nvidia.com/cuda/parallel-thread-execution/> |
 | NVIDIA Ampere GA100 白皮书（SM 4 分区结构、Tensor Core 吞吐口径） | <https://images.nvidia.com/aem-dam/en-zz/Solutions/data-center/nvidia-ampere-architecture-whitepaper.pdf> |
 | NVIDIA H100 产品页/白皮书（TMA、wgmma、thread block cluster 口径） | <https://www.nvidia.com/en-us/data-center/h100/> |
 | Dissecting the NVIDIA Volta GPU Architecture via Microbenchmarking（调度器/replay/HMMA 微基准实证） | [arXiv:1804.06826](https://arxiv.org/abs/1804.06826) |
 | Demystifying the Nvidia Ampere Architecture（Ampere 微基准与延迟口径） | [arXiv:2208.11174](https://arxiv.org/abs/2208.11174) |
-| Fung et al., "Dynamic Warp Formation and Scheduling for Efficient GPU Control Flow"（MICRO'07，运行时重编组的学术路线，商用未采用） | 可搜标题获取 |
+| Fung et al., “Dynamic Warp Formation and Scheduling for Efficient GPU Control Flow”（MICRO'07，运行时重编组的学术路线，商用未采用） | 可搜标题获取 |
 | FlashAttention（IO-aware 融合在真实执行引擎上的收益样本） | [arXiv:2205.14135](https://arxiv.org/abs/2205.14135) |
 | CUTLASS 文档与源码（async pipeline/swizzle/warp specialization 的工业实践事实标准） | <https://github.com/NVIDIA/cutlass> |
 | CUDA Best Practices Guide（occupancy 官方建议与计算工具） | <https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html> |

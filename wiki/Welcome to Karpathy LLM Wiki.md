@@ -21,7 +21,7 @@ This note is in English because the LLM is not yet configured. To enable wiki ge
 
 ## How to use this plugin
 
-Open the command palette with `Ctrl/Cmd + P` and search "Karpathy LLM Wiki". The first command below is the only one you need on day one.
+Open the command palette with `Ctrl/Cmd + P` and search “Karpathy LLM Wiki”. The first command below is the only one you need on day one.
 
 | Command | What it does |
 | --- | --- |
@@ -42,7 +42,7 @@ After you ingest a source note, the plugin writes a small set of pages into your
 ### The three core page types
 
 - **`entities/`** — Named things: people, organizations, projects, products, events, places. A single source note typically produces several entity pages. Each entity page holds aliases, a summary, the source notes it appears in (`mentions_in_source`), and links to related entities and concepts.
-- **`concepts/`** — Topics, methods, definitions, fields of study, recurring themes. "PPR", "cardiology", "schema-driven design" are all concepts. Concept pages link to other concept pages; entity pages link to concept pages.
+- **`concepts/`** — Topics, methods, definitions, fields of study, recurring themes. “PPR”, “cardiology”, “schema-driven design” are all concepts. Concept pages link to other concept pages; entity pages link to concept pages.
 - **`sources/`** — One page per ingested source note, with the original content plus a `source_file` frontmatter field. Source pages are the provenance anchor — every entity / concept page lists the source pages that mention it, so a reader can drill from a topic back to the originating note.
 
 ### The Schema layer (optional)
@@ -59,7 +59,7 @@ Without Schema, the plugin still works — the three core types are always creat
 
 ### The wikilink graph
 
-Every `[[wiki-link]]` between two pages is a relationship the LLM established at ingest time. The plugin uses this graph (not embeddings) for query retrieval — see the v1.23.0 release notes for the graph engine architecture. Practical takeaway: a well-curated wikilink graph is the wiki's "search index". You can add or edit `[[X]]` links by hand in any page, and the next query will pick them up.
+Every `[[wiki-link]]` between two pages is a relationship the LLM established at ingest time. The plugin uses this graph (not embeddings) for query retrieval — see the v1.23.0 release notes for the graph engine architecture. Practical takeaway: a well-curated wikilink graph is the wiki's “search index”. You can add or edit `[[X]]` links by hand in any page, and the next query will pick them up.
 
 ### The folder layout
 

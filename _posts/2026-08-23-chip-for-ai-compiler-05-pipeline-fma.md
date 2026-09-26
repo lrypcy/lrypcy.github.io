@@ -410,15 +410,15 @@ llvm-mca -mcpu=znver3 acc4.s
 | 主题 | 链接 |
 |:---|:---|
 | Hennessy & Patterson, *Computer Architecture: A Quantitative Approach*（流水线冒险/记分板/Tomasulo/分支预测的系统教材，附录 C 与第 3 章） | 可搜书名获取最新版 |
-| Thornton, "Parallel Operation in the Control Data 6600"（记分板原始文献，1964 AFIPS） | 可搜标题获取 |
-| Tomasulo, "An Efficient Algorithm for Exploiting Multiple Arithmetic Units"（IBM Journal of R&D, 1967，乱序执行奠基） | 可搜标题获取 |
-| Smith, "A Study of Branch Prediction Strategies"（ISCA'81，静态与计数器预测的开山综述） | 可搜标题获取 |
-| Yeh & Patt, "Two-Level Adaptive Training Branch Prediction"（MICRO'91，两级自适应预测） | 可搜标题获取 |
-| McFarling, "Combining Branch Predictors"（WRL Technical Note TN-36, 1993，gshare 出处） | 可搜标题获取 |
-| Seznec & Michaud, "A Case for (Partial) TAGEed-Bi-Modal Branch Prediction"（JILP 2006，现代主力预测器 TAGE） | 可搜标题获取 |
-| Rau, "Iterative Modulo Scheduling"（International Journal of Parallel Programming, 1994，模调度事实标准） | 可搜标题获取 |
-| Lam, "Software Pipelining: An Effective Scheduling Technique for VLIW Machines"（PLDI'88，软件流水奠基） | 可搜标题获取 |
-| Montoye et al., "Design of the IBM RISC System/6000 Floating-Point Execution Unit"（IBM JRD 1990，第一条硬件 FMA 的实现报告） | 可搜标题获取 |
+| Thornton, “Parallel Operation in the Control Data 6600”（记分板原始文献，1964 AFIPS） | 可搜标题获取 |
+| Tomasulo, “An Efficient Algorithm for Exploiting Multiple Arithmetic Units”（IBM Journal of R&D, 1967，乱序执行奠基） | 可搜标题获取 |
+| Smith, “A Study of Branch Prediction Strategies”（ISCA'81，静态与计数器预测的开山综述） | 可搜标题获取 |
+| Yeh & Patt, “Two-Level Adaptive Training Branch Prediction”（MICRO'91，两级自适应预测） | 可搜标题获取 |
+| McFarling, “Combining Branch Predictors”（WRL Technical Note TN-36, 1993，gshare 出处） | 可搜标题获取 |
+| Seznec & Michaud, “A Case for (Partial) TAGEed-Bi-Modal Branch Prediction”（JILP 2006，现代主力预测器 TAGE） | 可搜标题获取 |
+| Rau, “Iterative Modulo Scheduling”（International Journal of Parallel Programming, 1994，模调度事实标准） | 可搜标题获取 |
+| Lam, “Software Pipelining: An Effective Scheduling Technique for VLIW Machines”（PLDI'88，软件流水奠基） | 可搜标题获取 |
+| Montoye et al., “Design of the IBM RISC System/6000 Floating-Point Execution Unit”（IBM JRD 1990，第一条硬件 FMA 的实现报告） | 可搜标题获取 |
 | IEEE 754-2019 浮点标准（fusedMultiplyAdd 的语义定义） | <https://ieeexplore.ieee.org/document/8766229> |
 | Dissecting the NVIDIA Volta GPU Architecture via Microbenchmarking（FFMA 延迟 4 cycle 的微基准实证） | [arXiv:1804.06826](https://arxiv.org/abs/1804.06826) |
 | Demystifying the Nvidia Ampere Architecture（Ampere 微基准与延迟口径） | [arXiv:2208.11174](https://arxiv.org/abs/2208.11174) |

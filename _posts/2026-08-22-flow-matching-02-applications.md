@@ -76,7 +76,7 @@ Rectified Flow 的插值路径 $$x_t = (1-t)\,x_0 + t\,x_1$$ 对应的条件速�
 
 ### 2.2 性质二：MSE 回归目标是规模化友好的训练动力学
 
-Lipman 等人在 FM 原始论文里的卖点就是 "simulation-free" 地 "train CNFs at unprecedented scale"（[arXiv:2210.02747](https://arxiv.org/abs/2210.02747)）。这句话在当时听着像口号，两年后变成了两条硬证据：
+Lipman 等人在 FM 原始论文里的卖点就是 “simulation-free” 地 “train CNFs at unprecedented scale”（[arXiv:2210.02747](https://arxiv.org/abs/2210.02747)）。这句话在当时听着像口号，两年后变成了两条硬证据：
 
 - SD3 报告了**可预测的 scaling 趋势**，且验证损失与人评指标相关——更低验证损失的检查点在人类评估中更好（[arXiv:2403.03206](https://arxiv.org/abs/2403.03206)）；
 - Movie Gen 团队在大规模预训练中发现 *“validation loss is well correlated with human evaluation results”*，于是把 FM 验证损失当作开发期的人评代理指标（[arXiv:2410.13720](https://arxiv.org/abs/2410.13720)，工业报告）。
@@ -293,35 +293,35 @@ def sample(model, n, d, nfe=8, device="cpu"):
 
 **理论与方法基座**
 
-* Lipman et al., "Flow Matching for Generative Modeling" ([arXiv:2210.02747](https://arxiv.org/abs/2210.02747)) —— FM 原始论文，simulation-free 训练 CNF
-* Liu et al., "Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow" ([arXiv:2209.03003](https://arxiv.org/abs/2209.03003)) —— 直线路径与 reflow，SD3 的方法源头
-* Tong et al., "Improving and generalizing flow-based generative models with minibatch optimal transport" ([arXiv:2302.00482](https://arxiv.org/abs/2302.00482)) —— OT-CFM，耦合自由度的系统化
-* Chen & Lipman, "Flow Matching on General Geometries" ([arXiv:2302.03660](https://arxiv.org/abs/2302.03660)) —— 流形版 FM，科学计算域的方法基座
-* 条件耦合的陷阱警示：Cheng & Schwing, "The Curse of Conditions" ([arXiv:2503.10636](https://arxiv.org/abs/2503.10636)) —— minibatch OT 在条件设置下的 train/test 缺口
+* Lipman et al., “Flow Matching for Generative Modeling” ([arXiv:2210.02747](https://arxiv.org/abs/2210.02747)) —— FM 原始论文，simulation-free 训练 CNF
+* Liu et al., “Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow” ([arXiv:2209.03003](https://arxiv.org/abs/2209.03003)) —— 直线路径与 reflow，SD3 的方法源头
+* Tong et al., “Improving and generalizing flow-based generative models with minibatch optimal transport” ([arXiv:2302.00482](https://arxiv.org/abs/2302.00482)) —— OT-CFM，耦合自由度的系统化
+* Chen & Lipman, “Flow Matching on General Geometries” ([arXiv:2302.03660](https://arxiv.org/abs/2302.03660)) —— 流形版 FM，科学计算域的方法基座
+* 条件耦合的陷阱警示：Cheng & Schwing, “The Curse of Conditions” ([arXiv:2503.10636](https://arxiv.org/abs/2503.10636)) —— minibatch OT 在条件设置下的 train/test 缺口
 
 **图像**
 
-* Esser et al., "Scaling Rectified Flow Transformers for High-Resolution Image Synthesis" (Stable Diffusion 3, [arXiv:2403.03206](https://arxiv.org/abs/2403.03206)) —— logit-normal 时间采样、MM-DiT、少步区间对照
-* Liu et al., "InstaFlow: One Step is Enough" ([arXiv:2309.06380](https://arxiv.org/abs/2309.06380)) —— reflow + 蒸馏的单步文生图
-* Black Forest Labs, "Announcing Black Forest Labs"（官方公告页，**非论文**）—— Flux.1 12B、混合架构、pro/dev/schnell 三变体的产品出处
+* Esser et al., “Scaling Rectified Flow Transformers for High-Resolution Image Synthesis” (Stable Diffusion 3, [arXiv:2403.03206](https://arxiv.org/abs/2403.03206)) —— logit-normal 时间采样、MM-DiT、少步区间对照
+* Liu et al., “InstaFlow: One Step is Enough” ([arXiv:2309.06380](https://arxiv.org/abs/2309.06380)) —— reflow + 蒸馏的单步文生图
+* Black Forest Labs, “Announcing Black Forest Labs”（官方公告页，**非论文**）—— Flux.1 12B、混合架构、pro/dev/schnell 三变体的产品出处
 
 **语音**
 
-* Le et al., "Voicebox: Text-Guided Multilingual Universal Speech Generation at Scale" ([arXiv:2306.15687](https://arxiv.org/abs/2306.15687)) —— FM 语音填充，比 VALL-E 快至 20 倍
-* "E2 TTS: Embarrassingly Easy Fully Non-Autoregressive Zero-Shot TTS" ([arXiv:2406.18009](https://arxiv.org/abs/2406.18009)) —— 字符填充极简范式的可行性证明
-* Chen et al., "F5-TTS: A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching" ([arXiv:2410.06885](https://arxiv.org/abs/2410.06885)) —— Sway Sampling 与 RTF 0.15
+* Le et al., “Voicebox: Text-Guided Multilingual Universal Speech Generation at Scale” ([arXiv:2306.15687](https://arxiv.org/abs/2306.15687)) —— FM 语音填充，比 VALL-E 快至 20 倍
+* “E2 TTS: Embarrassingly Easy Fully Non-Autoregressive Zero-Shot TTS” ([arXiv:2406.18009](https://arxiv.org/abs/2406.18009)) —— 字符填充极简范式的可行性证明
+* Chen et al., “F5-TTS: A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching” ([arXiv:2410.06885](https://arxiv.org/abs/2410.06885)) —— Sway Sampling 与 RTF 0.15
 
 **视频/音频**
 
-* Meta AI, "Movie Gen: A Cast of Media Foundation Models" ([arXiv:2410.13720](https://arxiv.org/abs/2410.13720)，工业技术报告) —— 30B 视频 + 13B 音频共用 FM 目标
-* Tencent, "HunyuanVideo: A Systematic Framework For Large Video Generative Models" ([arXiv:2412.03603](https://arxiv.org/abs/2412.03603)，工业技术报告) —— 开源侧 13B+ 代表
+* Meta AI, “Movie Gen: A Cast of Media Foundation Models” ([arXiv:2410.13720](https://arxiv.org/abs/2410.13720)，工业技术报告) —— 30B 视频 + 13B 音频共用 FM 目标
+* Tencent, “HunyuanVideo: A Systematic Framework For Large Video Generative Models” ([arXiv:2412.03603](https://arxiv.org/abs/2412.03603)，工业技术报告) —— 开源侧 13B+ 代表
 
 **分子与科学计算**
 
-* "Fast protein backbone generation with SE(3) flow matching" (FrameFlow, [arXiv:2310.05297](https://arxiv.org/abs/2310.05297)) —— 对 FrameDiff 步数少 5 倍、设计性好 2 倍
-* "SE(3)-Stochastic Flow Matching for Protein Backbone Generation" (FoldFlow, [arXiv:2310.02391](https://arxiv.org/abs/2310.02391)) —— Base/OT 系列递进
-* "RNA-FrameFlow: Flow Matching for de novo 3D RNA Backbone Design" ([arXiv:2406.13839](https://arxiv.org/abs/2406.13839)) —— 首个 3D RNA 骨架生成模型
-* "SemlaFlow -- Efficient 3D Molecular Generation with Latent Attention and Equivariant Flow Matching" ([arXiv:2406.07266](https://arxiv.org/abs/2406.07266)) —— E(3) 等变 FM 全分子生成
+* “Fast protein backbone generation with SE(3) flow matching” (FrameFlow, [arXiv:2310.05297](https://arxiv.org/abs/2310.05297)) —— 对 FrameDiff 步数少 5 倍、设计性好 2 倍
+* “SE(3)-Stochastic Flow Matching for Protein Backbone Generation” (FoldFlow, [arXiv:2310.02391](https://arxiv.org/abs/2310.02391)) —— Base/OT 系列递进
+* “RNA-FrameFlow: Flow Matching for de novo 3D RNA Backbone Design” ([arXiv:2406.13839](https://arxiv.org/abs/2406.13839)) —— 首个 3D RNA 骨架生成模型
+* “SemlaFlow -- Efficient 3D Molecular Generation with Latent Attention and Equivariant Flow Matching” ([arXiv:2406.07266](https://arxiv.org/abs/2406.07266)) —— E(3) 等变 FM 全分子生成
 
 **中文社区**
 

@@ -36,12 +36,12 @@ graph LR
 | 文档 | 一句话内容 | 适合谁先读 |
 |---|---|---|
 | [01-overview-and-evolution.md](01-overview-and-evolution.md) | 从自回归瓶颈到 2023 原始投机解码，再到 2024–2026 方法谱系的演化史与分类框架（survey 2502.19732） | 刚接触投机解码的任何人 |
-| [02-core-methods.md](02-core-methods.md) | draft/verify 数学框架、Rejection Sampling 无偏性证明、接受率-加速比推导 $S = \frac{1-\alpha^{\gamma+1}}{(1-\alpha)(1+\gamma c)}$、时序图、PyTorch 最小实现 | 需要理解"为什么无损"与性能边界的读者 |
+| [02-core-methods.md](02-core-methods.md) | draft/verify 数学框架、Rejection Sampling 无偏性证明、接受率-加速比推导 $S = \frac{1-\alpha^{\gamma+1}}{(1-\alpha)(1+\gamma c)}$、时序图、PyTorch 最小实现 | 需要理解“为什么无损”与性能边界的读者 |
 | [03-eagle-family-deep-dive.md](03-eagle-family-deep-dive.md) | Medusa 多分支头 → EAGLE-1/2/3 → DeepSeek-V3 MTP 的逐代差异与实验增益 | 计划选型 EAGLE 系自投机的读者 |
-| [04-inference-engine-support.md](04-inference-engine-support.md) | vLLM / SGLang / TensorRT-LLM / llama.cpp / Hugging Face 的算法支持、配置项、draft 模型获取、最小可运行示例 | 决定"用哪个引擎来跑"的读者 |
+| [04-inference-engine-support.md](04-inference-engine-support.md) | vLLM / SGLang / TensorRT-LLM / llama.cpp / Hugging Face 的算法支持、配置项、draft 模型获取、最小可运行示例 | 决定“用哪个引擎来跑”的读者 |
 | [05-production-deployment.md](05-production-deployment.md) | 生产与实验室 40–60% 差距的成因、词汇表一致性等硬件约束、陷阱清单、红绿灯规则 | 要把投机解码上生产的读者 |
 | [06-industry-practice.md](06-industry-practice.md) | DeepSeek-V3 MTP、Meta Llama-at-Scale、Together ATLAS/Turbo、端侧 sd.npu 等真实生产案例 | 想参照头部团队方案与踩坑的读者 |
-| [07-benchmarks-and-tradeoffs.md](07-benchmarks-and-tradeoffs.md) | 论文数字横向对比表、草稿来源/验证/lookahead/batch 四维权衡、"何时不要用"清单、数字读数检查点 | 正在做选型权衡与采购/排期决策的读者 |
+| [07-benchmarks-and-tradeoffs.md](07-benchmarks-and-tradeoffs.md) | 论文数字横向对比表、草稿来源/验证/lookahead/batch 四维权衡、“何时不要用”清单、数字读数检查点 | 正在做选型权衡与采购/排期决策的读者 |
 | [08-future-directions.md](08-future-directions.md) | 训练-推理协同、动态/多草稿、端侧检索式、投机缩放定律、开放问题清单 | 关注技术演进的读者 |
 
 ## 三条阅读路径
@@ -56,7 +56,7 @@ graph LR
 - **收益天花板**：由草稿-验证成本比 $c$ 主导，$\lim_{\gamma\to\infty} S = 1/(1+c)$；大 batch 失效区是 $(batch, seq, model, hw)$ 的四元函数（MagicDec 拐点）。
 - **生产现实**：论文最高 3–6×，生产实测普遍收敛在 **1.4–2.5×**；差距来源是 batch/并发/验证开销，部分可通过调度与动态策略缓解。
 - **选型主线**：独立小模型（成本高上限高）→ 自投机 EAGLE/MTP（免双模型，主流）→ 无模型检索（强复用场景零成本）。
-- **生态重要变化**：DeepSeek-V3 把投机能力内建为训练目标（MTP），llama.cpp 2026-04 统一 CLI（`--spec-type`）将其列为一等公民——投机正从"后装件"变成"预装件"。
+- **生态重要变化**：DeepSeek-V3 把投机能力内建为训练目标（MTP），llama.cpp 2026-04 统一 CLI（`--spec-type`）将其列为一等公民——投机正从“后装件”变成“预装件”。
 
 ## 配套资源
 

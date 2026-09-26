@@ -66,7 +66,7 @@ $$
 \Phi_t = \Phi_{t-1}(I - \beta_t k_t k_t^\top) + \beta_t v_t k_t^\top
 $$
 
-**直觉**：在更新中先"擦除"旧关联（$I - \beta_t k_t k_t^\top$），再写入新关联（$\beta_t v_t k_t^\top$）。这比线性 attention 的纯累加（Hebbian rule）更精确。
+**直觉**：在更新中先“擦除”旧关联（$I - \beta_t k_t k_t^\top$），再写入新关联（$\beta_t v_t k_t^\top$）。这比线性 attention 的纯累加（Hebbian rule）更精确。
 
 **优点**：
 - 比 Mamba2 更强的记忆容量（Delta rule > Hebbian rule）
@@ -87,7 +87,7 @@ $$
 
 其中 $\alpha_t \in (0, 1)$ 是数据相关的门控。
 
-**改进**：门控让模型可以自适应地"忘记"旧信息，解决 DeltaNet 的饱和问题。
+**改进**：门控让模型可以自适应地“忘记”旧信息，解决 DeltaNet 的饱和问题。
 
 **性能**：在语言建模、ICL、长上下文理解等基准上超越 Mamba2 和 DeltaNet。
 
@@ -109,7 +109,7 @@ $$
 
 **核心思想**：将 TTT 与遗忘机制、动量结合：
 
-1. **Momentum**：同时考虑"瞬时 surprise"和"历史 surprise"
+1. **Momentum**：同时考虑“瞬时 surprise”和“历史 surprise”
 2. **Forgetting (weight decay)**：$\Phi_t \to \alpha \Phi_{t-1}$，管理有限记忆容量
 3. **深度非线性记忆**：MLP 作为 fast weights
 
@@ -425,7 +425,7 @@ def ttrl_step(model, prompt, reward_fn, lr=1e-3):
 
 **TTT 的核心价值**在于三个层面：
 
-1. **概念层面**：打破了"训练/推理"严格分离的范式，使模型能在推理时持续学习
+1. **概念层面**：打破了“训练/推理”严格分离的范式，使模型能在推理时持续学习
 2. **工程层面**：提供了线性复杂度的序列建模方法，同时保持固定内存
 3. **统一视角**：统一了 DeltaNet、Mamba、RetNet 等众多模型，揭示了它们都是同一框架的特例
 

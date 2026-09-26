@@ -11,7 +11,7 @@ mathjax: true
 > **TL;DR 三连**
 >
 > - **核心结论**：RLHF 里训练奖励模型这一步，数学上就是成对偏好版的 MaxEnt 逆强化学习——配分函数在两条候选回答上塌缩成一个 sigmoid。IRL 不是新东西，而是 LLM 后训练被遗忘的姓氏。2025-10 到 2026-07，它以可解释审计、无验证器推理、失败样本学习三张面孔密集回归。
-> - **反直觉发现**：DPO 同时在学策略和隐式奖励，是四象限里罕见的 Ⅱ/Ⅲ 混合体——"DPO 算不算 IRL"取决于你把闭式奖励提取算在哪一侧；而这个区分在审计场景有真金白银的差别。
+> - **反直觉发现**：DPO 同时在学策略和隐式奖励，是四象限里罕见的 Ⅱ/Ⅲ 混合体——“DPO 算不算 IRL”取决于你把闭式奖励提取算在哪一侧；而这个区分在审计场景有真金白银的差别。
 > - **定位**：本篇填上后训练四象限地图的最后一块（象限Ⅱ的现代形态），前置阅读：《[逆强化学习五十年](/2026/08/22/irl-fifty-years-from-demonstrations/)》。
 
 ```mermaid
@@ -33,7 +33,7 @@ graph TD
 
 ## 1. 问题陈述：验证器缺口
 
-《从 MDP 到 GRPO》系列讲到的 RLVR（可验证奖励 RL）有个隐含前提：**你得先有一个便宜的、不可欺骗的奖励来源**。这就是为什么 RL 恰恰在数学与代码两个领域一飞冲天（DeepSeek-R1 的 aha moment 都出自这里）——把"哪些领域被 RL 点亮了、哪些还黑着"列成表，缺口一目了然：
+《从 MDP 到 GRPO》系列讲到的 RLVR（可验证奖励 RL）有个隐含前提：**你得先有一个便宜的、不可欺骗的奖励来源**。这就是为什么 RL 恰恰在数学与代码两个领域一飞冲天（DeepSeek-R1 的 aha moment 都出自这里）——把“哪些领域被 RL 点亮了、哪些还黑着”列成表，缺口一目了然：
 
 | 领域 | 自动验证器 | 专家示范 | RLVR 现状 |
 |---|---|---|---|
@@ -44,7 +44,7 @@ graph TD
 | 长程 Agent 任务 | ❌（奖励稀疏+延迟） | 中 | 半黑区（本站 Search RL 是特例） |
 | 科研辅助 / 决策 | ❌ | 多 | 黑区 |
 
-黑区的共同点：**示范数据俯拾皆是，奖励却无处可寻**。正向 RL 在这里熄火，IRL 的老命题——"从示范反推奖励"——正好对着这个缺口。这不是类比修辞：下面的推导说明 RM 训练本来就是 IRL。
+黑区的共同点：**示范数据俯拾皆是，奖励却无处可寻**。正向 RL 在这里熄火，IRL 的老命题——“从示范反推奖励”——正好对着这个缺口。这不是类比修辞：下面的推导说明 RM 训练本来就是 IRL。
 
 ## 2. 核心推导：奖励建模就是成对 MaxEnt IRL
 
@@ -52,7 +52,7 @@ graph TD
 
 MaxEnt IRL 给出轨迹分布 $$P(\tau\mid w)\propto \exp(r_w(\tau))$$（《[前篇](/2026/08/22/irl-fifty-years-from-demonstrations/)》§4）。人类标注者很少给完整轨迹打绝对分，更多给出**成对偏好** $$y_w \succ y_l$$（$$y_w$$ 胜 $$y_l$$）。
 
-关键一步：把"回答空间"收缩为仅有的两个候选 $$\{y_w, y_l\}$$，配分函数从"对所有轨迹积分"塌缩为两项之和：
+关键一步：把“回答空间”收缩为仅有的两个候选 $$\{y_w, y_l\}$$，配分函数从“对所有轨迹积分”塌缩为两项之和：
 
 $$
 P(y_w \succ y_l \mid x) = \frac{e^{r_\phi(x,y_w)}}{e^{r_\phi(x,y_w)} + e^{r_\phi(x,y_l)}} = \sigma\big(r_\phi(x,y_w) - r_\phi(x,y_l)\big)
@@ -64,7 +64,7 @@ $$
 \mathcal{L}_{BT}(\phi) = -\log \sigma\big(r_\phi(x,y_w) - r_\phi(x,y_l)\big)
 $$
 
-**这正是 InstructGPT 以来所有 RM 的训练目标**（[arXiv:2203.02155](https://arxiv.org/abs/2203.02155)）。每次你训 RM，你都在做 IRL——只不过教科书没这么叫。顺带一提，RM 的长度偏置（长回答系统性高分）在 IRL 视角下也有解释：$$r_\phi$$ 作为黑箱"特征提取器"，长度是最容易抓到的判别特征——这正是前篇 §2 特征不可辨识性问题的现代症状。
+**这正是 InstructGPT 以来所有 RM 的训练目标**（[arXiv:2203.02155](https://arxiv.org/abs/2203.02155)）。每次你训 RM，你都在做 IRL——只不过教科书没这么叫。顺带一提，RM 的长度偏置（长回答系统性高分）在 IRL 视角下也有解释：$$r_\phi$$ 作为黑箱“特征提取器”，长度是最容易抓到的判别特征——这正是前篇 §2 特征不可辨识性问题的现代症状。
 
 ### 2.2 要素对照表
 
@@ -122,9 +122,9 @@ $$
 
 ### 3.2 这算不算 IRL？——血统上是，形态上不是
 
-支持"是"：DPO 优化的目标函数恰是 IRL 的偏好似然；隐式奖励 $$r=\beta\log(\pi_\theta/\pi_{ref})$$ 在参考模型给定的"规范"（gauge）下与 BT 拟合的奖励等价——这正是前篇"解等价类"概念的再现：$$\pi_{ref}$$ 的选择相当于在等价类里选了一个坐标规范。
+支持“是”：DPO 优化的目标函数恰是 IRL 的偏好似然；隐式奖励 $$r=\beta\log(\pi_\theta/\pi_{ref})$$ 在参考模型给定的“规范”（gauge）下与 BT 拟合的奖励等价——这正是前篇“解等价类”概念的再现：$$\pi_{ref}$$ 的选择相当于在等价类里选了一个坐标规范。
 
-支持"不是"：IRL 的交付物是一个**可检查、可复用、可迁移**的显式奖励函数；DPO 训完只剩策略权重，奖励锁死在权重里。这个区分在三个场景有真金白银的差别：
+支持“不是”：IRL 的交付物是一个**可检查、可复用、可迁移**的显式奖励函数；DPO 训完只剩策略权重，奖励锁死在权重里。这个区分在三个场景有真金白银的差别：
 
 | 场景 | 显式奖励（RM 型） | 隐式奖励（DPO 型） |
 |---|---|---|
@@ -132,7 +132,7 @@ $$
 | 复用（奖励喂给别的 RL 管线/别的模型） | 直接可用 | 需重新训练 |
 | 在线监控（reward hacking 预警） | 分数漂移可观测 | 无信号 |
 
-所以 2026 年 IRL 复兴的一个核心动机就是把"可带走的奖励"重新变成一等公民——见 §4.2。
+所以 2026 年 IRL 复兴的一个核心动机就是把“可带走的奖励”重新变成一等公民——见 §4.2。
 
 中文社区对 DPO/PPO/GRPO 三个目标的对照速览见《[一文搞懂DPO、PPO和GRPO；附代码理解](https://zhuanlan.zhihu.com/p/27332009509)》（知乎）。
 
@@ -142,38 +142,38 @@ $$
 
 ### 4.1 Escaping the Verifier → RARO（arXiv:[2511.21667](https://arxiv.org/abs/2511.21667)）
 
-针对 §1 表格里"推理任务缺验证器但有大量专家示范"的空白，提出 **RARO（Relativistic Adversarial Reasoning Optimization）**：在策略模型与一个 **relativistic critic** 之间建立对抗博弈，仅凭专家示范通过 IRL 学会强推理。
+针对 §1 表格里“推理任务缺验证器但有大量专家示范”的空白，提出 **RARO（Relativistic Adversarial Reasoning Optimization）**：在策略模型与一个 **relativistic critic** 之间建立对抗博弈，仅凭专家示范通过 IRL 学会强推理。
 
-**机制拆解**：普通 GAIL 判别器给绝对真假分，校准困难且一强就崩（前篇 §6）；RARO 的 critic 只做**相对判断**（这对样本谁更好），绝对分数被差分化消掉。这与 GRPO 的组相对优势是同构思想——**都放弃绝对标尺、只保留排序信息**，GRPO 在正向 RL 里干掉了 value network，RARO 在逆向侧干掉了绝对判别器。两条线在"相对化"上会师，这不是巧合：绝对奖励恰恰是 IRL 不可辨识性最难恢复的部分。
+**机制拆解**：普通 GAIL 判别器给绝对真假分，校准困难且一强就崩（前篇 §6）；RARO 的 critic 只做**相对判断**（这对样本谁更好），绝对分数被差分化消掉。这与 GRPO 的组相对优势是同构思想——**都放弃绝对标尺、只保留排序信息**，GRPO 在正向 RL 里干掉了 value network，RARO 在逆向侧干掉了绝对判别器。两条线在“相对化”上会师，这不是巧合：绝对奖励恰恰是 IRL 不可辨识性最难恢复的部分。
 
 ### 4.2 Inverse RL Helps Align AI by Imitating Humans（arXiv:[2607.24900](https://arxiv.org/abs/2607.24900)）
 
-纲领性工作。追问：**能否仅凭示范得到一个可检查（inspectable）、可复用（reusable）、并且能直接用于在策略优化的隐式奖励？** 三个形容词分别对应 §3.2 表格的三行——审计、迁移、RM-free RL。提出投影式奖励提取的对齐管线，把 IRL 的交付物重新变成一等公民，与 DPO"奖励锁进权重"的路线形成正面对照。若此路线成立，§3.2 表格里隐式奖励的三行劣势将被逐行填平。
+纲领性工作。追问：**能否仅凭示范得到一个可检查（inspectable）、可复用（reusable）、并且能直接用于在策略优化的隐式奖励？** 三个形容词分别对应 §3.2 表格的三行——审计、迁移、RM-free RL。提出投影式奖励提取的对齐管线，把 IRL 的交付物重新变成一等公民，与 DPO“奖励锁进权重”的路线形成正面对照。若此路线成立，§3.2 表格里隐式奖励的三行劣势将被逐行填平。
 
 ### 4.3 Failure-Aware Inverse RL（arXiv:[2510.06092](https://arxiv.org/abs/2510.06092)）
 
-观察：已有"从 RLHF 行为提取潜在激励"的工作对所有偏好对一视同仁，但信息量极度不均——**被判错或近分的对才是硬信号**。定义 failures = 提取的奖励模型 misclassify 或两侧打分几乎相等的样本，迭代聚焦失败对精化奖励。机制上是一个 EM 式循环：E 步用当前奖励给偏好对按"意外程度"加权，M 步重训奖励——把主动学习注入 IRL 提取。对本站读者的接口：这相当于给 §2 的 BT 损失加了一个动态样本权重 $$w_i = g(\Delta r_i)$$，近分对（$$\Delta r_i \approx 0$$）权重最高。
+观察：已有“从 RLHF 行为提取潜在激励”的工作对所有偏好对一视同仁，但信息量极度不均——**被判错或近分的对才是硬信号**。定义 failures = 提取的奖励模型 misclassify 或两侧打分几乎相等的样本，迭代聚焦失败对精化奖励。机制上是一个 EM 式循环：E 步用当前奖励给偏好对按“意外程度”加权，M 步重训奖励——把主动学习注入 IRL 提取。对本站读者的接口：这相当于给 §2 的 BT 损失加了一个动态样本权重 $$w_i = g(\Delta r_i)$$，近分对（$$\Delta r_i \approx 0$$）权重最高。
 
 ### 4.4 The Alignment Auditor（arXiv:[2510.06096](https://arxiv.org/abs/2510.06096)）
 
-直面不可辨识性定理：单点奖励估计必然过度自信（前篇 §2.3 的凸多面体解集，挑哪个代表都无理）。把奖励推断从"估计问题"重构为"**验证过程**"：贝叶斯框架输出奖励后验，后验的宽度本身成为诊断量——后验宽说明示范不足以确定目标（欠定警示），后验窄则可对 LLM 隐式目标做可证伪的核查。这是前篇"三大遗留问题"之首在 LLM 时代的第一个正面解法。
+直面不可辨识性定理：单点奖励估计必然过度自信（前篇 §2.3 的凸多面体解集，挑哪个代表都无理）。把奖励推断从“估计问题”重构为“**验证过程**”：贝叶斯框架输出奖励后验，后验的宽度本身成为诊断量——后验宽说明示范不足以确定目标（欠定警示），后验窄则可对 LLM 隐式目标做可证伪的核查。这是前篇“三大遗留问题”之首在 LLM 时代的第一个正面解法。
 
 ### 4.5 Masked IRL（arXiv:[2511.14565](https://arxiv.org/abs/2511.14565)）与 X-KD（arXiv:[2602.12674](https://arxiv.org/abs/2602.12674)）
 
-Masked IRL 处理 IRL 的老毛病——示范只展示"怎么做"不展示"什么重要"，奖励过拟合到无关状态特征。方案：自然语言指令引导 LLM **掩蔽无关维度**，在多个与示范一致的候选奖励中消歧。本质是给 IRL 注入结构先验的新通道——语言取代了经典时代的特征工程。
+Masked IRL 处理 IRL 的老毛病——示范只展示“怎么做”不展示“什么重要”，奖励过拟合到无关状态特征。方案：自然语言指令引导 LLM **掩蔽无关维度**，在多个与示范一致的候选奖励中消歧。本质是给 IRL 注入结构先验的新通道——语言取代了经典时代的特征工程。
 
-X-KD 把"让学生在**教师原始环境**中学习"形式化为经验蒸馏框架，灵感明确标注来自 IRL。与本站 OPD 两篇的关系一张表看清：
+X-KD 把“让学生在**教师原始环境**中学习”形式化为经验蒸馏框架，灵感明确标注来自 IRL。与本站 OPD 两篇的关系一张表看清：
 
 | | OPD（本站已有） | X-KD |
 |---|---|---|
 | 匹配对象 | 教师在学生轨迹上的 logit 分布 | 教师的学习环境与经历 |
 | 信号形态 | token 级 KL 回归 | 环境交互 + 经验回放 |
-| IRL 视角 | 只学"教师的行为" | 连"塑造教师的环境奖励"一起学 |
+| IRL 视角 | 只学“教师的行为” | 连“塑造教师的环境奖励”一起学 |
 | 适用前提 | 有教师 logit 访问权 | 有可交互环境 |
 
 ## 5. 正向 RL vs 逆向 RL：对偶总表
 
-把两条线放在一张表里对峙（这是"正向/反向"主题的正面回答）：
+把两条线放在一张表里对峙（这是“正向/反向”主题的正面回答）：
 
 | 维度 | 正向 RL（象限Ⅲ） | 逆向 RL（象限Ⅱ） |
 |---|---|---|
@@ -195,7 +195,7 @@ X-KD 把"让学生在**教师原始环境**中学习"形式化为经验蒸馏框
 
 **老三样复发风险评估**：
 
-1. **不可辨识性**：LLM 域反而更凶——RM 的长度偏置、prompt 敏感都是解集巨大这一老病的现代症状。Auditor 的贝叶斯后验是正确方向，但"后验多宽算危险"没有公认阈值，距离工程化审计还有距离；
+1. **不可辨识性**：LLM 域反而更凶——RM 的长度偏置、prompt 敏感都是解集巨大这一老病的现代症状。Auditor 的贝叶斯后验是正确方向，但“后验多宽算危险”没有公认阈值，距离工程化审计还有距离；
 2. **计算成本**：预训练模型充当万能特征提取器，经典 IRL 的最大痛点被大幅缓解——这是 IRL 此刻能复兴的根本物质条件；但 RARO 式对抗博弈在 100B+ 模型上的训练稳定性尚无公开证据；
 3. **误设与 hacking**：Masked IRL 的语言消歧、Failure-Aware 的迭代纠错都在对症下药，但 reward hacking 是猫鼠游戏，没有终局。
 
@@ -209,15 +209,15 @@ X-KD 把"让学生在**教师原始环境**中学习"形式化为经验蒸馏框
 
 ## 参考与延伸阅读
 
-* Ouyang et al., "Training language models to follow instructions with human feedback" ([arXiv:2203.02155](https://arxiv.org/abs/2203.02155)) —— RLHF 标准 pipeline，§2 的 RM 训练出处
-* Rafailov et al., "Direct Preference Optimization" ([arXiv:2305.18290](https://arxiv.org/abs/2305.18290)) —— §3 闭式奖励提取
-* "Inverse RL Helps Align AI by Imitating Humans" ([arXiv:2607.24900](https://arxiv.org/abs/2607.24900)) —— §4.2
-* "Escaping the Verifier: Learning to Reason via Demonstrations (RARO)" ([arXiv:2511.21667](https://arxiv.org/abs/2511.21667)) —— §4.1
-* "Learning from Failures: Failure-Aware Inverse RL" ([arXiv:2510.06092](https://arxiv.org/abs/2510.06092)) —— §4.3
-* "The Alignment Auditor: A Bayesian Framework" ([arXiv:2510.06096](https://arxiv.org/abs/2510.06096)) —— §4.4
-* "Masked IRL: LLM-Guided Reward Disambiguation" ([arXiv:2511.14565](https://arxiv.org/abs/2511.14565)) —— §4.5
-* "$$\mathcal{X}$$-KD: General Experiential Knowledge Distillation" ([arXiv:2602.12674](https://arxiv.org/abs/2602.12674)) —— §4.5
-* DeepSeek-AI, "DeepSeekMath" ([arXiv:2402.03300](https://arxiv.org/abs/2402.03300)) / "DeepSeek-R1" ([arXiv:2501.12948](https://arxiv.org/abs/2501.12948)) —— GRPO 与 RLVR 主线
+* Ouyang et al., “Training language models to follow instructions with human feedback” ([arXiv:2203.02155](https://arxiv.org/abs/2203.02155)) —— RLHF 标准 pipeline，§2 的 RM 训练出处
+* Rafailov et al., “Direct Preference Optimization” ([arXiv:2305.18290](https://arxiv.org/abs/2305.18290)) —— §3 闭式奖励提取
+* “Inverse RL Helps Align AI by Imitating Humans” ([arXiv:2607.24900](https://arxiv.org/abs/2607.24900)) —— §4.2
+* “Escaping the Verifier: Learning to Reason via Demonstrations (RARO)” ([arXiv:2511.21667](https://arxiv.org/abs/2511.21667)) —— §4.1
+* “Learning from Failures: Failure-Aware Inverse RL” ([arXiv:2510.06092](https://arxiv.org/abs/2510.06092)) —— §4.3
+* “The Alignment Auditor: A Bayesian Framework” ([arXiv:2510.06096](https://arxiv.org/abs/2510.06096)) —— §4.4
+* “Masked IRL: LLM-Guided Reward Disambiguation” ([arXiv:2511.14565](https://arxiv.org/abs/2511.14565)) —— §4.5
+* “$$\mathcal{X}$$-KD: General Experiential Knowledge Distillation” ([arXiv:2602.12674](https://arxiv.org/abs/2602.12674)) —— §4.5
+* DeepSeek-AI, “DeepSeekMath” ([arXiv:2402.03300](https://arxiv.org/abs/2402.03300)) / “DeepSeek-R1” ([arXiv:2501.12948](https://arxiv.org/abs/2501.12948)) —— GRPO 与 RLVR 主线
 * 中文社区视角：《[一文搞懂DPO、PPO和GRPO；附代码理解](https://zhuanlan.zhihu.com/p/27332009509)》（知乎）
 * 本站姊妹篇：《[逆强化学习五十年](/2026/08/22/irl-fifty-years-from-demonstrations/)》 · 《[On-Policy Distillation 深度剖析](/2026/08/11/on-policy-distillation-deepdive/)》 · 《[GRPO：组相对优势与大模型时代的 RL](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/)》
 

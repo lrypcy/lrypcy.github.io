@@ -38,7 +38,7 @@ deep-dive-test-time-training/
 ## Detailed Coverage Points per Document
 
 ### 00-overview.md - TTT 领域全景图
-- TTT 定义与核心直觉（"test time 训练一个模型来处理当前输入"）
+- TTT 定义与核心直觉（“test time 训练一个模型来处理当前输入”）
 - 两条发展主线：序列建模层 vs LLM 推理增强
 - 历史脉络：2020 Sun et al. → 2024 TTT-Linear/MLP → 2024 TTT-NN → 2025 LaCT/E2-TTT/MesaNet
 - 知识图谱 Mermaid 图

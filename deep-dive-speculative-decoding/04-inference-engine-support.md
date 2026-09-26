@@ -7,7 +7,7 @@
 
 ## 1. 为什么需要引擎支持矩阵
 
-前面三篇回答的是"**有什么方法、原理如何**"；本文回答"**方法落在哪个引擎里、怎么打开开关**"。决定一个投机解码方案能否落地，往往不取决于论文多漂亮，而取决于：
+前面三篇回答的是“**有什么方法、原理如何**”；本文回答“**方法落在哪个引擎里、怎么打开开关**”。决定一个投机解码方案能否落地，往往不取决于论文多漂亮，而取决于：
 
 1. **推理引擎是否实现**了你选定的算法（EAGLE-3 / MTP / n-gram / 独立 draft model）；
 2. **配置入口**是否顺手（命令行 flag、JSON 配置、Python API）；
@@ -28,7 +28,7 @@
 | **llama.cpp** | 本地 / 边缘推理 | draft model / 自投机 / 无模型 | draft-simple、draft-eagle3、draft-dflash、draft-dspark、draft-mtp、ngram-* 系列 | `--spec-type` + `--spec-draft-*` | CPU/Metal/CUDA 通用，量化友好 |
 | **HuggingFace** | 研究与实验 | assistant model / 自投机 / 无模型 | assisted decoding、prompt lookup、self-speculative、dflash、UAD | `generate()` 命名参数 | 不支持 batch 输入；需同一 tokenizer |
 
-> 位置提示：vLLM 与 SGLang 是"**服务化大模型推理**"的主战场，也是 EAGLE 系落地最充分的两个引擎；TensorRT-LLM 绑定 NVIDIA 生态；llama.cpp 是本地单机/边缘场景的事实标准；HuggingFace 的价值在研究与快速原型。
+> 位置提示：vLLM 与 SGLang 是“**服务化大模型推理**”的主战场，也是 EAGLE 系落地最充分的两个引擎；TensorRT-LLM 绑定 NVIDIA 生态；llama.cpp 是本地单机/边缘场景的事实标准；HuggingFace 的价值在研究与快速原型。
 
 ---
 
@@ -45,7 +45,7 @@ vLLM 的投机解码文档 [1](https://docs.vllm.ai/en/latest/features/speculati
 - **无模型方案**：n-gram、suffix 匹配；
 - **其他**：PARD（并行联想解码）、MLP speculator、自定义 proposer。
 
-vLLM 还支持**动态投机解码（dynamic speculative decoding）**与**自适应验证（adaptive verification）**，在运行期根据草稿质量动态调整投机长度——与前一篇 [06 §4 Together ATLAS](06-industry-practice.md) 的"自适应"思路同源，但位于单请求级。
+vLLM 还支持**动态投机解码（dynamic speculative decoding）**与**自适应验证（adaptive verification）**，在运行期根据草稿质量动态调整投机长度——与前一篇 [06 §4 Together ATLAS](06-industry-practice.md) 的“自适应”思路同源，但位于单请求级。
 
 ### 3.2 配置方式
 
@@ -134,7 +134,7 @@ DraftTargetDecodingConfig(
 
 ### 5.3 明确的约束
 
-官方文档明示：**投机解码的收益仅在低 batch 场景显著**；batch 增大后验证开销反超（与 [05 §2](05-production-deployment.md) 的"bs≥32 反超"结论一致）。部署前应对目标 batch 档位做基准测试。
+官方文档明示：**投机解码的收益仅在低 batch 场景显著**；batch 增大后验证开销反超（与 [05 §2](05-production-deployment.md) 的“bs≥32 反超”结论一致）。部署前应对目标 batch 档位做基准测试。
 
 ---
 
@@ -185,7 +185,7 @@ llama-server -m {目标模型}.gguf \
   --spec-type ngram-simple
 ```
 
-> llama.cpp 支持将"模型式"与"无模型"方案**混合**（`--spec-type draft-eagle3,ngram-simple`），这是其他引擎少有的自由度。
+> llama.cpp 支持将“模型式”与“无模型”方案**混合**（`--spec-type draft-eagle3,ngram-simple`），这是其他引擎少有的自由度。
 
 ---
 
@@ -193,7 +193,7 @@ llama-server -m {目标模型}.gguf \
 
 ### 7.1 定位
 
-Transformers 的 assisted decoding 文档 [6](https://huggingface.co/docs/transformers/en/assisted_decoding) 定位是"**研究友好、API 最简**"：不追求服务化吞吐，而是在 `generate()` 上一行开启。注意约束：**不支持 batch 输入**，仅支持 greedy 与采样；且草稿模型必须与主模型**使用完全相同的 tokenizer**。
+Transformers 的 assisted decoding 文档 [6](https://huggingface.co/docs/transformers/en/assisted_decoding) 定位是“**研究友好、API 最简**”：不追求服务化吞吐，而是在 `generate()` 上一行开启。注意约束：**不支持 batch 输入**，仅支持 greedy 与采样；且草稿模型必须与主模型**使用完全相同的 tokenizer**。
 
 ### 7.2 三种基础形态
 
@@ -229,7 +229,7 @@ outputs = model.generate(**inputs, assistant_model=assistant_model,
 | `assistant_early_exit` | 自投机 | 使用主模型中间层输出做草稿（self-speculative / LayerSkip 路线） |
 | `speculation_type` | 草稿算法 | 接受值含 `dflash`（块扩散草稿） |
 
-> 静态集成验证的论文链接见 [8](https://arxiv.org/abs/2604.07622)（DIVERSED，arXiv 核验）。它放弃"输出分布与 target 严格一致"的保证、换取更高接受率——这一"降低无损性换取速度"的取舍在 [08 未来方向](08-future-directions.md) 中会进一步展开。
+> 静态集成验证的论文链接见 [8](https://arxiv.org/abs/2604.07622)（DIVERSED，arXiv 核验）。它放弃“输出分布与 target 严格一致”的保证、换取更高接受率——这一“降低无损性换取速度”的取舍在 [08 未来方向](08-future-directions.md) 中会进一步展开。
 
 ### 7.4 与 DeepSeek-V3 MTP 的联动
 
@@ -276,7 +276,7 @@ graph TB
 | 研究与快速原型 | HuggingFace | assistant_model / prompt_lookup | 一行开启、无需服务化 |
 | 代码/文档续写类强复用负载 | 任意（vLLM/SGLang/llama.cpp） | n-gram / prompt lookup | 零额外模型成本 [02 §5](02-core-methods.md) |
 
-> 注意：**"引擎支持"不等于"你的负载有收益"**。加速比是否兑现取决于 batch、并发、序列长度与草稿质量——这层落差与度量方法见 [05 生产部署实战](05-production-deployment.md) 与 [07 性能评测与选型权衡](07-benchmarks-and-tradeoffs.md)。
+> 注意：**“引擎支持”不等于“你的负载有收益”**。加速比是否兑现取决于 batch、并发、序列长度与草稿质量——这层落差与度量方法见 [05 生产部署实战](05-production-deployment.md) 与 [07 性能评测与选型权衡](07-benchmarks-and-tradeoffs.md)。
 
 ---
 
@@ -285,8 +285,8 @@ graph TB
 - vLLM 与 SGLang 是服务化主战场，EAGLE-3 与 MTP 覆盖最完整；vLLM 靠统一 JSON 配置，SGLang 靠命令行 flag。
 - TensorRT-LLM 绑定 NVIDIA 且官方配套 EAGLE-3 checkpoint，但低 batch 收益边界需实测。
 - llama.cpp 以 `--spec-type` 开阔支持的算法谱系最广（含 DFlash/DSpark 等块扩散方案），并可混合模型式与无模型方案。
-- HuggingFace 以 `generate()` 一行 API 提供研究最快的入口，代价是不支持 batch；其静态集成验证是"以严格无损换速度"的前沿尝试。
-- 引擎支持矩阵只回答"**能不能开**"；"**开了值不值**"要看 [05](05-production-deployment.md) 的收益落差与 [07](07-benchmarks-and-tradeoffs.md) 的权衡框架。
+- HuggingFace 以 `generate()` 一行 API 提供研究最快的入口，代价是不支持 batch；其静态集成验证是“以严格无损换速度”的前沿尝试。
+- 引擎支持矩阵只回答“**能不能开**”；“**开了值不值**”要看 [05](05-production-deployment.md) 的收益落差与 [07](07-benchmarks-and-tradeoffs.md) 的权衡框架。
 
 下一篇：[05 生产部署实战](05-production-deployment.md)。
 

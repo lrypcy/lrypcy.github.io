@@ -34,7 +34,7 @@
 
 $$\text{cost}(\text{1 token}) = \underbrace{T_{\text{weights}}}_{\text{读全部权重}} + \underbrace{T_{\text{compute}}}_{\text{一次前向}}$$
 
-在 **memory-bound** 区间（bs 小、模型大）$T_{\text{weights}} \gg T_{\text{compute}}$，GPU 大量时间花在搬运权重而非计算 [1](https://arxiv.org/abs/2211.17192)。Chen et al. 的观察：对大规模分布式模型，**并行评分一个短延续序列的延迟与采样单个 token 的延迟相当**——因为延迟被权重搬运主导，延续几 token 的额外计算可以"嵌入"同一轮内存搬运中 [2](https://arxiv.org/abs/2302.01318)。
+在 **memory-bound** 区间（bs 小、模型大）$T_{\text{weights}} \gg T_{\text{compute}}$，GPU 大量时间花在搬运权重而非计算 [1](https://arxiv.org/abs/2211.17192)。Chen et al. 的观察：对大规模分布式模型，**并行评分一个短延续序列的延迟与采样单个 token 的延迟相当**——因为延迟被权重搬运主导，延续几 token 的额外计算可以“嵌入”同一轮内存搬运中 [2](https://arxiv.org/abs/2302.01318)。
 
 ### 1.2 两阶段流程
 
@@ -90,7 +90,7 @@ $$\Pr[X=x] = \min(p,q) + Z\cdot\frac{\max(0,p-q)}{Z} = \min(p,q) + \max(0,p-q) =
 
 $$n = \min\Big(\{\, i-1 \mid 1\le i\le\gamma,\ r_i > \min(1, \tfrac{p_i(\tilde{x}_i)}{q_i(\tilde{x}_i)})\,\} \cup \{\gamma\}\Big)$$
 
-即"首个被拒位置的前一位"（全部接受则 $n=\gamma$）。输出规则：
+即“首个被拒位置的前一位”（全部接受则 $n=\gamma$）。输出规则：
 
 - $n = \gamma$：直接采样 $x_{t+\gamma+1} \sim p_{\gamma+1}$，输出 $\gamma+1$ 个 token；
 - $n < \gamma$：采样 $x_{t+n+1} \sim \mathrm{norm}(\max(0,\, p_{n+1} - q_{n+1}))$，输出 $n+1$ 个 token。
@@ -107,7 +107,7 @@ $$n = \min\Big(\{\, i-1 \mid 1\le i\le\gamma,\ r_i > \min(1, \tfrac{p_i(\tilde{x
 
 $$\mathbb{E}[X] = \sum_{k=1}^{\gamma}\alpha^{k} = \frac{\alpha(1-\alpha^{\gamma})}{1-\alpha}, \qquad \text{每轮总 token 期望} = 1 + \mathbb{E}[X] = \frac{1-\alpha^{\gamma+1}}{1-\alpha}.$$
 
-- 推导：$\Pr[X \ge k] = \alpha^{k}$（前 $k$ 个都接受），累加期望即得。（Leviathan Theorem 3.5 的表述为"本轮接受的 token 数 $X$ 满足 $\Pr[X \ge k] = \alpha^k$，$\mathbb{E}[X]=(1-\alpha^{\gamma+1})/(1-\alpha)-1$" [1](https://arxiv.org/abs/2211.17192)）
+- 推导：$\Pr[X \ge k] = \alpha^{k}$（前 $k$ 个都接受），累加期望即得。（Leviathan Theorem 3.5 的表述为“本轮接受的 token 数 $X$ 满足 $\Pr[X \ge k] = \alpha^k$，$\mathbb{E}[X]=(1-\alpha^{\gamma+1})/(1-\alpha)-1$” [1](https://arxiv.org/abs/2211.17192)）
 
 数值示例（$\gamma=4$）：
 
@@ -174,7 +174,7 @@ $$\frac{\partial S}{\partial \gamma} = 0 \iff \alpha^{\gamma+1}\big(c - (1+\gamm
 
 ### 4.1 单遍验证（Sequence verification）
 
-即 2 节的经典流程：一条草稿序列一次并行验证。复杂度低，但草稿"押错"一处分支整段重新开始。
+即 2 节的经典流程：一条草稿序列一次并行验证。复杂度低，但草稿“押错”一处分支整段重新开始。
 
 ### 4.2 树验证（Tree-based verification）
 
@@ -182,11 +182,11 @@ $$\frac{\partial S}{\partial \gamma} = 0 \iff \alpha^{\gamma+1}\big(c - (1+\gamm
 
 **为什么树在随机解码下显著更优**：设单条草稿的根到叶接受链为独立几何叠加，期望接受长度 $\frac{1-\alpha^{\gamma+1}}{1-\alpha}-1$。当把 $B$ 个分支候选并行押注时，任意分支被验中的概率随分支数呈指数补集改善。SpecInfer 的直观证据：随机解码下 token 验证成功率从 52–57% 提升到 96–97% [3](https://arxiv.org/abs/2305.09781)。
 
-**实现要点（tree attention）**：不同分支的 KV cache 冲突通过"分组 kernel + 修正注意力分数"解决——把父→子链的 kernel 分组，用每组末尾 token 的 KV 计算，再修复违反因果关系的注意力对，得到与增量解码完全一致的注意力输出 [3](https://arxiv.org/abs/2305.09781)。
+**实现要点（tree attention）**：不同分支的 KV cache 冲突通过“分组 kernel + 修正注意力分数”解决——把父→子链的 kernel 分组，用每组末尾 token 的 KV 计算，再修复违反因果关系的注意力对，得到与增量解码完全一致的注意力输出 [3](https://arxiv.org/abs/2305.09781)。
 
 ### 4.3 迭代验证（Iterative refinement）
 
-以 CLLM 为代表：草稿并非一次性生成后单遍验证，而是经过多轮"生成-验证-修正"直至收敛，保留质量换更低延迟的不变性保证（部分方法放弃严格无偏，换取速度，见 Medusa typical acceptance [4](https://arxiv.org/abs/2401.10774)）。
+以 CLLM 为代表：草稿并非一次性生成后单遍验证，而是经过多轮“生成-验证-修正”直至收敛，保留质量换更低延迟的不变性保证（部分方法放弃严格无偏，换取速度，见 Medusa typical acceptance [4](https://arxiv.org/abs/2401.10774)）。
 
 ```mermaid
 graph LR
@@ -204,7 +204,7 @@ graph LR
 
 ### 5.1 Typical acceptance（Medusa，质量-速度权衡）
 
-除以接受概率 $\min(1,p/q)$ 的严格拒绝采样外，Medusa 引入 **typical acceptance**：当候选 token 在目标模型分布中"足够典型"（例如考察概率落在典型集阈值内）即接受，不要求精确的 $q$ 分布匹配 [4](https://arxiv.org/abs/2401.10774)。好处：接受率显著提升、解码方差更低；代价：**不再严格保分布**（无偏性换速度），输出分布可能偏离目标模型。使用前必须评估任务对分布保真度的要求。
+除以接受概率 $\min(1,p/q)$ 的严格拒绝采样外，Medusa 引入 **typical acceptance**：当候选 token 在目标模型分布中“足够典型”（例如考察概率落在典型集阈值内）即接受，不要求精确的 $q$ 分布匹配 [4](https://arxiv.org/abs/2401.10774)。好处：接受率显著提升、解码方差更低；代价：**不再严格保分布**（无偏性换速度），输出分布可能偏离目标模型。使用前必须评估任务对分布保真度的要求。
 
 ### 5.2 特征级草稿（EAGLE 的思想预告）
 
@@ -271,7 +271,7 @@ print("max |err| :", (empirical - p).abs().max().item())
 
 ## 8. 本章结论
 
-1. **投机解码的本质是一笔"算力换延迟"的期权**：草稿免费时收益由接受率 $\alpha$ 决定，草稿有成本时受 $c$ 与 $\gamma^*$ 共同约束（第三节公式）。
+1. **投机解码的本质是一笔“算力换延迟”的期权**：草稿免费时收益由接受率 $\alpha$ 决定，草稿有成本时受 $c$ 与 $\gamma^*$ 共同约束（第三节公式）。
 2. **无偏性不是玄学**：接受-重采样两步精确恢复了目标分布，第 2 节给出了完备证明与可运行验证。
 3. **$\alpha$ 是灵魂指标**：它决定加速比上界；树验证、特征级草稿、training-time test 全部指向同一个目标——把 $\alpha$ 推高。
 4. **attention-check 数据的生产含义**：$\alpha$ 与 $c$ 是部署时唯二需要实测的两个数（见 [05](05-production-deployment.md)）。

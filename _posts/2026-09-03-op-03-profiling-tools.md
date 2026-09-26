@@ -13,21 +13,21 @@ mathjax: true
 > [02 Kernel 语言](/2026/09/03/op-02-kernel-languages/) ← **本篇** → [04 性能分析](/2026/09/03/op-04-performance-analysis/)
 
 **TL;DR**
-> * **背景**：NVIDIA 的 Nsight Systems（nsys）只是"系统层时间线"这一个工具，但很多工程师误以为 profiling 就只有它。换到 AMD/Intel/昇腾/寒武纪后，工具名全部变化，方法论却完全一致——关键是先建立**分层心智模型**。
+> * **背景**：NVIDIA 的 Nsight Systems（nsys）只是“系统层时间线”这一个工具，但很多工程师误以为 profiling 就只有它。换到 AMD/Intel/昇腾/寒武纪后，工具名全部变化，方法论却完全一致——关键是先建立**分层心智模型**。
 > * **核心发现**：所有 profiling 工具按功能只分三层——**框架层**（哪个算子慢，torch.profiler 跨平台通用）、**系统层**（kernel 之间怎么排队，对应 nsys）、**内核层**（单个 kernel 为什么慢，对应 ncu）。每家硬件各有一个工具对应 ncu 的位置：AMD 是 `rocprof-compute`、Intel 是 VTune GPU Hotspots、昇腾是 `msprof op`（含 Roofline 分析）。
 > * **关键数字**：AMD 的工具链在 2026 年已全面换代——`rocprof`/`rocprofv2`/`Omniperf`/`Omnitrace` 全部废弃，新名字是 `rocprofv3`/`rocprof-compute`/`rocprof-sys`。看老博客用错工具会直接踩坑。
-> * **收益**：掌握"三层三问"的 profiling 流程，知道换硬件时哪些工具能复用（torch.profiler、Perfetto）、哪些必须换（内核层分析器），以及昇腾特有的 AOE 自动调优。
+> * **收益**：掌握“三层三问”的 profiling 流程，知道换硬件时哪些工具能复用（torch.profiler、Perfetto）、哪些必须换（内核层分析器），以及昇腾特有的 AOE 自动调优。
 > * **适用人群**：会跑 nsys/ncu 但没系统整理过工具矩阵、或者正在做国产化迁移（CUDA→昇腾/寒武纪/海光）的工程师。
 
 ---
 
-## 1. 为什么 profiling 不是"一个工具"的事
+## 1. 为什么 profiling 不是“一个工具”的事
 
-### 1.1 nsys 的"正确位置"
+### 1.1 nsys 的“正确位置”
 
-`nsys`（Nsight Systems）解决的是这个问题：**"我的程序时间都花在哪了？"**——它给出全局时间线，展示 kernel 的启动顺序、CPU 与 GPU 的同步间隙、空闲气泡。
+`nsys`（Nsight Systems）解决的是这个问题：**“我的程序时间都花在哪了？”**——它给出全局时间线，展示 kernel 的启动顺序、CPU 与 GPU 的同步间隙、空闲气泡。
 
-但它**不回答**："这个 kernel 内部为什么只用了 30% 的 SM？"。那是 `ncu`（Nsight Compute）的活。
+但它**不回答**：“这个 kernel 内部为什么只用了 30% 的 SM？”。那是 `ncu`（Nsight Compute）的活。
 
 **nsys 只是 NVIDIA 全栈里的一环**。把它当成 profiling 的全部，等于拿着整体地图却不知道放大镜在哪。
 
@@ -69,7 +69,7 @@ graph TD
 
 ### 1.3 三层三问：标准 profiling 流程
 
-04 篇的"三查法"在这里延伸为跨硬件通用流程：
+04 篇的“三查法”在这里延伸为跨硬件通用流程：
 
 1. **框架层**：`torch.profiler` 跑一遍，拿到算子耗时排序 → 找到 Top-N 热点算子
 2. **系统层**：对热点区间开系统 profiler，看 kernel 是否连续执行、有没有同步气泡
@@ -89,7 +89,7 @@ graph TD
 | **CUPTI** | 底层 API | 现行 | ncu/nsys 的底座，可自研分析工具 |
 | nvprof / nvvp | — | **已废弃** | CUDA 10 前的老工具，别再用 |
 
-**现实分工**：日常是 `torch.profiler` 看算子排序 → `ncu` 深挖热点 kernel。`nsys` 主要用于排查"GPU 没吃满但程序慢"的同步/间隙问题。
+**现实分工**：日常是 `torch.profiler` 看算子排序 → `ncu` 深挖热点 kernel。`nsys` 主要用于排查“GPU 没吃满但程序慢”的同步/间隙问题。
 
 ```bash
 # 三条命令的定位差异
@@ -176,7 +176,7 @@ msprof op --aic-metrics=Default,Roofline --kernel-name="add|softmax" --launch-co
 ### 5.2 关键认知
 
 - **`msprof op` 直接对标 ncu**：它提供 Roofline 瓶颈分析图、Occupancy 负载均衡图、PipeUtilization 指令流水图——和 ncu/rocprof-compute 是同一套方法论。**Roofline 是跨硬件通用的第一性原理**（呼应 00 篇）。
-- **AOE 是昇腾独有的加分项**：对标"分析出瓶颈后怎么改"的环节，能自动搜索算子最佳配置，NVIDIA 生态没有直接等价物。
+- **AOE 是昇腾独有的加分项**：对标“分析出瓶颈后怎么改”的环节，能自动搜索算子最佳配置，NVIDIA 生态没有直接等价物。
 
 ---
 
@@ -232,13 +232,13 @@ Triton 的 `do_bench` 在各硬件上可用，适合做跨硬件 kernel 对比�
 **三层通用结论**：
 1. **框架层永远用 torch.profiler**——跨平台零学习成本
 2. **系统层**各家都有 nsys 对应物（rocprof-sys / VTune / msprof）
-3. **内核层**必须换工具，但方法论一致：Roofline + 占用率 + 流水利用率，迁移时只需记住"我的 ncu 换成 XXX"
+3. **内核层**必须换工具，但方法论一致：Roofline + 占用率 + 流水利用率，迁移时只需记住“我的 ncu 换成 XXX”
 
 ---
 
 ## 9. 昇腾 vs NVIDIA：一次实操对照
 
-以"分析一个 Softmax 算子为什么慢"为例，两套工具的执行路径完全平行：
+以“分析一个 Softmax 算子为什么慢”为例，两套工具的执行路径完全平行：
 
 ```bash
 # NVIDIA
@@ -257,7 +257,7 @@ msprof op --aic-metrics=Default,Roofline
 
 ---
 
-## 10. 工具链小结：从"会跑工具"到"会用工具"
+## 10. 工具链小结：从“会跑工具”到“会用工具”
 
 到这里，profiling 三层工具你已经全部拿到：框架层（torch.profiler）、系统层（nsys / Perfetto）、内核层（ncu / msprof）。剩下的是把它们**串成流程**——这正是下一篇（04）要展开的内容。把全系列拉直看，可以浓缩成三个递进的闭环，本篇属于第一个闭环：
 
@@ -286,16 +286,16 @@ msprof op --aic-metrics=Default,Roofline
 
 ### Exercise 2：验证工具改名坑
 
-搜索"Omniperf"和"rocprof-compute"，对比两份文档：
+搜索“Omniperf”和“rocprof-compute”，对比两份文档：
 - 确认 Omniperf 已被 rocprof-compute 取代
 - 用 `rocprof-compute --version` 或 `rocprofv3 --version` 验证本地 ROCm 版本
-- **预期**：老教程的命令在新工具下直接报错——建立"查工具版本再跑命令"的习惯
+- **预期**：老教程的命令在新工具下直接报错——建立“查工具版本再跑命令”的习惯
 
 ### Exercise 3：昇腾 Roofline 分析（如有环境）
 
 用 `msprof op --aic-metrics=Default,Roofline` 分析一个自定义算子：
 - 看 Roofline 图上算子落在哪个区（计算密集/访存密集）
-- 对照 00 篇的 Roofline 理论，验证"跨硬件方法论一致"
+- 对照 00 篇的 Roofline 理论，验证“跨硬件方法论一致”
 - 再跑 `--aic-metrics=Occupancy` 看核间负载均衡
 
 ### Exercise 4：统一时间线格式
@@ -304,9 +304,9 @@ msprof op --aic-metrics=Default,Roofline
 - 确认跨工具的时间线格式统一
 - 对比不同硬件上的时间线，找出格式一致的地方
 
-### Exercise 5：用"三层三问"跑通熟悉算子
+### Exercise 5：用“三层三问”跑通熟悉算子
 
-回到 00 篇，把其中"什么时候 More Work Better、什么时候 Less Work Better"的判断流程重读一遍，再用手头最熟悉的一类算子（如 elementwise / GEMM）把本篇的"三层三问"完整走一遍——**下一篇（04 篇）会教你怎么看每一层的指标，本篇先把流程跑通**。
+回到 00 篇，把其中“什么时候 More Work Better、什么时候 Less Work Better”的判断流程重读一遍，再用手头最熟悉的一类算子（如 elementwise / GEMM）把本篇的“三层三问”完整走一遍——**下一篇（04 篇）会教你怎么看每一层的指标，本篇先把流程跑通**。
 
 ---
 

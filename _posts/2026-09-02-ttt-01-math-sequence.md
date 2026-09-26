@@ -16,8 +16,8 @@ mathjax: true
 
 **TL;DR**
 > * **统一框架**：所有序列建模层 = 隐藏状态 + 更新规则。TTT 的创新是让隐藏状态 $W_t \in \mathbb{R}^{d\times d}$ 本身是一个可训练模型，更新规则是一步梯度下降。
-> * **TTT-Linear 更新式**：$W_t = W_{t-1} - 2\eta (W_{t-1} k_t - v_t) k_t^\top$，来自 reconstruction loss $\ell = \|W k_t - v_t\|^2$ 的梯度。这本质上是对 Hebbian 学习的修正版——"预测错了就调权重，让下次看到该 key 时预测更准"。
-> * **内外循环**：内循环用单个 token 更新 fast weights $W$；外循环用整个序列的 next-token prediction 更新 slow weights $\theta$。外循环不学"怎么做 TTT"，只学"如何初始化/设计架构让 TTT 更有效"。
+> * **TTT-Linear 更新式**：$W_t = W_{t-1} - 2\eta (W_{t-1} k_t - v_t) k_t^\top$，来自 reconstruction loss $\ell = \|W k_t - v_t\|^2$ 的梯度。这本质上是对 Hebbian 学习的修正版——“预测错了就调权重，让下次看到该 key 时预测更准”。
+> * **内外循环**：内循环用单个 token 更新 fast weights $W$；外循环用整个序列的 next-token prediction 更新 slow weights $\theta$。外循环不学“怎么做 TTT”，只学“如何初始化/设计架构让 TTT 更有效”。
 > * **并行是最大工程难点**：朴素更新 $W_t$ 依赖 $W_{t-1}$，无法并行。**Mini-batch TTT**（两两通道：cumsum + gradient）+ **对偶形式**（把顺序外积变成矩阵乘法）把训练加速 **5 倍以上**。
 > * **梯度 checkpointing**：TTT 隐藏状态是 $W_t$，别存全部 $W_1\dots W_T$，只存每个 mini-batch 末端的 $W$（$\kappa=T/b$ 个），内存从 $O(Td^2)$ 降到 $O(\kappa d^2)$。
 

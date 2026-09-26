@@ -12,11 +12,11 @@ mathjax: true
 
 > **TL;DR**
 >
-> * **信用分配 = 另一个名字的 RL**。策略梯度里被优化器看到的永远是同一个乘积 $w_{i,t}\cdot\kappa(o_{i,t})\cdot A_i\cdot\mathrm{clip}(r_{i,t})$——归一化（$w$）、细粒度信用（$\kappa$）、组相对优势（$A$）、裁剪，四件事在数学上完全等价地决定每个 token 的梯度。所谓"算法调不动"，绝大多数是这四个因子互相打架。
-> * **欠条一（序列级）已还清**：Dr.GRPO 去 std、DAPO 改 token 级 loss、GSPO 改序列级重要性比、CISPO 改裁剪对象、IcePop 改"谁的数值不可信"。这五件事零额外前向、改几行代码，是性价比最高的一层。
-> * **欠条二（显式细粒度）已经分化为两派**：要额外 rollout 的 MC 派（VinePPO / SPO / TreePO / GiGPO），和完全不依赖外部资源的**内在信号派**（80/20 高熵 token / TACO / SC-GRPO / AT-RL）。**2026 年的趋势是把后者当作前者的"路由器"**——见 GACA。
-> * **欠条三（奖励系数）最隐蔽**：只要出现第二个奖励（哪怕只是一个 format 分），GRPO 的"先求和再归一化"就会**塌缩**——$G=2$ 两个二元奖励时，6 种不同的奖励组合归一化后只剩 2 种 advantage。GDPO 的解法是先逐目标解耦归一化再加权。
-> * **欠条四（长视野）逼所长们把 critic 请了回来**：GLM-5.2 在长视野 agent 阶段放弃组相对优化改用 PPO，理由非常具体——轨迹 compaction 之后，同一 prompt 的 rollout 产生的可训练 sub-trace **数量与长度差异极大**，"一组干净可比的 rollout"这个假设直接崩了。
+> * **信用分配 = 另一个名字的 RL**。策略梯度里被优化器看到的永远是同一个乘积 $w_{i,t}\cdot\kappa(o_{i,t})\cdot A_i\cdot\mathrm{clip}(r_{i,t})$——归一化（$w$）、细粒度信用（$\kappa$）、组相对优势（$A$）、裁剪，四件事在数学上完全等价地决定每个 token 的梯度。所谓“算法调不动”，绝大多数是这四个因子互相打架。
+> * **欠条一（序列级）已还清**：Dr.GRPO 去 std、DAPO 改 token 级 loss、GSPO 改序列级重要性比、CISPO 改裁剪对象、IcePop 改“谁的数值不可信”。这五件事零额外前向、改几行代码，是性价比最高的一层。
+> * **欠条二（显式细粒度）已经分化为两派**：要额外 rollout 的 MC 派（VinePPO / SPO / TreePO / GiGPO），和完全不依赖外部资源的**内在信号派**（80/20 高熵 token / TACO / SC-GRPO / AT-RL）。**2026 年的趋势是把后者当作前者的“路由器”**——见 GACA。
+> * **欠条三（奖励系数）最隐蔽**：只要出现第二个奖励（哪怕只是一个 format 分），GRPO 的“先求和再归一化”就会**塌缩**——$G=2$ 两个二元奖励时，6 种不同的奖励组合归一化后只剩 2 种 advantage。GDPO 的解法是先逐目标解耦归一化再加权。
+> * **欠条四（长视野）逼所长们把 critic 请了回来**：GLM-5.2 在长视野 agent 阶段放弃组相对优化改用 PPO，理由非常具体——轨迹 compaction 之后，同一 prompt 的 rollout 产生的可训练 sub-trace **数量与长度差异极大**，“一组干净可比的 rollout”这个假设直接崩了。
 
 ---
 
@@ -25,7 +25,7 @@ mathjax: true
 - [0. 从一个具体失败开始](#0-从一个具体失败开始)
 - [1. 严格定义：信用到底是什么](#1-严格定义信用到底是什么)
 - [2. 为什么 LLM 把它放大成第一性问题](#2-为什么-llm-把它放大成第一性问题)
-- [3. 主线一：序列级的"隐形信用分配"](#3-主线一序列级的隐形信用分配)
+- [3. 主线一：序列级的“隐形信用分配”](#3-主线一序列级的隐形信用分配)
 - [4. 主线二：显式细粒度](#4-主线二显式细粒度)
 - [5. 主线三：奖励系数](#5-主线三奖励系数)
 - [6. 主线四：长视野与 Agentic](#6-主线四长视野与-agentic)
@@ -46,7 +46,7 @@ mathjax: true
 | 论文 | 叫法 | 指出的问题 |
 |:---|:---|:---|
 | TACO ([arXiv:2607.07976](https://arxiv.org/html/2607.07976)) | Positive-Credit Contamination | 低概率尾部 token 因为落在答对轨迹里被错误强化 |
-| 80/20 Rule ([arXiv:2506.01939](https://arxiv.org/abs/2506.01939)) | 90% 以上 token 是"补完语言结构"的非决策点 | 均匀信用把梯度浪费在常规 token 上 |
+| 80/20 Rule ([arXiv:2506.01939](https://arxiv.org/abs/2506.01939)) | 90% 以上 token 是“补完语言结构”的非决策点 | 均匀信用把梯度浪费在常规 token 上 |
 | SR-PPO ([arXiv:2606.25451](https://arxiv.org/html/2606.25451v1)) | Prefix Trap | 中间走了弯路再绕回来，outcome reward 惩罚不到弯路本身 |
 | 2026 Survey ([arXiv:2604.09459](https://arxiv.org/abs/2604.09459)) | Granularity mismatch | outcome 的粒度（trajectory）与优化单元的粒度（token）差 3~4 个数量级 |
 
@@ -100,7 +100,7 @@ $$
 $$
 
 > **所有 CA 方法本质上都是在选一个估计量 $\hat A_u$**，让它对真实 $Q^\pi(s_u,a_u)-V^\pi(s_u)$ 的近似最好、方差最低、代价最小。
-> **GRPO 是退化情形**：$\hat A_u = A_{\text{traj}}$ 对所有 $u$ 相同。它不是"没做 CA"，而是**选了最粗的一种常数信用**。
+> **GRPO 是退化情形**：$\hat A_u = A_{\text{traj}}$ 对所有 $u$ 相同。它不是“没做 CA”，而是**选了最粗的一种常数信用**。
 
 ### 1.2 2026 综述的严格版本：信用依赖协议
 
@@ -113,7 +113,7 @@ $$
 | 数学符号 | 含义 | 工程里对应什么 |
 |:---|:---|:---|
 | $u$ | 分配单元 | `unit_type` / `unit_index` |
-| $q_u$ | 参考动作分布（"和什么比"） | `ref_action_dist` |
+| $q_u$ | 参考动作分布（“和什么比”） | `ref_action_dist` |
 | $z_u^-$ | **有效前置状态**（不只是文本前缀） | KV cache + 采样器 RNG + 环境状态 |
 | $\rho$ | 下游协议：延续策略 / 视野 / 验证器 / 噪声种子 | `continuation_policy`, `verifier`, `seed` |
 | $\Delta_u$ | 协议特定的因果对比 | `credit_u` |
@@ -123,7 +123,7 @@ $$
 1. **恢复状态比较（restored-state comparison）能识别一个协议特定的因果量**，前提是你真的恢复了 $z_u^-$。把文本前缀重新喂给模型 **不等于** 恢复 decode-time 状态（KV cache + 采样器状态），也恢复不了外部环境——这会引入**副本噪声（replica noise）**。
 2. 在只有 **text-only history** 的情况下，**连信用的符号都可能无法确定**。这不是精度问题，是**不可识别（unidentifiable）**。
 
-> **工程含义**：一篇论文说"我们用一个 LLM judge 给每个 step 打分当作 credit"，它拿到的是**该 judge 延续协议下的代理量**，不是 $\Delta_u$。两者可以差很远，但工程上仍可能有用——只是别把它当因果量汇报。
+> **工程含义**：一篇论文说“我们用一个 LLM judge 给每个 step 打分当作 credit”，它拿到的是**该 judge 延续协议下的代理量**，不是 $\Delta_u$。两者可以差很远，但工程上仍可能有用——只是别把它当因果量汇报。
 
 ### 1.3 经典二分与分配单元五级
 
@@ -140,10 +140,10 @@ graph TD
 分配单元五级（粒度由粗到细）：**trajectory → turn / tool-call → step（一行推理推导）→ segment（语义连贯的一段）→ token**。选择受三个约束牵制：
 
 1. 单元越小 → 估计点越多 → **方差越大**（除非有 critic 或 MC）；
-2. 单元越小 → "单元之间因果独立"越不合理（一个 token 单独没有语义）；
+2. 单元越小 → “单元之间因果独立”越不合理（一个 token 单独没有语义）；
 3. 单元越大 → 信用越稀疏，且必须处理**动作异构**（一次工具调用 ≠ 一行数学推导）。
 
-> 综述的判断很中肯：**没有哪个单元是"对的"，正确粒度应当与任务结构对齐**——数学用 step/segment，GUI agent 用 turn/tool，对话用 message。这也正是 GACA 提出"逐状态自适应粒度"的动机。
+> 综述的判断很中肯：**没有哪个单元是“对的”，正确粒度应当与任务结构对齐**——数学用 step/segment，GUI agent 用 turn/tool，对话用 message。这也正是 GACA 提出“逐状态自适应粒度”的动机。
 
 ---
 
@@ -160,7 +160,7 @@ graph TD
 | 可重放性 | 精确重放可行 | **重放失真**：训推概率不一致、RNG、环境不可回退 |
 | 动作同质性 | 同质 | **异构**：token / 工具 / 记忆 / 消息不可互换 |
 
-综述把这几点提炼为**六诊断**（"假设断裂"），下表括号是对 42 篇核心论文做全文审计后、真正回应了该障碍的论文数：
+综述把这几点提炼为**六诊断**（“假设断裂”），下表括号是对 42 篇核心论文做全文审计后、真正回应了该障碍的论文数：
 
 | 标号 | 诊断（break） | 识别障碍 | 最低评估控制 | 阳性数 |
 |:---:|:---|:---|:---|:---:|
@@ -171,15 +171,15 @@ graph TD
 | **V** | 弱局部可验证 | 中间正确性不可用或基于代理 | 针对干预/延续校准 judge | 32/42 |
 | **C** | 智能体耦合 | 一个 agent 的动作改变另一个的后续分布 | 消息 / 角色 / 联盟干预 | 7/42 |
 
-读数：**V 最高（32/42）**——绝大多数论文其实都承认"中间步骤对不对"需要一个 judge/PRM/投票，这是当前方法最普遍的软肋；**O 最低（10/42）**——大部分默认"文本历史就是全部状态"，在工具环境里不成立；**C 只有 7/42**——多智能体信用几乎是空白。
+读数：**V 最高（32/42）**——绝大多数论文其实都承认“中间步骤对不对”需要一个 judge/PRM/投票，这是当前方法最普遍的软肋；**O 最低（10/42）**——大部分默认“文本历史就是全部状态”，在工具环境里不成立；**C 只有 7/42**——多智能体信用几乎是空白。
 
-纯数学 RLVR 主要破 **V + R**；agentic RL 是**六条全破**。这就是后面第 6 节那场"critic 回归"的根源。
+纯数学 RLVR 主要破 **V + R**；agentic RL 是**六条全破**。这就是后面第 6 节那场“critic 回归”的根源。
 
 ---
 
-## 3. 主线一：序列级的"隐形信用分配"
+## 3. 主线一：序列级的“隐形信用分配”
 
-**这一节是全篇性价比最高的部分。** 你以为 Dr.GRPO / DAPO / GSPO / IcePop 是在做稳定性工程，其实它们每一个都在改"哪个 token 拿到多少梯度"——**这就是信用分配**，只不过改的是权重而不是估计量。
+**这一节是全篇性价比最高的部分。** 你以为 Dr.GRPO / DAPO / GSPO / IcePop 是在做稳定性工程，其实它们每一个都在改“哪个 token 拿到多少梯度”——**这就是信用分配**，只不过改的是权重而不是估计量。
 
 ### 3.1 四种嵌套
 
@@ -204,7 +204,7 @@ graph LR
     D --> G
 ```
 
-**每一次"算法改进"本质上都是在重新定义每 token 有效权重 $w_{i,t}$：**
+**每一次“算法改进”本质上都是在重新定义每 token 有效权重 $w_{i,t}$：**
 
 | 方法 | 有效每 token 权重 $w_{i,t}$ | 改动本质 |
 |:---|:---|:---|
@@ -222,7 +222,7 @@ graph LR
 - 正确短回答每 token 权重 $\tfrac{1}{2}\cdot\tfrac{1}{200}=2.5\times10^{-3}$
 - 错误长回答每 token 权重 $\tfrac{1}{2}\cdot\tfrac{1}{2000}=2.5\times10^{-4}$
 
-**每个错误 token 的惩罚只有正确 token 奖励的 1/10**——模型发现"把错误回答写长"可以摊薄惩罚。这就是 Dr.GRPO 指出的 **response-level length bias**。
+**每个错误 token 的惩罚只有正确 token 奖励的 1/10**——模型发现“把错误回答写长”可以摊薄惩罚。这就是 Dr.GRPO 指出的 **response-level length bias**。
 
 直接在你自己的长度分布上量化（不跑训练，只算梯度质量）：
 
@@ -255,9 +255,9 @@ for mode in ("grpo", "dapo", "drgrpo"):
 drgrpo: 正占比=0.0962  负占比=0.9038  负/正=9.40x
 ```
 
-注意 DAPO 与 Dr.GRPO 的**相对权重完全一致**（都是"每 token 常数权重"，差别只在 loss 整体尺度；DAPO 多除一个 $\sum_j\lvert o_j\rvert$，对 Adam 的学习率更友好）。而 GRPO 是唯一"每条序列等权"的那个。
+注意 DAPO 与 Dr.GRPO 的**相对权重完全一致**（都是“每 token 常数权重”，差别只在 loss 整体尺度；DAPO 多除一个 $\sum_j\lvert o_j\rvert$，对 Adam 的学习率更友好）。而 GRPO 是唯一“每条序列等权”的那个。
 
-> ⚠️ **结论是数据集相关的**：这里是"错误回答更长"的情形，DAPO 强化对长错误回答的惩罚是对的；**如果你的数据集是正确回答更长**（长 CoT 里很常见），结论会翻转。别盲目抄配置——先打印你自己的 `len(correct)` vs `len(wrong)` 分布。
+> ⚠️ **结论是数据集相关的**：这里是“错误回答更长”的情形，DAPO 强化对长错误回答的惩罚是对的；**如果你的数据集是正确回答更长**（长 CoT 里很常见），结论会翻转。别盲目抄配置——先打印你自己的 `len(correct)` vs `len(wrong)` 分布。
 
 ### 3.3 std 归一化：难度偏差
 
@@ -265,7 +265,7 @@ drgrpo: 正占比=0.0962  负占比=0.9038  负/正=9.40x
 
 $$A^{\text{easy}} = \frac{R_i-\bar R}{0.1}\ \ \text{vs}\ \ A^{\text{hard}} = \frac{R_i-\bar R}{0.5}$$
 
-优化器因此把预算花在"本来就快做对的题"上，而 hard frontier（真正想学的）只拿到很小的更新。Dr.GRPO 的解法粗暴但有效：直接删掉，$A_i = R_i - \mathrm{mean}(\{R_j\})$。
+优化器因此把预算花在“本来就快做对的题”上，而 hard frontier（真正想学的）只拿到很小的更新。Dr.GRPO 的解法粗暴但有效：直接删掉，$A_i = R_i - \mathrm{mean}(\{R_j\})$。
 
 > 和 **DAPO 动态采样**（丢掉全对/全错的组）解决的是同一件事的另一面——那些组 $\mathrm{std}=0$，梯度本就为 0。**推荐两者都开。**
 
@@ -285,17 +285,17 @@ $$
 
 ### 3.5 裁剪：clip-higher 与 CISPO
 
-**Clip-higher（DAPO）**：对称裁剪 $[1-\varepsilon,1+\varepsilon]$ 会丢掉低概率但高价值的 exploration token（"Wait,"、"Alternatively," 这类反思/转折 token）的更新——这就是 **entropy collapse**。解耦为
+**Clip-higher（DAPO）**：对称裁剪 $[1-\varepsilon,1+\varepsilon]$ 会丢掉低概率但高价值的 exploration token（“Wait,”、“Alternatively,” 这类反思/转折 token）的更新——这就是 **entropy collapse**。解耦为
 
 $$\mathrm{clip}(r_{i,t},\,1-\varepsilon_{\text{low}},\,1+\varepsilon_{\text{high}}),\quad \varepsilon_{\text{low}}<\varepsilon_{\text{high}}\ (\text{典型}\ 0.2/0.28)$$
 
-> 从 CA 视角：对称 clip 等价于"优先保留大概率 token 的信用"，clip-higher 等价于"额外给稀有 token 一次机会"。
+> 从 CA 视角：对称 clip 等价于“优先保留大概率 token 的信用”，clip-higher 等价于“额外给稀有 token 一次机会”。
 
-**CISPO（MiniMax-M1）**：原文摘要的说法是 *"CISPO clips importance sampling weights rather than token updates"*——被传统 clip 丢弃的那批 token 里，有相当一部分恰恰是反思/纠错类关键 token，**它们是信用最该到达的地方，却被裁剪机制静默丢弃了**。MiniMax-M1 报告 512×H800、三周、约 53.5 万美元完成全量 RL。（精确裁剪形式请核对原文，本系列不做断言。）
+**CISPO（MiniMax-M1）**：原文摘要的说法是 *“CISPO clips importance sampling weights rather than token updates”*——被传统 clip 丢弃的那批 token 里，有相当一部分恰恰是反思/纠错类关键 token，**它们是信用最该到达的地方，却被裁剪机制静默丢弃了**。MiniMax-M1 报告 512×H800、三周、约 53.5 万美元完成全量 RL。（精确裁剪形式请核对原文，本系列不做断言。）
 
 ### 3.6 系统层的隐形权重：训推不匹配
 
-这是最"工程"、却对信用分配影响最大的一块：**同一个 token 在 rollout 引擎（vLLM/SGLang）和训练引擎（Megatron/FSDP）上算出的概率不一样**（kernel 精度、batch 调度、MoE 路由非确定性、top-p 截断）。后果是 IS 比在少数 token 上爆炸，梯度被劫持 → 训练崩溃。**轨迹越长，命中这类病态 token 的概率越高。**
+这是最“工程”、却对信用分配影响最大的一块：**同一个 token 在 rollout 引擎（vLLM/SGLang）和训练引擎（Megatron/FSDP）上算出的概率不一样**（kernel 精度、batch 调度、MoE 路由非确定性、top-p 截断）。后果是 IS 比在少数 token 上爆炸，梯度被劫持 → 训练崩溃。**轨迹越长，命中这类病态 token 的概率越高。**
 
 | 手段 | 粒度 | 做法 | 代价 |
 |:---|:---|:---|:---|
@@ -312,11 +312,11 @@ $$
 \mathcal{M}\Big(\frac{\pi_{\text{train}}(o_{i,t}\mid\cdot)}{\pi_{\text{infer}}(o_{i,t}\mid\cdot)};\alpha,\beta\Big)\cdot\min\big(r_{i,t}A_i,\mathrm{clip}(r_{i,t},\cdot)A_i\big)\Big]
 $$
 
-> **为什么它算信用分配**：掩码 $\mathcal M$ 直接乘在每个 token 的梯度上，它在说"这个 token 的数值不可信，别给它信用"。这和下一节的高熵/尾部方法在数学形式上完全是同一件事，**只是判据从"数值可信度"换成了"语义重要性"**。二者在低概率区域高度重合，也因此各种 stabilizing trick 经常互相替代。
+> **为什么它算信用分配**：掩码 $\mathcal M$ 直接乘在每个 token 的梯度上，它在说“这个 token 的数值不可信，别给它信用”。这和下一节的高熵/尾部方法在数学形式上完全是同一件事，**只是判据从“数值可信度”换成了“语义重要性”**。二者在低概率区域高度重合，也因此各种 stabilizing trick 经常互相替代。
 
 GLM-5.2 甚至用 IcePop 的稳定性**替代了 KL 正则**（直接移除 KL，把稳定性职责交给 token 选择）。
 
-> **实践建议**：上线前先跑"双引擎 logprob 一致性检查"——同一批 token 在两个引擎下的 $\lvert\Delta\log p\rvert$ 分位数。**P99 > 1e-3 就先别谈任何细粒度 CA**，你后面的归因全是噪的。
+> **实践建议**：上线前先跑“双引擎 logprob 一致性检查”——同一批 token 在两个引擎下的 $\lvert\Delta\log p\rvert$ 分位数。**P99 > 1e-3 就先别谈任何细粒度 CA**，你后面的归因全是噪的。
 
 ---
 
@@ -338,13 +338,13 @@ $$
 | SPO / TreePO | 共享前缀下的 MC 段优势 | 多条分支 rollout |
 | PURE / PRM | 每步外部评分 | PRM / judge |
 
-两个直接工程价值：① 多个 $\kappa$ 可以**相乘**而非二选一；② 排优先级时只需问：**我现在缺的是"信号"（$\hat A$ 有偏）还是"信噪比"（$\hat A$ 方差大）**？前者靠更准的外部信息，后者靠 mask 与平滑。
+两个直接工程价值：① 多个 $\kappa$ 可以**相乘**而非二选一；② 排优先级时只需问：**我现在缺的是“信号”（$\hat A$ 有偏）还是“信噪比”（$\hat A$ 方差大）**？前者靠更准的外部信息，后者靠 mask 与平滑。
 
 ### 4.1 Token 级：最便宜的一批（内在信号路线）
 
 **80/20 规则（NeurIPS 2025, [arXiv:2506.01939](https://arxiv.org/abs/2506.01939)）** —— 我认为必须读的一篇，结论反直觉且立刻可用：
 
-> **只有约 20% 的 token 具有高熵，语义上它们是"分叉"（forks），决定推理走向哪个岔路；其余 80% 只是在补完已经确定的语言结构。**
+> **只有约 20% 的 token 具有高熵，语义上它们是“分叉”（forks），决定推理走向哪个岔路；其余 80% 只是在补完已经确定的语言结构。**
 
 $$\kappa(o_{i,t})=\mathbb{1}\Big[H_t\in\text{top-}p\%\Big],\quad H_t=-\sum_{v}\pi_\theta(v\mid q,o_{i,<t})\log\pi_\theta(v\mid q,o_{i,<t})$$
 
@@ -354,11 +354,11 @@ $$\kappa(o_{i,t})=\mathbb{1}\Big[H_t\in\text{top-}p\%\Big],\quad H_t=-\sum_{v}\p
 
 **SC-GRPO（[arXiv:2606.18810](https://www.arxiv.org/abs/2606.18810)）**：现有 token 级 CA 都依赖模型自身 rollout 之外的资源（PRM / GT 答案 / 外部 teacher / privileged info）。SC-GRPO 只需要**拿自己已验证正确的轨迹做条件化**，测量条件化前后的逐 token KL，把它作为 GRPO 梯度的乘性权重。自报跨数学/代码/agentic 五基准平均比 GRPO **+8.1%**、比 DAPO **+5.9%**（⚠️ 待验证，效应量较大，复现务必对齐 rollout 预算）。
 
-**AT-RL（[arXiv:2602.11455](https://www.arxiv.org/abs/2602.11455)）**：多模态场景下只有约 **15%** 的 token 表现出强视觉-文本耦合，它们是"把推理锚定在图像上的锚点"。RLVR 训练过程中信用会**自然**向这些锚点集中。AT-RL 用图聚类显式强化这些 token：**1.2% 开销**让 32B 模型在 MathVista 拿到 80.2，超过 72B-Instruct；反向对照（只在低连接度 token 上训练）严重退化。**这是全篇反向对照做得最干净的证据链。**
+**AT-RL（[arXiv:2602.11455](https://www.arxiv.org/abs/2602.11455)）**：多模态场景下只有约 **15%** 的 token 表现出强视觉-文本耦合，它们是“把推理锚定在图像上的锚点”。RLVR 训练过程中信用会**自然**向这些锚点集中。AT-RL 用图聚类显式强化这些 token：**1.2% 开销**让 32B 模型在 MathVista 拿到 80.2，超过 72B-Instruct；反向对照（只在低连接度 token 上训练）严重退化。**这是全篇反向对照做得最干净的证据链。**
 
 ### 4.2 Token 级：贵但准的（MC / 外部模型路线）
 
-**VinePPO（ICML 2025, [arXiv:2410.01679](https://arxiv.org/abs/2410.01679)）**：不训 critic、不用学到的 reward，**从每个中间状态多次 rollout 用 MC 估计该步优势**（要求环境 resettable，数学推理天然成立）。结果：精确的逐步 MC 信用**同时打败** PPO 的学得 critic 与 critic-free 的组基线。历史意义在于证明了"细粒度信用只要够准就一定有用，但太贵"——这催生了后面所有"如何在不额外 rollout 下近似 MC"的工作。注意：把 prefix 塞回去重采样属于 **text re-feed**，不是 exact decoder-state resume，因此它的 MC 里含有副本噪声。
+**VinePPO（ICML 2025, [arXiv:2410.01679](https://arxiv.org/abs/2410.01679)）**：不训 critic、不用学到的 reward，**从每个中间状态多次 rollout 用 MC 估计该步优势**（要求环境 resettable，数学推理天然成立）。结果：精确的逐步 MC 信用**同时打败** PPO 的学得 critic 与 critic-free 的组基线。历史意义在于证明了“细粒度信用只要够准就一定有用，但太贵”——这催生了后面所有“如何在不额外 rollout 下近似 MC”的工作。注意：把 prefix 塞回去重采样属于 **text re-feed**，不是 exact decoder-state resume，因此它的 MC 里含有副本噪声。
 
 **PRIME（[arXiv:2502.01456](https://arxiv.org/abs/2502.01456)）**：用**隐式 PRM**（直接用 SFT 模型初始化）产生 token 级稠密奖励
 
@@ -409,7 +409,7 @@ Token 级太贵太碎，trajectory 级太粗。**Segment（语义连贯的一段
 | 消融结论 | 含义 |
 |:---|:---|
 | 子组优势**简单平均 > 按大小加权** | 别给大子组更大话语权 |
-| **子组级 rejection 反而有害** | 别轻易扔"看起来差"的分支 |
+| **子组级 rejection 反而有害** | 别轻易扔“看起来差”的分支 |
 | **段必须按 token 对齐** | 段边界错位会毁掉整个方案 |
 | **基于概率的分叉控制没有增益** | 分叉决策要用不确定度/质量，不要只用概率 |
 
@@ -453,7 +453,7 @@ def segment_mc_advantage(prefix_ids, rewards, masks):
 
 $$V^{\text{sum}}(s_t)=\mathbb{E}\big[\textstyle\sum_{t'\ge t}\gamma^{t'-t}r_{t'}\big]$$
 
-值域随**步数**增长，模型可以靠"多输出高分 thinking 步骤"抬高 V 而不真解题——这就是 PRM-induced reward hacking，论文里 **sum-form 在第 25 步就崩了**。min-form 的修法：**状态的价值由它之后最差的那一步决定**
+值域随**步数**增长，模型可以靠“多输出高分 thinking 步骤”抬高 V 而不真解题——这就是 PRM-induced reward hacking，论文里 **sum-form 在第 25 步就崩了**。min-form 的修法：**状态的价值由它之后最差的那一步决定**
 
 $$G(s_t,a_t)=\begin{cases}\min(r_t^p,\dots,r_n^p), & t\le w\\ 0,& t>w\end{cases},\quad w=\arg\min(r_1^p,\dots,r_n^p)$$
 
@@ -494,7 +494,7 @@ $$r_i^{p*}=\frac{\exp(-r_i^p/T)}{\sum_{j=1}^n\exp(-r_j^p/T)}\cdot r_i^p$$
 
 ## 5. 主线三：奖励系数
 
-奖励里的"系数"不是可以随便调的超参——它和 advantage 归一化、裁剪阈值、学习率**乘在同一个乘积里**。很多"调不动"其实是公式的问题。
+奖励里的“系数”不是可以随便调的超参——它和 advantage 归一化、裁剪阈值、学习率**乘在同一个乘积里**。很多“调不动”其实是公式的问题。
 
 ### 5.1 三种典型症状
 
@@ -506,7 +506,7 @@ $$r_i^{p*}=\frac{\exp(-r_i^p/T)}{\sum_{j=1}^n\exp(-r_j^p/T)}\cdot r_i^p$$
 
 ### 5.2 Advantage 塌缩（GDPO）
 
-[GDPO（NVIDIA, arXiv:2601.05242）](https://arxiv.org/abs/2601.05242) 给了一个"本来该早点被发现"的反例。朴素做法是先求和再组归一化：
+[GDPO（NVIDIA, arXiv:2601.05242）](https://arxiv.org/abs/2601.05242) 给了一个“本来该早点被发现”的反例。朴素做法是先求和再组归一化：
 
 $$r^{(i,j)}_{\text{sum}}=\textstyle\sum_k r^{(i,j)}_k,\quad A^{(i,j)}_{\text{sum}}=\frac{r^{(i,j)}_{\text{sum}}-\mathrm{mean}}{\mathrm{std}}$$
 
@@ -558,7 +558,7 @@ def conditioned_length_reward(correct, length, target_len, alpha=0.5):
     return alpha * float(correct and length <= target_len)
 ```
 
-> **通用原则**：塑形奖励必须"以任务成功为条件"。无条件发放的格式/长度奖励几乎必然招致 format farming。
+> **通用原则**：塑形奖励必须“以任务成功为条件”。无条件发放的格式/长度奖励几乎必然招致 format farming。
 
 ### 5.4 长度惩罚：统一框架与定标法则
 
@@ -570,7 +570,7 @@ LASER 的选择：$C(y)=R(x,y)$，$\lambda(y)=\mathbb{1}[R(x,y)=1]$，$S(y)=\alp
 
 **LASER-D/DE** 两个扩展都值得借鉴：**Dynamic**（周期性在小监控集上重估目标长度）、**Difficulty-aware**（不同难度不同目标长度，简单题狠狠惩罚冗长 CoT）。自报：DeepSeek-R1-Distill-Qwen-{1.5B,7B,32B} 上 Pareto 最优，LASER-D 在 AIME2024 **+6.1** 的同时 **token 用量 −63%**，且压缩后冗余 self-reflection 明显减少。
 
-其它：**DLER**（NVIDIA, 2025，"Doing Length pEnalty Right"：回到最简单的截断 + update-selective merging）、**L1（[arXiv:2503.04697](https://arxiv.org/abs/2503.04697)）**、Kimi k1.5 的 length penalty。
+其它：**DLER**（NVIDIA, 2025，“Doing Length pEnalty Right”：回到最简单的截断 + update-selective merging）、**L1（[arXiv:2503.04697](https://arxiv.org/abs/2503.04697)）**、Kimi k1.5 的 length penalty。
 
 > **定标法则（我的建议）**：$\alpha\approx c\cdot\sigma_{\text{group}}(R(x,y))$，$c\in[0.2,0.5]$。塑形项必须在组内可分辨范围内（否则归一化后就是噪声），又不能大到吞掉任务信号。**先把 $\sigma_{\text{group}}$ 打出来看**，再决定 $c$。
 
@@ -593,17 +593,17 @@ LASER 的选择：$C(y)=R(x,y)$，$\lambda(y)=\mathbb{1}[R(x,y)=1]$，$S(y)=\alp
 
 **核心原则：被优化器看到的是 advantage 的分布，不是 reward 的绝对值。**
 
-1. 二元奖励 + 组相对归一化 = 天然自标定，这是 RLVR 鲁棒的一大原因；此时"把 $\alpha$ 从 10 改成 1"对 GRPO 几乎没影响（std 已消掉尺度），**但对 Dr.GRPO（去掉 std）就有影响**——这是最容易踩的坑：**同一个奖励配方在 GRPO 与 Dr.GRPO 下不等价**。
+1. 二元奖励 + 组相对归一化 = 天然自标定，这是 RLVR 鲁棒的一大原因；此时“把 $\alpha$ 从 10 改成 1”对 GRPO 几乎没影响（std 已消掉尺度），**但对 Dr.GRPO（去掉 std）就有影响**——这是最容易踩的坑：**同一个奖励配方在 GRPO 与 Dr.GRPO 下不等价**。
 2. 经典 RLHF 里 RM 输出尺度任意（Tülu 3 用 $\alpha=10$），改为可验证奖励后不再需要。
 3. **每新增一个奖励项，就要重新检查一次 advantage 的 RMS**——把它做成监控面板上的常驻曲线。
 
-### 5.7 动态 shaping：给奖励加一份"错题本"
+### 5.7 动态 shaping：给奖励加一份“错题本”
 
-[MEDS（arXiv:2604.11297）](https://arxiv.org/abs/2604.11297) 瞄准的失败模式很精准：RLVR 训着训着会掉进固定 **error mode**——每次只是换种说法重复同一个错。**entropy regularization 对此无能为力**：它只在当前 policy 分布上加噪，识别不了"跨 rollout 的同一类错"。
+[MEDS（arXiv:2604.11297）](https://arxiv.org/abs/2604.11297) 瞄准的失败模式很精准：RLVR 训着训着会掉进固定 **error mode**——每次只是换种说法重复同一个错。**entropy regularization 对此无能为力**：它只在当前 policy 分布上加噪，识别不了“跨 rollout 的同一类错”。
 
-做法：① 用 forward pass 里已经算好的 layer-wise logits，取最后若干层在 **final answer 第一个 token 位置**的值拼成向量 → 几乎零开销的 reasoning 指纹；② 每个 prompt 维护自己的错题本，用 **HDBSCAN** 聚类（选它而非 K-means：cluster 数动态变化，且孤立点会标为 noise，避免"只出现过一次的孤儿轨迹"被算成一个 cluster）；③ 落到大 cluster 的 rollout 罚得更重，惩罚随 cluster 大小增长但**边际递减**，且有明确上界。
+做法：① 用 forward pass 里已经算好的 layer-wise logits，取最后若干层在 **final answer 第一个 token 位置**的值拼成向量 → 几乎零开销的 reasoning 指纹；② 每个 prompt 维护自己的错题本，用 **HDBSCAN** 聚类（选它而非 K-means：cluster 数动态变化，且孤立点会标为 noise，避免“只出现过一次的孤儿轨迹”被算成一个 cluster）；③ 落到大 cluster 的 rollout 罚得更重，惩罚随 cluster 大小增长但**边际递减**，且有明确上界。
 
-理论上给了一个少见的保证：在 KL-regularized 单步更新的理想设定下，**给重复错误加罚不会降低期望任务回报**——关键一步是用 importance reweighting 把差值化成分母恒正的形式，再由 **Chebyshev 重排不等式**得协方差非负（两个因子对 cluster 计数都是非增的）。作者也明确写了这是 idealized one-step 设定，且依赖"重复采到的轨迹任务分不会更高"这一单调性假设。
+理论上给了一个少见的保证：在 KL-regularized 单步更新的理想设定下，**给重复错误加罚不会降低期望任务回报**——关键一步是用 importance reweighting 把差值化成分母恒正的形式，再由 **Chebyshev 重排不等式**得协方差非负（两个因子对 cluster 计数都是非增的）。作者也明确写了这是 idealized one-step 设定，且依赖“重复采到的轨迹任务分不会更高”这一单调性假设。
 
 自报：三个基座五个数学基准，pass@1 平均 +0.86~3.61，pass@128 +1.15~4.37；Qwen3-8B 在 OlympiadBench 上 pass@128 从 DAPO 的 70.81 提到 **82.67**。训练开销 +8.7%。诚实对照：用 Claude-Haiku-4.5 打 11 类错因标签，logit 聚类与 LLM 聚类的 agreement 是 **61.2%**（vs 全归一类 45.16%）——**指纹远非完美，但够用**。
 
@@ -614,7 +614,7 @@ LASER 的选择：$C(y)=R(x,y)$，$\lambda(y)=\mathbb{1}[R(x,y)=1]$，$S(y)=\alp
 | 测试泄漏 / 硬编码 | 隐藏测试、沙箱禁 FS/网络、随机化 held-out 输入 |
 | 验证器解析漏洞（狂刷 `\boxed{}` 候选） | 只取最后一个 boxed、惩罚多个最终答案、**对抽取器做模糊测试** |
 | 沙箱逃逸 / fork bomb 打崩 grader 拿默认分 | 真隔离、严格 rlimits、**grader 崩溃视为 0 分** |
-| format farming | **保持塑形奖励很小，并绑定到"尝试了任务"上** |
+| format farming | **保持塑形奖励很小，并绑定到“尝试了任务”上** |
 
 > **心智模型**：**RLVR 把统计意义上的奖励 hacking 转换成了软件安全问题。** 你的验证器与沙箱现在是一个对抗接口——策略是一个无情的 fuzzer，会执行你的 grader 上百万次寻找最廉价的得分路径。像对一个接收不可信输入的公网 API 那样威胁建模它。（[The LLM Stack Book §5.9](https://prakashkagitha.github.io/llm-stack-book/05-posttraining-alignment/09-rlvr-reasoning.html)）
 
@@ -626,7 +626,7 @@ LASER 的选择：$C(y)=R(x,y)$，$\lambda(y)=\mathbb{1}[R(x,y)=1]$，$S(y)=\alp
 
 **2025-2026 最具反转性的工业流派变化**：GLM 系列起初走 GRPO + IcePop，但 **GLM-5.2（750B-A40B）在长视野阶段显式放弃组相对优化，改用带 value model 的 critic-based 方法**。理由非常具体（[How Frontier Labs Train LLMs](https://jxzhangjhu.github.io/blog/2026/how-frontier-labs-train-llms/)；[GLM-5.2/IcePop 解析](https://thakicloud.com/tech-blog/en/research/glm-5-2-ppo-icepop/)）：
 
-> 当超长 agent 轨迹被 **compaction** 成多条 sub-trace 时，同一 prompt 的不同 rollout 会产生**数量不同、长度差异极大的可训练 trace**，GRPO 的"一组干净可比 rollout"假设不成立；而 **critic 对单条 rollout 就能给出 token 级优势**，天然适配 compaction。
+> 当超长 agent 轨迹被 **compaction** 成多条 sub-trace 时，同一 prompt 的不同 rollout 会产生**数量不同、长度差异极大的可训练 trace**，GRPO 的“一组干净可比 rollout”假设不成立；而 **critic 对单条 rollout 就能给出 token 级优势**，天然适配 compaction。
 
 配套决定同样重要：**移除 KL 正则**（IcePop 已承担稳定性职责，KL 反而限制改进幅度），基础设施分工为 Megatron 训练 + SGLang rollout，IcePop 正是针对这两个引擎之间的**结构性缝隙**设计的。更早的信号是 **VAPO（[arXiv:2504.05118](https://arxiv.org/abs/2504.05118)）**：重新引入 value model，证明 critic 在长 CoT 上仍然有用。
 
@@ -646,15 +646,15 @@ $$A^{\text{GiGPO}}(s_t,a_t)=\underbrace{A^{E}(\tau_i)}_{\text{episode 级}}+\;w\
 
 $$A^{\text{GACA}}=\big(1-\lambda(s_t,a_t)\big)A^{E}+\lambda(s_t,a_t)A^{S},\qquad \lambda\uparrow\ \text{with NLL}$$
 
-理论结果：① 精确的风险分解，证明在方向一致性为正时**足够小的调制严格优于固定混合**；② 用期望 NLL 界定局部动作价值变化的下界（给"用 NLL 作代理"提供依据）；③ 误差投影分析刻画混合何时优于简单的标量不确定度重加权。自报 ALFWorld/WebShop 上 1.5B 与 7B 都超过 GRPO 与 GiGPO。⚠️ 2026-09-11 上线，尚未见社区复现。
+理论结果：① 精确的风险分解，证明在方向一致性为正时**足够小的调制严格优于固定混合**；② 用期望 NLL 界定局部动作价值变化的下界（给“用 NLL 作代理”提供依据）；③ 误差投影分析刻画混合何时优于简单的标量不确定度重加权。自报 ALFWorld/WebShop 上 1.5B 与 7B 都超过 GRPO 与 GiGPO。⚠️ 2026-09-11 上线，尚未见社区复现。
 
-> **这是我认为最值得关注的一类设计**：它把"内在信号派"（熵/NLL/KL）和"结构对照派"（anchor state）接上了——**用最便宜的信号决定什么时候该用昂贵的结构信息**。
+> **这是我认为最值得关注的一类设计**：它把“内在信号派”（熵/NLL/KL）和“结构对照派”（anchor state）接上了——**用最便宜的信号决定什么时候该用昂贵的结构信息**。
 
 ### 6.3 SR-PPO：单 rollout + Pass@k critic
 
 [SR-PPO（arXiv:2606.25451）](https://arxiv.org/html/2606.25451v1) 解决的是反面问题：group-based 太贵，而且**rollout 之间的推理前缀很快就发散，横向比较本身不可靠**。方案：**每个 prompt 只采一条 rollout**，训一个 token 级 critic 预测前缀处的 **Pass@$k$ 成功概率**。
 
-为什么是 Pass@$k$：Pass@1 对"已经能轻松做对"的前缀给高值 → 学不到东西；而随 $k$ 增大，$\text{Pass@}k$ 收敛到一个**可达性指示量**——这个前缀存不存在通往成功的续写。因此它**对容易的前缀打折、把信号集中到成功概率仍处在边缘的困难前缀**。作者还证明了 $k\to\infty$ 的极限在显式状态图上可以 $O(\lvert V\rvert+\lvert E\rvert)$ 算出。
+为什么是 Pass@$k$：Pass@1 对“已经能轻松做对”的前缀给高值 → 学不到东西；而随 $k$ 增大，$\text{Pass@}k$ 收敛到一个**可达性指示量**——这个前缀存不存在通往成功的续写。因此它**对容易的前缀打折、把信号集中到成功概率仍处在边缘的困难前缀**。作者还证明了 $k\to\infty$ 的极限在显式状态图上可以 $O(\lvert V\rvert+\lvert E\rvert)$ 算出。
 
 ```mermaid
 graph TD
@@ -675,7 +675,7 @@ graph TD
 | 类别 | 方法 | 一句话 |
 |:---|:---|:---|
 | Turn 级 | AgentPRM、SWEET-RL（特权 critic）、Turn-Level Reward Design（NeurIPS 2025）、Turn-PPO（EACL 2026）、**ITPO**（隐式 turn 级，零额外模型） | 一次交互一轮的信用 |
-| 反事实 / 博弈 | HCAPO、C3、CCPO（均 2026-03）、CriticSearch | 显式构造"不这么做会怎样" |
+| 反事实 / 博弈 | HCAPO、C3、CCPO（均 2026-03）、CriticSearch | 显式构造“不这么做会怎样” |
 | 信息论 | IGPO、SPA-RL（stepwise progress attribution） | 用进展/信息增益定义贡献 |
 | 层级 | ArCHer（ICML 2024）、PilotRL、CARL（NeurIPS 2025） | 高层规划 / 低层执行分工 |
 | 基础设施 | Agent Lightning、RAGEN/StarPO、SCRIBE、LaRe、PRS+VSPO | 让回滚/分叉/部分重放成为系统原语 |
@@ -750,7 +750,7 @@ class CreditEstimator:
         return dict(advantage_unit=adv, mask=m, scale=scale)
 ```
 
-这个接口直接消解了"mask + loss 归一化打架"的问题——因为 `scale` 显式暴露了分母变化量。
+这个接口直接消解了“mask + loss 归一化打架”的问题——因为 `scale` 显式暴露了分母变化量。
 
 **公平比较协议**（CA 论文的提升幅度普遍被高估）：
 
@@ -784,7 +784,7 @@ class CreditEstimator:
 | 2 | mask 后没重算分母 | 换方法后等效 LR 跳数量级 | 按实际参与更新的 token 数做分母，或显式乘 `scale` |
 | 3 | Top-p/Top-k 导致动作空间不一致 | IS 比抖动 | Keep Sampling Mask |
 | 4 | MoE 路由跨引擎不一致 | IS 比尖刺 | Keep Routing 或 GSPO |
-| 5 | 把"不再 NaN"当成"稳定" | loss 平稳但指标缓慢退化 | 看六项诊断，不止看 loss |
+| 5 | 把“不再 NaN”当成“稳定” | loss 平稳但指标缓慢退化 | 看六项诊断，不止看 loss |
 | 6 | 单目标配方直接加第二个 reward | advantage 塌缩、早期失败 | 换 GDPO |
 | 7 | 塑形奖励不挂正确性门控 | format farming | $\lambda(y)=\mathbb{1}[R=1]$ |
 | 8 | 方法叠加导致更新过度稀疏 | LR 怎么调都不收敛 | 最多叠两个 mask，叠完重扫 LR |
@@ -812,15 +812,15 @@ class CreditEstimator:
 |:---|:---|:---|
 | **减少 rollout 依赖** | 规模化 RL 的主要成本是构造反事实的预算 | SR-PPO、SC-GRPO、GACA |
 | **粒度的状态自适应** | 固定粒度在长视野必然失效 | GACA、TreePO 的不确定度分叉 |
-| **Critic 回归与 hybrid** | 长视野下"组可比"假设崩坏 | GLM-5.2、VAPO、γOPD 的 RBM |
+| **Critic 回归与 hybrid** | 长视野下“组可比”假设崩坏 | GLM-5.2、VAPO、γOPD 的 RBM |
 | **多智能体信用** | 六诊断里最薄弱（7/42） | 几乎空白 |
 | **ultra-long horizon** | 50–100+ turns、百万 token 的信用传播 | 综述列为开放问题 |
-| **探索 × 信用的相互作用** | 现有 CA 几乎不区分"决策错误 / 信息缺口 / 探索性动作" | 综述 §4.2 |
+| **探索 × 信用的相互作用** | 现有 CA 几乎不区分“决策错误 / 信息缺口 / 探索性动作” | 综述 §4.2 |
 | **报告标准化** | 现在无法横向比较 | CA-ID Card、原子化审计 |
 
 **一个我自己的判断**：未来 12 个月最可能成为默认配置的组合是
 
-> **GACA 式自适应粒度 × IcePop 式数值可信度掩码 × GDPO 式多目标解耦**，再按"rollout 可否组可比"决定要不要 critic。
+> **GACA 式自适应粒度 × IcePop 式数值可信度掩码 × GDPO 式多目标解耦**，再按“rollout 可否组可比”决定要不要 critic。
 
 理由：三者分别处理**结构不确定性、数值不确定性、目标尺度不确定性**，互不重叠，且都能零额外前向地实现。
 
@@ -877,7 +877,7 @@ class CreditEstimator:
 | MEDS 的 +0.86~3.61 pass@1、OlympiadBench 70.81→82.67 | [2604.11297](https://arxiv.org/abs/2604.11297)，理论保证依赖单调性假设 |
 | IcePop 参数 $[0.5,5]$ | [LLMNotes](https://phonism.github.io/LLMNotes/en/rl-training-stability)，二手整理 |
 | CISPO 的精确裁剪形式 | [2506.13585](https://arxiv.org/abs/2506.13585)，原文公式待核对 |
-| PURE "sum-form 第 25 步崩、min-form 200+ 步" | [2504.15275](https://arxiv.org/abs/2504.15275) |
+| PURE “sum-form 第 25 步崩、min-form 200+ 步” | [2504.15275](https://arxiv.org/abs/2504.15275) |
 | 80/20 的 top-20% 阈值 | [2506.01939](https://arxiv.org/abs/2506.01939)，论文自承为经验值 |
 
 ### 9.3 本文已实跑的示例代码
@@ -890,7 +890,7 @@ class CreditEstimator:
 
 ---
 
-> **系列导航** ｜ 上一篇：[从 MDP 到 GRPO（五）：GRPO 组相对优势](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/)（本文结算它的"四条欠条"）
+> **系列导航** ｜ 上一篇：[从 MDP 到 GRPO（五）：GRPO 组相对优势](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/)（本文结算它的“四条欠条”）
 >
-> 若只记住一句：**被优化器看到的永远是 $w\cdot\kappa\cdot A\cdot\mathrm{clip}(r)$ 这个乘积。任何"某方法提升 X%"的说法，先问它动的是哪一项、动完之后有没有补偿其它项。**
+> 若只记住一句：**被优化器看到的永远是 $w\cdot\kappa\cdot A\cdot\mathrm{clip}(r)$ 这个乘积。任何“某方法提升 X%”的说法，先问它动的是哪一项、动完之后有没有补偿其它项。**
 

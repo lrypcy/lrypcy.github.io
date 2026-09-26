@@ -425,17 +425,17 @@ python mm.py | grep -iE 'custom-call|layout|operand'
 
 | 主题 | 链接 |
 |:---|:---|
-| Kung & Leiserson, "Systolic Arrays (for VLSI)"（1978，脉动阵列原始文献） | 可搜标题获取 |
-| Kung, "Why Systolic Architectures?"（IEEE Computer, 1982，脉动哲学的经典综述） | 可搜标题获取 |
-| Jouppi et al., "In-Datacenter Performance Analysis of a Tensor Processing Unit"（ISCA'17，TPU v1 全部数字的官方出处） | [arXiv:1704.04760](https://arxiv.org/abs/1704.04760) |
+| Kung & Leiserson, “Systolic Arrays (for VLSI)”（1978，脉动阵列原始文献） | 可搜标题获取 |
+| Kung, “Why Systolic Architectures?”（IEEE Computer, 1982，脉动哲学的经典综述） | 可搜标题获取 |
+| Jouppi et al., “In-Datacenter Performance Analysis of a Tensor Processing Unit”（ISCA'17，TPU v1 全部数字的官方出处） | [arXiv:1704.04760](https://arxiv.org/abs/1704.04760) |
 | Sze, Chen, Yang & Suleiman, *Efficient Processing of Deep Neural Networks*（数据流分类学的教科书体系） | 可搜书名获取 |
-| Chen et al., "Eyeriss: A Spatial Architecture for Energy-Efficient Dataflow for Convolutional Neural Networks"（ISCA'16，行固定数据流出处） | 可搜标题获取 |
-| Horowitz, "Computing's Energy Problem"（ISSCC'14，操作数移动能耗层级的经验数字） | 可搜标题获取 |
-| Abts et al., "Think Fast: A Tensor Streaming Processor for Accelerating Deep Neural Network Training"（IEEE Micro 2020，Groq 时序决定论口径） | 可搜标题获取 |
+| Chen et al., “Eyeriss: A Spatial Architecture for Energy-Efficient Dataflow for Convolutional Neural Networks”（ISCA'16，行固定数据流出处） | 可搜标题获取 |
+| Horowitz, “Computing's Energy Problem”（ISSCC'14，操作数移动能耗层级的经验数字） | 可搜标题获取 |
+| Abts et al., “Think Fast: A Tensor Streaming Processor for Accelerating Deep Neural Network Training”（IEEE Micro 2020，Groq 时序决定论口径） | 可搜标题获取 |
 | Groq 官方文档与技术博客（TSP 架构与编译器调度的权威出处） | <https://groq.com> |
 | Cerebras Wafer-Scale Engine 白皮书（WSE 规格、冗余核与 stitching 口径） | <https://www.cerebras.ai> |
 | 华为昇腾 DaVinci 白皮书与 CANN 文档（cube 指令、fractal 布局、Ascend C 编程模型口径） | <https://www.hiascend.com> |
-| Hennessy & Patterson, "A New Golden Age for Computer Architecture"（领域专用架构的系统论述，含 TPU 分析） | [ACM CACM 2019](https://cacm.acm.org/research/a-new-golden-age-for-computer-architecture/) |
+| Hennessy & Patterson, “A New Golden Age for Computer Architecture”（领域专用架构的系统论述，含 TPU 分析） | [ACM CACM 2019](https://cacm.acm.org/research/a-new-golden-age-for-computer-architecture/) |
 | TVM storage_rewrite 与 MLIR bufferization 文档（scratchpad 内存规划的编译器实现） | <https://tvm.apache.org/docs/> |
 | 中文社区解读 | 知乎站内搜「脉动阵列」「TPU 架构」「昇腾达芬奇架构」「Groq LPU」有多篇图解文章（质量参差，建议对照本文公式阅读） |
 

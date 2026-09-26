@@ -19,7 +19,7 @@ This file governs how the LLM builds and maintains your Wiki. Edit it freely.
 Pages in `entities/` MUST follow this structure:
 
 **Frontmatter fields:**
-- `type: entity` — page category (MUST be exactly "entity")
+- `type: entity` — page category (MUST be exactly “entity”)
 - `created:` — ISO date of first creation
 - `sources:` — array of source file wiki-links
 - `tags:` — entity subtype; the valid values are runtime-injected by the **Active Tag Vocabulary** section of every system prompt (driven by Settings). MUST be one of those values.
@@ -36,7 +36,7 @@ Pages in `entities/` MUST follow this structure:
 Pages in `concepts/` MUST follow this structure:
 
 **Frontmatter fields:**
-- `type: concept` — page category (MUST be exactly "concept")
+- `type: concept` — page category (MUST be exactly “concept”)
 - `created:` — ISO date of first creation
 - `sources:` — array of source file wiki-links
 - `tags:` — concept subtype; the valid values are runtime-injected by the **Active Tag Vocabulary** section of every system prompt (driven by Settings). MUST be one of those values.
@@ -60,7 +60,7 @@ Pages in `concepts/` MUST follow this structure:
 Pages in `sources/` MUST follow this structure:
 
 **Frontmatter fields:**
-- `type: source` — page category (MUST be exactly "source")
+- `type: source` — page category (MUST be exactly “source”)
 - `tags:` — INHERITED from the source note's frontmatter (do NOT use LLM-derived concept names). The system programmatically populates this from the source file; the LLM must not overwrite it with extracted concept names. This preserves the user's existing tag vocabulary and prevents pollution from LLM hallucinations.
 - `sources:` — array of related wiki page links created from this source
 - `created:` / `updated:` — set by the system, see Date Fields below
@@ -77,8 +77,8 @@ Pages in `sources/` MUST follow this structure:
 - `source_note:` (optional) — wiki-link to the original source file
 
 ## Mentions Format
-"Mentions in Source" entries use academic-footnote style with source attribution. The format is:
-- "Verbatim quote in original language (optional translation)" — [[source-name|display-name]]
+“Mentions in Source” entries use academic-footnote style with source attribution. The format is:
+- “Verbatim quote in original language (optional translation)” — [[source-name|display-name]]
 
 Rules:
 - Quotes must be VERBATIM — never paraphrase, summarize, or translate away the original

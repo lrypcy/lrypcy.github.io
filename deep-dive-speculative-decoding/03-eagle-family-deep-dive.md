@@ -5,9 +5,9 @@
 
 ---
 
-## 1. 从"要不要草稿模型"到"草稿从哪来"
+## 1. 从“要不要草稿模型”到“草稿从哪来”
 
-[02 核心原理](02-core-methods.md) 已证明：加速比的第一决定因素是**接受率 $\alpha$**。2024 年之前的方案要么用独立小模型（部署贵、接受率受分布漂移限制），要么用 n-gram（免训练但 $\alpha$ 低）。EAGLE 家族的贡献在于把接受率推上了一个台阶，且把这个能力做成"目标模型自带"。
+[02 核心原理](02-core-methods.md) 已证明：加速比的第一决定因素是**接受率 $\alpha$**。2024 年之前的方案要么用独立小模型（部署贵、接受率受分布漂移限制），要么用 n-gram（免训练但 $\alpha$ 低）。EAGLE 家族的贡献在于把接受率推上了一个台阶，且把这个能力做成“目标模型自带”。
 
 本家族的演进主线：
 
@@ -22,11 +22,11 @@ graph LR
 
 ---
 
-## 2. Medusa：用多解码头"自掏腰包"（2024-01, ICML 2024）
+## 2. Medusa：用多解码头“自掏腰包”（2024-01, ICML 2024）
 
 ### 2.1 动机与设计
 
-Medusa 的目标是绕开"准备并部署外部 draft 模型"的麻烦，直接在目标模型顶部挂 $K$ 个**解码头**（decoding head），分别预测第 $t+1,\dots,t+K+1$ 位的 token，再用**树注意**并行验证多条候选 [1](https://arxiv.org/abs/2401.10774)。
+Medusa 的目标是绕开“准备并部署外部 draft 模型”的麻烦，直接在目标模型顶部挂 $K$ 个**解码头**（decoding head），分别预测第 $t+1,\dots,t+K+1$ 位的 token，再用**树注意**并行验证多条候选 [1](https://arxiv.org/abs/2401.10774)。
 
 **解码头结构**（极其轻量）：
 
@@ -43,7 +43,7 @@ $$p_t^{(k)} = \text{softmax}\Big( h_t W_k^{(out)} \Big), \qquad h_t' = h_t + \te
 
 ### 2.3 Typical acceptance（关键工程取舍）
 
-Medusa 提出**典型接受**：不用严格的 $\min(1,p/q)$（需要草稿头的 $q$ 分布），而是当目标模型对候选 token 的概率"足够可信"（典型性在阈值内）即接受 [1](https://arxiv.org/abs/2401.10774)。这大幅抬高 $\alpha$ 且降低解码方差，但**放弃了严格无偏**。工程上以可控的质量损失换取更稳的加速，是"无损 vs 够快"的明确取舍样本（生产评估见 [05](05-production-deployment.md)）。
+Medusa 提出**典型接受**：不用严格的 $\min(1,p/q)$（需要草稿头的 $q$ 分布），而是当目标模型对候选 token 的概率“足够可信”（典型性在阈值内）即接受 [1](https://arxiv.org/abs/2401.10774)。这大幅抬高 $\alpha$ 且降低解码方差，但**放弃了严格无偏**。工程上以可控的质量损失换取更稳的加速，是“无损 vs 够快”的明确取舍样本（生产评估见 [05](05-production-deployment.md)）。
 
 ---
 
@@ -53,10 +53,10 @@ Medusa 提出**典型接受**：不用严格的 $\min(1,p/q)$（需要草稿头�
 
 EAGLE（Extrapolation Algorithm for Greater Language-model Efficiency）[2](https://arxiv.org/abs/2401.15077) 提出两个被后续工作反复引用的结论：
 
-1. **特征层自回归比 token 层自回归"更简单"**：这里"特征"指目标模型的 **second-to-top-layer**（LM head 前的倒数第二层隐藏状态）。相比 token 序列（自然语言的离散变换），特征序列更具规律性。实验：同样的草稿器在特征层做自回归比在 token 层做自回归快 1.9× vs 1.5×。
-2. **特征自回归受采样随机性制约**：目标模型从分布采样 token 引入随机性，而特征是高维连续量，无法"采样"。若用 $f_I$ 预测下一个 token，则无法区分"am"还是"always"两条特征路径。
+1. **特征层自回归比 token 层自回归“更简单”**：这里“特征”指目标模型的 **second-to-top-layer**（LM head 前的倒数第二层隐藏状态）。相比 token 序列（自然语言的离散变换），特征序列更具规律性。实验：同样的草稿器在特征层做自回归比在 token 层做自回归快 1.9× vs 1.5×。
+2. **特征自回归受采样随机性制约**：目标模型从分布采样 token 引入随机性，而特征是高维连续量，无法“采样”。若用 $f_I$ 预测下一个 token，则无法区分“am”还是“always”两条特征路径。
 
-**解法：把 token 序列提前一个时间步喂给草稿模型（feature & shifted-token）**。即预测"always"时输入 $f_I$ + $t_{\text{always}}$。加入采样结果后，加速从 1.9× 提升到 2.8× [2](https://arxiv.org/abs/2401.15077)。
+**解法：把 token 序列提前一个时间步喂给草稿模型（feature & shifted-token）**。即预测“always”时输入 $f_I$ + $t_{\text{always}}$。加入采样结果后，加速从 1.9× 提升到 2.8× [2](https://arxiv.org/abs/2401.15077)。
 
 ### 3.2 草稿模型结构（数学 + Shape）
 
@@ -86,12 +86,12 @@ $$\mathbf{z}_i = \text{FC}\big([\,\mathbf{f}_i \,;\, \text{Emb}(t_{i+1})\,]\big)
 
 - 训练数据仅 **2–4B tokens**（对比独立草稿模型 TinyLLaMA 需 3000B tokens [2](https://arxiv.org/abs/2401.15077)），训练成本两个数量级更低，且**无需修改目标模型**。
 - 结果（示例）：MT-bench 上比 baseline 快 **2.1–3.8×**、比 Lookahead 快 1.7–2.1×、比 Medusa 快 1.5–1.6×；LLaMA2-Chat 70B 上延迟加速 **2.7–3.5×**、吞吐翻倍 [2](https://arxiv.org/abs/2401.15077)。
-- 关键数字对比：EAGLE 草稿接受准确率 ≈ **0.8**，Medusa ≈ 0.6，Lookahead 更低 [2](https://arxiv.org/abs/2401.15077)——这就是"$\alpha$ 上台阶"的证据。
+- 关键数字对比：EAGLE 草稿接受准确率 ≈ **0.8**，Medusa ≈ 0.6，Lookahead 更低 [2](https://arxiv.org/abs/2401.15077)——这就是“$\alpha$ 上台阶”的证据。
 - 完全无损：验证阶段保证输出分布与目标模型一致。
 
 ### 3.4 为什么特征级更准？（直觉解释）
 
-token 分布是特征的**确定性函数**（softmax(LM head·f)）。特征里"记住"了序列的语义轨迹、风格、格式等 token 层面被压缩掉的信息。草稿模型在特征空间自回归 = 在更丰富的表示上做预测，等价于把"猜词"升级为"续写语义"，因此同样参数下 $\alpha$ 更高。EAGLE-2/3 的核心改进都是在这个框架上进一步推高 $\alpha$。
+token 分布是特征的**确定性函数**（softmax(LM head·f)）。特征里“记住”了序列的语义轨迹、风格、格式等 token 层面被压缩掉的信息。草稿模型在特征空间自回归 = 在更丰富的表示上做预测，等价于把“猜词”升级为“续写语义”，因此同样参数下 $\alpha$ 更高。EAGLE-2/3 的核心改进都是在这个框架上进一步推高 $\alpha$。
 
 ---
 
@@ -99,9 +99,9 @@ token 分布是特征的**确定性函数**（softmax(LM head·f)）。特征里
 
 ### 4.1 观察：接受率不仅依赖位置，还依赖上下文
 
-EAGLE 与 Medusa 使用**静态草稿树**：每层固定展开 $k$ 个候选，隐含假设"接受率只与树中位置有关"。EAGLE-2 系统测量发现：同一位置上接收率方差极大——接受率是**上下文相关的** [3](https://arxiv.org/abs/2406.16858)（论文 Fig.5：P1 位置接受率最高、P6 最低表明了位置依赖，但同位置的方差揭示了上下文依赖）。
+EAGLE 与 Medusa 使用**静态草稿树**：每层固定展开 $k$ 个候选，隐含假设“接受率只与树中位置有关”。EAGLE-2 系统测量发现：同一位置上接收率方差极大——接受率是**上下文相关的** [3](https://arxiv.org/abs/2406.16858)（论文 Fig.5：P1 位置接受率最高、P6 最低表明了位置依赖，但同位置的方差揭示了上下文依赖）。
 
-### 4.2 关键发现：草稿模型是"校准良好"的
+### 4.2 关键发现：草稿模型是“校准良好”的
 
 EAGLE 草稿模型输出的置信度（confidence score）可以近似接受率，且误差很小 [3](https://arxiv.org/abs/2406.16858)（Fig.6：置信度 <0.05 的 token 接受率约 0.04；置信度 >0.95 的 token 接受率约 0.98）。这让它**不调用目标模型**就能估算每个草稿 token 的真实被接受概率——这是动态树的可行基础。
 
@@ -129,15 +129,15 @@ Li et al. 发现：扩大训练数据对 EAGLE 的收益有限。根因是 **fea
 
 1. **弃用特征预测，直接预测 token**：草稿模型输出直接是 token 分布（经 LM head），去掉 $L_{\text{fea}}$。这带来一个副作用——训练时草稿模型输出 $\hat{a}_{t+1}$ 与真实特征 $f_{t+1}$ 偏差增大，推理时把 $\hat{a}$ 反馈回输入会导致**训练-推理分布失配**、第二个草稿 token 接受率骤降。
 
-2. **Training-time test 技术**：训练时就把上一时刻的**模型输出**（而非真实特征）反馈回输入，模拟自回归推理路径（类似 RNN 时代的 scheduled sampling，但配合树注意掩码）。这让模型在训练阶段就"见过"自己的错误轨迹，消除失配 [4](https://arxiv.org/abs/2503.01840)。
+2. **Training-time test 技术**：训练时就把上一时刻的**模型输出**（而非真实特征）反馈回输入，模拟自回归推理路径（类似 RNN 时代的 scheduled sampling，但配合树注意掩码）。这让模型在训练阶段就“见过”自己的错误轨迹，消除失配 [4](https://arxiv.org/abs/2503.01840)。
 
-3. **多层特征融合**：输入从"仅顶层特征"变为**低/中/高层特征的融合**——顶层特征天然偏向 next-token 预测，不适合多步草稿；中层融合提供更丰富的语义信息 [4](https://arxiv.org/abs/2503.01840)。
+3. **多层特征融合**：输入从“仅顶层特征”变为**低/中/高层特征的融合**——顶层特征天然偏向 next-token 预测，不适合多步草稿；中层融合提供更丰富的语义信息 [4](https://arxiv.org/abs/2503.01840)。
 
 ### 5.3 收益
 
 - 最高加速 **6.5×**，相对 EAGLE-2 提升约 **1.4×**；
 - 训练数据扩大约 **8×** 后仍持续受益（EAGLE-2/HASS 在该数据规模下已陷入平台期，Fig.8）；
-- 打破"大 batch 下投机无用"的常识：**SGLang 中 bs=64 时吞吐提升 1.38×（+38%）** [4](https://arxiv.org/abs/2503.01840)；
+- 打破“大 batch 下投机无用”的常识：**SGLang 中 bs=64 时吞吐提升 1.38×（+38%）** [4](https://arxiv.org/abs/2503.01840)；
 - 训练成本：约 2 卡天级别即可为 Llama-3 系列训练，代码开源 [SafeAILab/EAGLE](https://github.com/SafeAILab/EAGLE)，官方推荐 [SpecForge](https://github.com/sgl-project/SpecForge) 在 SGLang 生态中开箱训练。
 
 > ⚠️ **引用勘误提示**：EAGLE-3 的 arXiv 编号是 **2503.01840**（2025-03-03 提交，NeurIPS 2025 录用）。早期社区流传的 2412.xxxx 编号有误，以官方 GitHub 引用的 abspdf 链接为准。
@@ -167,7 +167,7 @@ $$\mathcal{L}_{\text{MTP}} = \frac{\lambda}{D}\sum_{k=1}^{D} \mathcal{L}_{\text{
 - **训练期**：辅助目标增强主模型在基准上的表现（MTP 密集化训练信号、帮助表征预规划）；
 - **推理期**：可以直接丢弃 MTP 模块使主模型独立工作，也可**复用作投机解码**进一步降低延迟 [5](https://arxiv.org/abs/2412.19437)。
 
-> 生态信号：DeepSeek-V3 权重约 685B = 主模型 671B + MTP 模块 14B；HuggingFace `transformers` 已支持 `num_mtp_layers` 配置与 `generate(..., use_mtp=True)` [6](https://huggingface.co/docs/transformers/main/model_doc/deepseek_v3)。这是"投机能力内建训练目标"从论文走向落地的明确标志（更多生态见 [04](04-inference-engine-support.md)）。
+> 生态信号：DeepSeek-V3 权重约 685B = 主模型 671B + MTP 模块 14B；HuggingFace `transformers` 已支持 `num_mtp_layers` 配置与 `generate(..., use_mtp=True)` [6](https://huggingface.co/docs/transformers/main/model_doc/deepseek_v3)。这是“投机能力内建训练目标”从论文走向落地的明确标志（更多生态见 [04](04-inference-engine-support.md)）。
 
 ---
 
@@ -186,7 +186,7 @@ $$\mathcal{L}_{\text{MTP}} = \frac{\lambda}{D}\sum_{k=1}^{D} \mathcal{L}_{\text{
 - **已有独立小模型且不介意部署成本** → 经典 SD 够用，换来最低接入成本；
 - **单卡本地 / bs=1、想免外部模型** → Medusa 简单直接（但 typical acceptance 非严格无偏）；
 - **生产服务追求最高 α** → EAGLE-3 + SGLang 是当前公认组合（详见 [04](04-inference-engine-support.md)/[06](06-industry-practice.md)）；
-- **希望投机能力"免费"内建** → 关注 MTP 系模型（DeepSeek-V3/R1 生态）。
+- **希望投机能力“免费”内建** → 关注 MTP 系模型（DeepSeek-V3/R1 生态）。
 
 ---
 

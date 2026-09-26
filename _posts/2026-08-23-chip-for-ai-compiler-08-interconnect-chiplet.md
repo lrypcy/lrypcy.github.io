@@ -429,8 +429,8 @@ NCCL_DEBUG=INFO nccl-tests/build/all_reduce_perf -b 8 -e 512 -g 8 2>&1 \
 | 主题 | 链接 |
 |:---|:---|
 | Dally & Towles, *Principles and Practices of Interconnection Networks*（NoC 数学的主要出处：跳数、二分带宽、死锁） | 可搜书名获取 |
-| Dally, "Route Packets, Not Wires: On-Chip Interconnection Networks"（DAC 2001，片上网络宣言） | 可搜标题获取 |
-| Dally & Seitz, "Deadlock-Free Message Routing in Multiprocessor Interconnection Networks"（死锁与维序路由的理论出处，1987） | 可搜标题获取 |
+| Dally, “Route Packets, Not Wires: On-Chip Interconnection Networks”（DAC 2001，片上网络宣言） | 可搜标题获取 |
+| Dally & Seitz, “Deadlock-Free Message Routing in Multiprocessor Interconnection Networks”（死锁与维序路由的理论出处，1987） | 可搜标题获取 |
 | NVIDIA NVLink / NVSwitch 官方页（五代带宽与 NVLS 口径） | <https://www.nvidia.com/en-us/data-center/nvlink/> |
 | NVIDIA Blackwell 架构官方页（B200 双 die、NV-HBI 10 TB/s、NVL72 口径） | <https://www.nvidia.com/en-us/data-center/blackwell-architecture/> |
 | NCCL 官方仓库与文档（算法选择、busbw/algbw 定义、NVLS 支持） | <https://github.com/NVIDIA/nccl> |
@@ -440,11 +440,11 @@ NCCL_DEBUG=INFO nccl-tests/build/all_reduce_perf -b 8 -e 512 -g 8 2>&1 \
 | CXL Consortium 规范（CXL.cache/CXL.mem 与 Type-1/2/3 语义） | <https://computeexpresslink.org/> |
 | UCIe Consortium 规范（die 间 PHY/协议栈与封装档位） | <https://www.uciexpress.org/> |
 | AMD Instinct MI300X 官方页与技术日材料（13 chiplet、XCD/IOD、Infinity Fabric 口径） | <https://www.amd.com/en/products/accelerators/instinct/mi300.html> |
-| Shoeybi et al., "Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism"（TP 通信结构出处） | [arXiv:1909.08053](https://arxiv.org/abs/1909.08053) |
-| Narayanan et al., "Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM"（并行维度×拓扑映射的系统论述，SC'21） | [arXiv:2104.04473](https://arxiv.org/abs/2104.04473) |
-| Zheng et al., "Alpa: Automating Inter- and Intra-Operator Parallelism for Distributed Deep Learning"（放置的两级自动搜索） | [arXiv:2201.12020](https://arxiv.org/abs/2201.12020) |
-| Rajbhandari et al., "ZeRO: Memory Optimizations Toward Training Trillion Parameter Models"（DP 侧通信优化） | [arXiv:1910.02054](https://arxiv.org/abs/1910.02054) |
-| Karypis & Kumar, "A Fast and High Quality Multilevel Scheme for Partitioning Irregular Graphs"（METIS，图划分启发式出处） | 可搜标题获取 |
+| Shoeybi et al., “Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism”（TP 通信结构出处） | [arXiv:1909.08053](https://arxiv.org/abs/1909.08053) |
+| Narayanan et al., “Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM”（并行维度×拓扑映射的系统论述，SC'21） | [arXiv:2104.04473](https://arxiv.org/abs/2104.04473) |
+| Zheng et al., “Alpa: Automating Inter- and Intra-Operator Parallelism for Distributed Deep Learning”（放置的两级自动搜索） | [arXiv:2201.12020](https://arxiv.org/abs/2201.12020) |
+| Rajbhandari et al., “ZeRO: Memory Optimizations Toward Training Trillion Parameter Models”（DP 侧通信优化） | [arXiv:1910.02054](https://arxiv.org/abs/1910.02054) |
+| Karypis & Kumar, “A Fast and High Quality Multilevel Scheme for Partitioning Irregular Graphs”（METIS，图划分启发式出处） | 可搜标题获取 |
 | Hennessy & Patterson, *Computer Architecture: A Quantitative Approach*（互连网络章节的系统教材） | 可搜书名获取最新版 |
 | 本系列前篇 | 《给 AI 编译器工程师的芯片课》01~07（01 四层契约、02 良率模型、03 HBM、07 脉动阵列与晶圆级） |
 | 中文社区解读 | 知乎站内搜「NVLink 原理」「RDMA 与 InfiniBand」「SHARP 在网计算」「Chiplet 与 UCIe」有多篇图解文章（质量参差，建议对照本文公式阅读） |

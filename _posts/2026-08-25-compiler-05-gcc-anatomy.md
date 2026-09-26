@@ -70,13 +70,13 @@ graph TD
 
 ### 2.1 GENERIC：吸收多样性的海绵
 
-各语言的语法构造千差万别（C++ 的重载决议、Fortran 的数组切片、Ada 的异常），GENERIC 以一棵足够通用的表达式树把它们统一收编。代价是它太"高级"以至于几乎无法直接在其上做全局优化——这正是第二层存在的理由。
+各语言的语法构造千差万别（C++ 的重载决议、Fortran 的数组切片、Ada 的异常），GENERIC 以一棵足够通用的表达式树把它们统一收编。代价是它太“高级”以至于几乎无法直接在其上做全局优化——这正是第二层存在的理由。
 
 ### 2.2 GIMPLE：三地址化与 SSA 化
 
 GCC 官方内部文档对 GIMPLE 的定义原文[2]：
 
-> "GIMPLE is a three-address representation derived from GENERIC by breaking down GENERIC expressions into tuples of no more than 3 operands (with some exceptions like function calls)... Temporaries are introduced to hold intermediate values needed to compute complex expressions."
+> “GIMPLE is a three-address representation derived from GENERIC by breaking down GENERIC expressions into tuples of no more than 3 operands (with some exceptions like function calls)... Temporaries are introduced to hold intermediate values needed to compute complex expressions.”
 
 即：把复杂表达式拆解为至多三个操作数的元组，引入临时变量承载中间值。其血统来自麦吉尔大学 McCAT 项目的 SIMPLE 中间表示[2]。Gimplification 之后，GCC 4.0（2005 年）合并了 Tree SSA 工程，让 GIMPLE 以 SSA 形式参与中端优化——第 02/03 篇讲的所有机制（支配树、φ 函数、稀疏传播）在 GCC 里对应的就是这一层。
 
@@ -104,19 +104,19 @@ f (int a, int b)
 }
 ```
 
-每个元组不超过三个操作数、复合表达式全部扁平化——这就是"三地址"的含义。进入 Tree SSA 阶段后这些临时变量会进一步被改写成 `a_2(D)` 这类带版本号的 SSA 名字。
+每个元组不超过三个操作数、复合表达式全部扁平化——这就是“三地址”的含义。进入 Tree SSA 阶段后这些临时变量会进一步被改写成 `a_2(D)` 这类带版本号的 SSA 名字。
 
 ### 2.3 RTL：机器描述驱动的最后一级
 
-RTL（Register Transfer Language）用 LISP 风格的 S-表达式描述每条"寄存器传输"，例如：
+RTL（Register Transfer Language）用 LISP 风格的 S-表达式描述每条“寄存器传输”，例如：
 
 ```lisp
 (set (reg:SI 0) (plus:SI (reg:SI 1) (reg:SI 2)))   ; rax = rbx + rcx 类语义
 ```
 
-关键机制是**机器描述文件**（`.md`）：每种目标架构用声明式规则描述自己的指令模式，生成器据此自动产出匹配代码。新增一个后端理论上只需编写 `.md` 描述与少量钩子——这是 GCC 能快速覆盖新兴 ISA 的结构性原因。第 04 篇讲的指令选择在这里表现为"RTL 模式匹配"，寄存器分配也发生在 RTL 层（GCC 未采用 SSA 式分配器）。
+关键机制是**机器描述文件**（`.md`）：每种目标架构用声明式规则描述自己的指令模式，生成器据此自动产出匹配代码。新增一个后端理论上只需编写 `.md` 描述与少量钩子——这是 GCC 能快速覆盖新兴 ISA 的结构性原因。第 04 篇讲的指令选择在这里表现为“RTL 模式匹配”，寄存器分配也发生在 RTL 层（GCC 未采用 SSA 式分配器）。
 
-值得注意的不对称：**中端优化在 GIMPLE 上做，后端在 RTL 上做，两者之间没有往返**。一旦 expand 到 RTL，高层信息（类型、别名关系的一部分）就永久丢失——这决定了"哪些优化必须在哪层完成"的铁律。
+值得注意的不对称：**中端优化在 GIMPLE 上做，后端在 RTL 上做，两者之间没有往返**。一旦 expand 到 RTL，高层信息（类型、别名关系的一部分）就永久丢失——这决定了“哪些优化必须在哪层完成”的铁律。
 
 <a name="3"></a>
 ## 3. Pass 管理器与优化管线
@@ -125,19 +125,19 @@ RTL（Register Transfer Language）用 LISP 风格的 S-表达式描述每条"�
 
 调试观测手段因此成为 GCC 工程师的核心技能：
 * `-fdump-tree-all` / `-fdump-rtl-all`：导出每个 pass 后的完整 IR 快照；
-* `-fopt-info-all`：让优化器主动报告"我在哪里做了什么"（向量化失败原因尤其有用）；
+* `-fopt-info-all`：让优化器主动报告“我在哪里做了什么”（向量化失败原因尤其有用）；
 * `-fdump-passes`：列出当前选项下将执行的 pass 清单。
 
-`-O0` 到 `-O3`/`-Os` 本质上是预置的 pass 子集 + 参数组合。Linux 发行版的默认构建多取 `-O2`：这是"可接受的编译时间 × 明确的性能收益"曲线上的拐点。
+`-O0` 到 `-O3`/`-Os` 本质上是预置的 pass 子集 + 参数组合。Linux 发行版的默认构建多取 `-O2`：这是“可接受的编译时间 × 明确的性能收益”曲线上的拐点。
 
 <a name="4"></a>
 ## 4. 招牌优化技术
 
-**自动向量化**是 GCC 的旗舰能力之一，分两条路径：loop vectorizer（循环体改写为向量运算，含 if-conversion 处理条件执行）与 SLP（Basic-block 内同构语句打包）。`-fopt-info-vec-missed` 会告诉你每一条"为什么没向量化"——生产环境里排查热循环的第一入口。
+**自动向量化**是 GCC 的旗舰能力之一，分两条路径：loop vectorizer（循环体改写为向量运算，含 if-conversion 处理条件执行）与 SLP（Basic-block 内同构语句打包）。`-fopt-info-vec-missed` 会告诉你每一条“为什么没向量化”——生产环境里排查热循环的第一入口。
 
-**Graphite** 是 GCC 的多面体循环变换框架，处理仿射循环嵌套的交换/融合/tiling，理论漂亮、实战触发条件苛刻（需要精确的依赖分析），是"高级优化在真实代码上命中率有限"的典型案例。
+**Graphite** 是 GCC 的多面体循环变换框架，处理仿射循环嵌套的交换/融合/tiling，理论漂亮、实战触发条件苛刻（需要精确的依赖分析），是“高级优化在真实代码上命中率有限”的典型案例。
 
-**match.pd** 是 GCC 把"模式等价重写规则"集中化的 DSL：上千条代数恒等式（如 `(a & b) | (a & ~b) == a`）以统一语法维护，前后端共享。这与 LLVM 用 TableGen/InstCombine C++ 手写的路线形成方法论对照——声明式规则的规模化维护 vs 过程式代码的极致灵活。
+**match.pd** 是 GCC 把“模式等价重写规则”集中化的 DSL：上千条代数恒等式（如 `(a & b) | (a & ~b) == a`）以统一语法维护，前后端共享。这与 LLVM 用 TableGen/InstCombine C++ 手写的路线形成方法论对照——声明式规则的规模化维护 vs 过程式代码的极致灵活。
 
 **LTO（链接期优化）**打通编译单元边界，让 IPA 内联看到全程序。代价是链接时间暴涨与内存占用，实践中常见折中是 `-ffat-lto-objects` 或仅对热点库启用。
 
@@ -154,7 +154,7 @@ RTL（Register Transfer Language）用 LISP 风格的 S-表达式描述每条"�
 | 诊断质量 | 传统良好 | Clang 以富文本诊断树立标杆 |
 | 社区经验共识 | 优化深度在某些 FP 场景占优 | 编译速度、错误信息、工具链集成占优 |
 
-最后一行特意标注为"社区经验共识"而非事实断言：两者的相对性能随版本迭代反复拉锯，任何"谁更快"的结论都必须绑定具体基准、版本与标志组合才成立。
+最后一行特意标注为“社区经验共识”而非事实断言：两者的相对性能随版本迭代反复拉锯，任何“谁更快”的结论都必须绑定具体基准、版本与标志组合才成立。
 
 真正值得记住的是第二条：**管线是否可编程**决定了下游能做什么。LLVM 的可配置管线让 opt 成为教学与研究工具（任意 pass 组合即插即用），也让 JIT 用户可以为不同负载定制流水线；GCC 的静态管线则保证了每一个发布版本的优化行为高度可预测——内核开发者更在意后者，研究者更在意前者，这是生态分裂的深层逻辑。
 
@@ -180,15 +180,15 @@ gcc -O3 -fopt-info-vec-missed -c loop.c
 gcc -O2 -fdump-ipa-inline f.c
 ```
 
-预期现象：dump 文件里能看到 SSA 版本号命名（`a_2(D)`）、`-fdump-passes` 输出按 ipa/tree/rtl 分组的长清单、missed 提示会给出"not vectorized: 数据依赖/非仿射下标"等具体理由。这些一手观察比任何二手教程都有效。
+预期现象：dump 文件里能看到 SSA 版本号命名（`a_2(D)`）、`-fdump-passes` 输出按 ipa/tree/rtl 分组的长清单、missed 提示会给出“not vectorized: 数据依赖/非仿射下标”等具体理由。这些一手观察比任何二手教程都有效。
 
 <a name="7"></a>
 ## 7. 批判与展望
 
-* **模块化的历史欠账**：C 语言实现 + 全局状态使得 GCC 难以做增量式、并行式改造。JIT 能力（libgccjit）虽有但远不如 ORC 成熟，这在"编译器即服务"的时代是实打实的短板。
-* **AI 硬件生态缺位**：GPU/NPU 后端生态几乎完全绕开 GCC（CUDA/ROCm/TVM/MLIR 各自为战）。GCC 在张量时代的角色可能被锁定为"通用 CPU 工具链"。
-* **仍在快速演进**：官网首页显示稳定线已推进到 16 系列[4]；C++23/26 支持持续跟进，Rust 前端（GCCRS）也在主线开发中（进度以官方仓库为准）。判断"GCC 要死"的预言过去三十年从未应验过。
-* **对本系列读者的一句话**：如果你只学一个编译器的中端，选 LLVM（工具友好）；但要理解"工业级编译器如何用纪律管理复杂度"，GCC 的静态管线哲学是最好的教材。
+* **模块化的历史欠账**：C 语言实现 + 全局状态使得 GCC 难以做增量式、并行式改造。JIT 能力（libgccjit）虽有但远不如 ORC 成熟，这在“编译器即服务”的时代是实打实的短板。
+* **AI 硬件生态缺位**：GPU/NPU 后端生态几乎完全绕开 GCC（CUDA/ROCm/TVM/MLIR 各自为战）。GCC 在张量时代的角色可能被锁定为“通用 CPU 工具链”。
+* **仍在快速演进**：官网首页显示稳定线已推进到 16 系列[4]；C++23/26 支持持续跟进，Rust 前端（GCCRS）也在主线开发中（进度以官方仓库为准）。判断“GCC 要死”的预言过去三十年从未应验过。
+* **对本系列读者的一句话**：如果你只学一个编译器的中端，选 LLVM（工具友好）；但要理解“工业级编译器如何用纪律管理复杂度”，GCC 的静态管线哲学是最好的教材。
 
 ## FAQ
 

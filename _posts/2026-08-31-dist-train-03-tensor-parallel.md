@@ -13,11 +13,11 @@ mathjax: true
 > [02 ZeRO/FSDP](/2026/08/31/dist-train-02-zero-fsdp/) ← **本篇** → [04 流水并行](/2026/08/31/dist-train-04-pipeline-parallel/)
 
 **TL;DR**
-> * ZeRO 拆的是"参数存哪儿"（显存维度），**张量并行（TP）拆的是"一次矩阵乘法怎么算"**（计算维度）：把权重矩阵沿列/行切开，分布在 $T$ 张卡上，每卡算一部分，靠 **All-Reduce 缝合结果**。NVIDIA 的 Megatron-LM 是其最成熟的 1D 实现 [1][3]。
+> * ZeRO 拆的是“参数存哪儿”（显存维度），**张量并行（TP）拆的是“一次矩阵乘法怎么算”**（计算维度）：把权重矩阵沿列/行切开，分布在 $T$ 张卡上，每卡算一部分，靠 **All-Reduce 缝合结果**。NVIDIA 的 Megatron-LM 是其最成熟的 1D 实现 [1][3]。
 > * **切分的语义**（见张二森的视角 [4]）：**列切 = 切神经元**（每列权重喂给一个神经元，各神经元输出独立 → 最后 concat）；**行切 = 切输入特征**（每行权重把一个特征扩散给所有神经元 → 各卡的部分和必须相加）。这个直觉比背矩阵公式重要得多。
-> * **为什么"先列后行"**：① 中间的非线性激活（GELU/ReLU）要求前一层**列切**——列切后激活可逐卡独立计算，行切则必须先 All-Reduce 再激活（违背代价最小化）[3][4]；② "列→行"配对让上层的 concat 与下层的 split 在本地完成，**每层只多出 2 次 All-Reduce（forward + backward 各 1 次缝合）**。
+> * **为什么“先列后行”**：① 中间的非线性激活（GELU/ReLU）要求前一层**列切**——列切后激活可逐卡独立计算，行切则必须先 All-Reduce 再激活（违背代价最小化）[3][4]；② “列→行”配对让上层的 concat 与下层的 split 在本地完成，**每层只多出 2 次 All-Reduce（forward + backward 各 1 次缝合）**。
 > * **每层每步的通信 = 4 次全量 All-Reduce**（Attention 的 QKV concat + 输出求和，MLP 的升维/降维各一），每次规约一个激活大小的张量 $\Phi = b\cdot s\cdot h$。**通信-计算比与 batch 无关，只取决于模型宽度与算力/带宽比**：$r \propto \frac{(T-1)\cdot F}{h \cdot \beta}$。实测量级：70B / H100 / TP=8 下约 **13%**（50% 计算效率假设），8B 模型同样的 TP=8 会升到 **25%**——**TP 只对大模型划算**。
-> * **工程铁律**：TP 的 All-Reduce 发生在**每个内核内部的同步点上**（一进一出两把通信，共 $4L$ 次/step，且在关键路径上不可重叠），因此 **TP 必须跑在 NVLink 上、绝不做跨机**（除非 NVL72 这类全 NVLink 互连）。**"TP=8 单机"是大模型训练的事实标准起步值**；更宽的模型在 TP 之外再叠加 PP/SP/ZeRO。
+> * **工程铁律**：TP 的 All-Reduce 发生在**每个内核内部的同步点上**（一进一出两把通信，共 $4L$ 次/step，且在关键路径上不可重叠），因此 **TP 必须跑在 NVLink 上、绝不做跨机**（除非 NVL72 这类全 NVLink 互连）。**“TP=8 单机”是大模型训练的事实标准起步值**；更宽的模型在 TP 之外再叠加 PP/SP/ZeRO。
 
 ```mermaid
 flowchart LR
@@ -36,25 +36,25 @@ flowchart LR
 
 ---
 
-## 1. 切分矩阵的两种方式：列切是"切神经元"，行切是"切特征"
+## 1. 切分矩阵的两种方式：列切是“切神经元”，行切是“切特征”
 
 设输入 $X \in \mathbb{R}^{B\times K}$（$B$ 个样本/ token，$K$ 个特征），权重 $W \in \mathbb{R}^{K \times N}$（$N$ 个输出神经元）。单卡算 $Y = XW$。当 $W$ 大到单卡装不下（或算力不够一次算完），就用 $T$ 张卡。两种切法对应完全不同的直觉 [3][4]：
 
-### 列切（Column Parallel）—— 切的是"神经元"
+### 列切（Column Parallel）—— 切的是“神经元”
 
 $$W = \big[\,W_0 \mid W_1 \mid \cdots \mid W_{T-1}\,\big], \qquad W_t \in \mathbb{R}^{K \times (N/T)}$$
 
-**物理含义**：$W$ 的一列 $K\times 1$ 向量就是"把 $K$ 个输入特征喂给**同一个神经元**"的变换。切列 = 把 $N$ 个输出神经元分成 $T$ 组，各卡各算一组。**因为神经元之间互相独立，每组输出直接 concat 就是完整结果**——通信只要一次 **All-Gather（拼接语义）**：
+**物理含义**：$W$ 的一列 $K\times 1$ 向量就是“把 $K$ 个输入特征喂给**同一个神经元**”的变换。切列 = 把 $N$ 个输出神经元分成 $T$ 组，各卡各算一组。**因为神经元之间互相独立，每组输出直接 concat 就是完整结果**——通信只要一次 **All-Gather（拼接语义）**：
 
 $$Y = \text{AllGather}\big(Y_0 \parallel Y_1 \parallel \cdots \parallel Y_{T-1}\big)$$
 
-> 注：Megatron 的 `f`/`g` 算子实现里，这个拼接用 All-Reduce 完成（每卡把已有部分填到对应位置），量级一致，分析时统一按"一次全量规约"计。
+> 注：Megatron 的 `f`/`g` 算子实现里，这个拼接用 All-Reduce 完成（每卡把已有部分填到对应位置），量级一致，分析时统一按“一次全量规约”计。
 
-### 行切（Row Parallel）—— 切的是"输入特征"
+### 行切（Row Parallel）—— 切的是“输入特征”
 
 $$W = \left[\begin{matrix} W_0 \\ \hline \vdots \\ \hline W_{T-1} \end{matrix}\right], \qquad W_t \in \mathbb{R}^{(K/T) \times N}$$
 
-**物理含义**：$W$ 的一行 $1\times N$ 向量是"把**一个**输入特征扩散给全部 $N$ 个神经元"的变换。切行 = 把 $K$ 个特征分成 $T$ 组，**输入 X 也必须按列切**（$X = [X_0 \mid \cdots \mid X_{T-1}]$），各卡算局部和。**因为每个输出神经元都依赖全部输入特征**，最终要**相加**——通信是**求和语义的 All-Reduce**：
+**物理含义**：$W$ 的一行 $1\times N$ 向量是“把**一个**输入特征扩散给全部 $N$ 个神经元”的变换。切行 = 把 $K$ 个特征分成 $T$ 组，**输入 X 也必须按列切**（$X = [X_0 \mid \cdots \mid X_{T-1}]$），各卡算局部和。**因为每个输出神经元都依赖全部输入特征**，最终要**相加**——通信是**求和语义的 All-Reduce**：
 
 $$Y = \text{AllReduce}\big(Y_0 + Y_1 + \cdots + Y_{T-1}\big)$$
 
@@ -76,11 +76,11 @@ flowchart TD
     end
 ```
 
-**记忆锚点**：列切→concat（拼起来），行切→sum（加起来）。一个切"纵"一个切"横"，正好对应神经元轴和特征轴。
+**记忆锚点**：列切→concat（拼起来），行切→sum（加起来）。一个切“纵”一个切“横”，正好对应神经元轴和特征轴。
 
 ---
 
-## 2. MLP：为什么一定是"列切升维 + 行切降维"
+## 2. MLP：为什么一定是“列切升维 + 行切降维”
 
 Transformer 的 MLP 是两层线性 + 中间激活：
 
@@ -88,15 +88,15 @@ $$\text{MLP}(X) = \text{GELU}\big(X W_1\big)\, W_2$$
 
 Megatron 的切法是固定的：**$W_1$（升维 h→4h）列切，$W_2$（降维 4h→h）行切** [1][3][4]。
 
-**原因一：非线性激活函数不允许"边拆边算"**。GELU/ReLU 这类激活是非线性的，$f(a+b) \neq f(a) + f(b)$。若对 $W_1$ 行切，各卡的 $X_t W_{1,t}$ 是**部分和**，必须先 All-Reduce 成完整输入再激活——损失了逐卡独立的唯一好处；而列切后 $X W_1 = [X W_{1,0} \mid X W_{1,1}]$ 是**直接的拼接**，激活可以逐卡独立算 [3][4]。
+**原因一：非线性激活函数不允许“边拆边算”**。GELU/ReLU 这类激活是非线性的，$f(a+b) \neq f(a) + f(b)$。若对 $W_1$ 行切，各卡的 $X_t W_{1,t}$ 是**部分和**，必须先 All-Reduce 成完整输入再激活——损失了逐卡独立的唯一好处；而列切后 $X W_1 = [X W_{1,0} \mid X W_{1,1}]$ 是**直接的拼接**，激活可以逐卡独立算 [3][4]。
 
-**原因二：通信最小化**。列切引入一次 All-Gather（量级 $\Phi$），行切引入一次 All-Reduce（量级 $2\Phi$）[4]。若"行切 + 行切"或"列切 + 列切"配对，中间要额外通信；**"列→行"配对让 $W_1$ 输出在本地完成拼接（就是下一层行切所需的按列分块），两层之间零额外通信**，唯一的通信就是行切后那一次求和 All-Reduce——以及 backward 对应的一次。
+**原因二：通信最小化**。列切引入一次 All-Gather（量级 $\Phi$），行切引入一次 All-Reduce（量级 $2\Phi$）[4]。若“行切 + 行切”或“列切 + 列切”配对，中间要额外通信；**“列→行”配对让 $W_1$ 输出在本地完成拼接（就是下一层行切所需的按列分块），两层之间零额外通信**，唯一的通信就是行切后那一次求和 All-Reduce——以及 backward 对应的一次。
 
-**反传是"共轭"的**：设第一层列切、第二层行切。反向传播时梯度也要穿过这两层：
+**反传是“共轭”的**：设第一层列切、第二层行切。反向传播时梯度也要穿过这两层：
 - $W_2$（forward 行切）的反向：$\nabla X_2 = \nabla Y \cdot W_2^\top$，$W_2^\top$ 按**列**切（即对输入侧而言是列切），各卡独立算 $\nabla X_{2,t}$，最后 All-Reduce 求和得到传给上一层的完整梯度；
 - $W_1$（forward 列切）的反向：$\nabla W_1 = X^\top \nabla Y$。因为 $Y$ 是拼接的，$\nabla Y$ 也按同样的列位置切开,各卡独立算各自权重梯度，**梯度本身天然分片**，无需额外通信（若有 DP，梯度交给 DP 的 All-Reduce，见 §6.3）。
 
-简言之：**反传的切分方式是前传的"转置镜像"——前传行切的层，反传在输入侧列切**，这就是 Megatron `f`/`g` 算子天然共轭的原因（张二森文 §6 用 $C@D=E \Rightarrow \nabla E @ D^\top = \nabla C$ 这张图讲透了这一点 [4]）。
+简言之：**反传的切分方式是前传的“转置镜像”——前传行切的层，反传在输入侧列切**，这就是 Megatron `f`/`g` 算子天然共轭的原因（张二森文 §6 用 $C@D=E \Rightarrow \nabla E @ D^\top = \nabla C$ 这张图讲透了这一点 [4]）。
 
 ```mermaid
 flowchart LR
@@ -120,7 +120,7 @@ flowchart LR
 
 多头注意力的四块权重：$W_Q, W_K, W_V \in \mathbb{R}^{h\times h}$（三块，每块又按 head 分成 $h/\text{head\_dim}$ 段）和输出投影 $W_O \in \mathbb{R}^{h\times h}$。
 
-- **QKV 用列切**：三块权重各自按列切开，每卡持有若干 head 的 $Q_t, K_t, V_t$。**每个 head 的注意力完全在本地计算，不跨卡**——这是整个 TP 里最"免费"的并行：本来就独立的 head 被直接分到不同卡上 [3]。
+- **QKV 用列切**：三块权重各自按列切开，每卡持有若干 head 的 $Q_t, K_t, V_t$。**每个 head 的注意力完全在本地计算，不跨卡**——这是整个 TP 里最“免费”的并行：本来就独立的 head 被直接分到不同卡上 [3]。
 - **输出投影 $W_O$ 用行切**：各卡把本地所有 head 的注意力输出 concat 后乘 $W_O$ 的局部行块，再 All-Reduce 求和，得到完整的残差输入。
 - **约束**：head 总数必须能被 $T$ 整除（GQA 场景是 KV head 数能被 $T$ 整除），否则列宽对不齐头部边界——Megatron 用 `--num-attention-heads` 和 `--tensor-model-parallel-size` 做整除校验。
 
@@ -160,11 +160,11 @@ word embedding 是 $v \times h$（词表 $\times$ 隐藏层）。按**行（词�
 2. 每卡算局部 $\sum e^{x-\max}$，All-Reduce 拿全局分母（通信量 $b\cdot s$）；
 3. 每卡直接对本地列做 softmax、只数本地词的交叉熵贡献，最后把每卡的 scalar loss All-Reduce 相加（通信量 $T$）。
 
-**总通信从 $b\cdot s\cdot v$ 降到 $2b\cdot s + T$**。以 $s=4096, v=128K, b=1$ 举例：**1.05 GB → 约 33 KB**，差 3 万倍——词表并行是 Megatron 里"性价比最高"的一段优化。[3]
+**总通信从 $b\cdot s\cdot v$ 降到 $2b\cdot s + T$**。以 $s=4096, v=128K, b=1$ 举例：**1.05 GB → 约 33 KB**，差 3 万倍——词表并行是 Megatron 里“性价比最高”的一段优化。[3]
 
 ---
 
-## 5. 一次反传走遍两层：切分在 backward 里如何"镜像"
+## 5. 一次反传走遍两层：切分在 backward 里如何“镜像”
 
 把前两节的 forward/backward 拼成一张完整计算图（参考猛猿文 §1 的 $f$/$g$ 算子图 [3]）：
 
@@ -186,7 +186,7 @@ flowchart TD
     I --> J["再下一层入口<br>All-Reduce ④<br>（每层 2 fwd + 2 bwd）"]
 ```
 
-> **激活冗余 vs 参数分片**：TP 的参数不冗余（每卡只有 $W_t$），但**"非线性算子"（LayerNorm/Dropout/残差）两侧的激活是复制的**——每卡都要持有完整序列的激活副本（张二森文 §9 明确点出 [4]）。长序列下这部分激活显存会反超权重，解法是序列并行（05 篇）——把 LayerNorm/Dropout 等沿序列切开，顺便把上图的 4 次全量 All-Reduce 也切成更小的 reduce-scatter/all-gather。
+> **激活冗余 vs 参数分片**：TP 的参数不冗余（每卡只有 $W_t$），但**“非线性算子”（LayerNorm/Dropout/残差）两侧的激活是复制的**——每卡都要持有完整序列的激活副本（张二森文 §9 明确点出 [4]）。长序列下这部分激活显存会反超权重，解法是序列并行（05 篇）——把 LayerNorm/Dropout 等沿序列切开，顺便把上图的 4 次全量 All-Reduce 也切成更小的 reduce-scatter/all-gather。
 
 ---
 
@@ -200,7 +200,7 @@ flowchart TD
 
 $$T_{\text{comm/layer}} = 4 \cdot \frac{2(T-1)}{T}\cdot\frac{b\cdot s\cdot h\cdot 2\text{B}}{\beta} = \frac{16(T-1)}{T}\cdot\frac{b\cdot s\cdot h}{\beta}$$
 
-**计算时间**：Transformer 层每 token 的 fwd+bwd FLOPs ≈ $72h^2 + 12sh$（$72h^2$ 是经典 "6N" 里每层的份额；$12sh$ 是注意力随序列的部分）[8]，TP 把每卡的负载降到 $1/T$：
+**计算时间**：Transformer 层每 token 的 fwd+bwd FLOPs ≈ $72h^2 + 12sh$（$72h^2$ 是经典 “6N” 里每层的份额；$12sh$ 是注意力随序列的部分）[8]，TP 把每卡的负载降到 $1/T$：
 
 $$T_{\text{comp/layer}} = \frac{(72h^2 + 12sh)\cdot b\cdot s}{T\cdot F\cdot \eta_{\text{calc}}}$$
 
@@ -245,7 +245,7 @@ $$\boxed{\,r = \frac{T_{\text{comm}}}{T_{\text{comp}}} \approx \frac{16(T-1)\cdo
 
 **读法**：
 - **8B 模型在 H100 上 TP=8 有 25% 通信开销**——这就是为什么 8B 级模型几乎没人把 TP 开满（见 §8：7B/8B 用 FSDP 或 TP=2/4）。
-- 70B 级 TP=8 的 13% 是"甜点区"：能显著压激活显存、且通信可接受。**这正是全行业 70B 都配 TP=8 的原因**。
+- 70B 级 TP=8 的 13% 是“甜点区”：能显著压激活显存、且通信可接受。**这正是全行业 70B 都配 TP=8 的原因**。
 - 405B 级 TP=8 只有 7%——模型越大 TP 越便宜，所以大模型反而是 TP 用得最满的地方。
 
 ### 6.3 和 DP（数据并行）的通信对比
@@ -257,17 +257,17 @@ $$\boxed{\,r = \frac{T_{\text{comm}}}{T_{\text{comp}}} \approx \frac{16(T-1)\cdo
 
 70B（h=8192）、b=1、s=4096、T=D=8 时：TP 每层 469 MB，DP 每层 3.1 GB——**小微批次下 TP 反而比 DP 便宜**；但当把全局 batch 拉大（比如 16 个 micro-batch），TP 通信 ×16 到 7.5 GB/层，迅速反超。这个不对称性解释了工程上的标准布置（下节和第 08 篇）：
 
-> **TP 负责"把单份模型摊到 8 卡里"，DP 负责"靠大 batch 撑吞吐"；TP 通信锁进 NVLink，DP 通信可以放出去。**
+> **TP 负责“把单份模型摊到 8 卡里”，DP 负责“靠大 batch 撑吞吐”；TP 通信锁进 NVLink，DP 通信可以放出去。**
 
-这也和猛猿文 §6 的结论一致：TP 与 DP 每层通信量的比较约化为 $b\cdot s$ 对 $h$（"本例前者可能略大，但量级相同"）[3]——我们把 $12h^2$ 的常数修正后得到更精确的比例 $\frac{1}{3}\cdot\frac{b\cdot s}{h}$。
+这也和猛猿文 §6 的结论一致：TP 与 DP 每层通信量的比较约化为 $b\cdot s$ 对 $h$（“本例前者可能略大，但量级相同”）[3]——我们把 $12h^2$ 的常数修正后得到更精确的比例 $\frac{1}{3}\cdot\frac{b\cdot s}{h}$。
 
 ### 6.4 和张二森实测的互验
 
-张二森文 §7.2 给的例子：Llama-3-70B、$b=8$、$s=4096$、$h=8192$、FP16（FP32 累积），单次 All-Reduce 传输量 $4096\times8\times8192\times2\text{B}=537\text{MB}$，Ring 8 卡因子 $2\times7/8=1.75$ → 940 MB @ 450 GB/s ≈ **2.0 ms，与本节公式 $\frac{2(T-1)}{T}\cdot\frac{D}{\beta}$ 完全吻合**（他文中的 1.99 ms 即此值）[4]。他据此估计通信占一个 Transformer block 计算时间的 20%~25%——**注意这对应约 90% 的极高计算效率假设**；在更现实的 50% 效率（表 3）下，同样的通信时间只占 6%~13%。**通信时间是带宽决定的硬账，占比高低取决于分母（计算效率）**——这也是为什么实测 MFU 和理论值差距大时，TP 通信在 profiler 里显得"没那么夸张"。
+张二森文 §7.2 给的例子：Llama-3-70B、$b=8$、$s=4096$、$h=8192$、FP16（FP32 累积），单次 All-Reduce 传输量 $4096\times8\times8192\times2\text{B}=537\text{MB}$，Ring 8 卡因子 $2\times7/8=1.75$ → 940 MB @ 450 GB/s ≈ **2.0 ms，与本节公式 $\frac{2(T-1)}{T}\cdot\frac{D}{\beta}$ 完全吻合**（他文中的 1.99 ms 即此值）[4]。他据此估计通信占一个 Transformer block 计算时间的 20%~25%——**注意这对应约 90% 的极高计算效率假设**；在更现实的 50% 效率（表 3）下，同样的通信时间只占 6%~13%。**通信时间是带宽决定的硬账，占比高低取决于分母（计算效率）**——这也是为什么实测 MFU 和理论值差距大时，TP 通信在 profiler 里显得“没那么夸张”。
 
 ---
 
-## 7. 1D TP 的扩展极限：为什么大模型要放弃"更细的切法"
+## 7. 1D TP 的扩展极限：为什么大模型要放弃“更细的切法”
 
 1D TP 有两个先天短板（llm_interview_note 的总结 [5]）：
 
@@ -286,9 +286,9 @@ $$\boxed{\,r = \frac{T_{\text{comm}}}{T_{\text{comp}}} \approx \frac{16(T-1)\cdo
 （成本表引自 llm_interview_note 对 Colossal-AI 论文的整理 [5]，原始论文为 2D: arXiv:2104.05343、2.5D: arXiv:2105.14500、3D: arXiv:2105.14436。）
 
 **但工程现实是：这些方案从来没有成为主流。** 原因有三：
-1. 1D TP 配合 **序列并行（05 篇）** 就把"激活/通信"两个短板同时补上了——SP 把 LayerNorm 附近的复制激活切成序列分片，并把全量 All-Reduce 换成 reduce-scatter/all-gather，通信量降一半；
+1. 1D TP 配合 **序列并行（05 篇）** 就把“激活/通信”两个短板同时补上了——SP 把 LayerNorm 附近的复制激活切成序列分片，并把全量 All-Reduce 换成 reduce-scatter/all-gather，通信量降一半；
 2. 多维切分要求 $T$ 是完全平方/立方数，跟单机 8 卡这种现实拓扑对不齐；
-3. 更细的网格切分把通信从"少数大消息"变成"更多小消息"，延迟成本上升。
+3. 更细的网格切分把通信从“少数大消息”变成“更多小消息”，延迟成本上升。
 
 **结论**：Megatron 的 1D TP（≤8）+ SP 就是今天的实际解法；多维 TP 的意义主要在论文与专门场景。
 
@@ -296,7 +296,7 @@ $$\boxed{\,r = \frac{T_{\text{comm}}}{T_{\text{comp}}} \approx \frac{16(T-1)\cdo
 
 ## 8. 不同训练场景的典型张量并行配置
 
-下面按训练场景给出工程上"会真的这么配"的 TP 设置速查表。先给硬约束，再给配置。
+下面按训练场景给出工程上“会真的这么配”的 TP 设置速查表。先给硬约束，再给配置。
 
 ### 8.1 硬约束（决定 TP 能不能这么设）
 
@@ -317,9 +317,9 @@ $$\boxed{\,r = \frac{T_{\text{comm}}}{T_{\text{comp}}} \approx \frac{16(T-1)\cdo
 | MoE（Mixtral 8x7B、DeepSeek-V3 等） | 多节点 | 常见：注意力 dense 层 TP + 专家层 EP（all-to-all）；DeepSeek-V3 特例：**PP=16 × EP=64 + ZeRO-1，完全不用 TP** | 专家参数放进 EP 网格更省通信；DeepSeek-V3 靠 DualPipe 把 EP 的 all-to-all 藏进计算，TP 反而是多余开销 [11] |
 | 长上下文预训练（s≥32K） | 1 节点 | **TP=8 + SP=8** + AC | SP 把复制激活切掉、All-Reduce 减半（05 篇）；Megatron `--sequence-parallel` |
 | MoE 推理 / 大模型 serving | vLLM/SGLang | TP=8（单机）；低并发下 PP 更优 | TP 在低 batch 下受延迟项拖累（§6.1 的 $\alpha$ 项），PP 跨机更省带宽 |
-| NVL72（Blackwell 机柜） | 72×B200 单机柜 | **TP 可开到 8 以上**（72 卡全 mesh NVLink 1.8 TB/s） | 唯一的"宽 TP"例外：NVLink 域=整柜 [12] |
+| NVL72（Blackwell 机柜） | 72×B200 单机柜 | **TP 可开到 8 以上**（72 卡全 mesh NVLink 1.8 TB/s） | 唯一的“宽 TP”例外：NVLink 域=整柜 [12] |
 
-> **为什么 70B 是 TP=8 的"甜点"**：8B 级 TP 通信占比太高（表 1）；而 70B 上 TP=8 占 13% + ZeRO 管优化器显存 → 用最少的并行种类解决最实际的问题。**"先填满单机的 TP，再跨机加 PP，最后用 DP/ZeRO 撑吞吐"** 是 2D/3D 并行的完整口诀（08 篇展开）。
+> **为什么 70B 是 TP=8 的“甜点”**：8B 级 TP 通信占比太高（表 1）；而 70B 上 TP=8 占 13% + ZeRO 管优化器显存 → 用最少的并行种类解决最实际的问题。**“先填满单机的 TP，再跨机加 PP，最后用 DP/ZeRO 撑吞吐”** 是 2D/3D 并行的完整口诀（08 篇展开）。
 
 ### 8.3 给 4 卡机器的建议
 
@@ -344,14 +344,14 @@ $$\boxed{\,r = \frac{T_{\text{comm}}}{T_{\text{comp}}} \approx \frac{16(T-1)\cdo
 1. Shoeybi et al. *Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism*. arXiv:1909.08053（Column/Row Parallel 原始推导、f/g 算子、Dropout 细节 §3.1）
 2. Narayanan et al. *Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM*. arXiv:2104.04473（3D 并行组合与 GPT-3 175B 的 TP=8/PP=4/DP=3 配置、1F1B）
 3. 猛猿. *图解大模型训练之：张量模型并行，Megatron-LM*. 知乎专栏. https://zhuanlan.zhihu.com/p/622212228 （本仓库存档：`Clippings/图解大模型训练之：张量模型并行(TP)，Megatron-LM.md`——f/g 算子图解、每层 4 次 All-Reduce 的通讯量推导、Embedding/词表并行与交叉熵优化、TP 与 DP 通讯量对比）
-4. 张二森. *大模型工程炼金术（六）分布式训练之张量并行*. 知乎专栏. https://zhuanlan.zhihu.com/p/2035041746850161108 （本仓库存档：`Clippings/大模型工程炼金术（六）分布式训练之张量并行.md`——"列切=神经元/行切=特征"的直觉、反传镜像切分、NVLink/NVSwitch 带宽分析、Llama-3-70B 的 All-Reduce 实测估算、词表并行 softmax 细节）
+4. 张二森. *大模型工程炼金术（六）分布式训练之张量并行*. 知乎专栏. https://zhuanlan.zhihu.com/p/2035041746850161108 （本仓库存档：`Clippings/大模型工程炼金术（六）分布式训练之张量并行.md`——“列切=神经元/行切=特征”的直觉、反传镜像切分、NVLink/NVSwitch 带宽分析、Llama-3-70B 的 All-Reduce 实测估算、词表并行 softmax 细节）
 5. wdndev. *llm_interview_note：04.分布式训练/4.张量并行*. GitHub. https://github.com/wdndev/llm_interview_note/blob/main/04.%E5%88%86%E5%B8%83%E5%BC%8F%E8%AE%AD%E7%BB%83/4.%E5%BC%A0%E9%87%8F%E5%B9%B6%E8%A1%8C/4.%E5%BC%A0%E9%87%8F%E5%B9%B6%E8%A1%8C.md （本仓库存档：`Clippings/llm_interview_note04.分布式训练4.张量并行4.张量并行.md at main.md`——1D/2D/2.5D/3D 成本表、SUMMA 推导、PyTorch DTensor 用法）
 6. PyTorch. *Tensor Parallel 教程 / DTensor 文档*: https://pytorch.org/tutorials/intermediate/TP_tutorial.html 与 https://pytorch.org/tutorials/recipes/distributed_tensor_parallel.html
 7. Patarasuk & Yuan. *Ring Allreduce: A Scalable Approach to Data-Parallel Training*. ICS 2009（本系列 07 篇的 Ring 公式来源）
-8. Kaplan et al. *Scaling Laws for Neural Language Models*. arXiv:2001.08361（"6N FLOPs/token"的训练算力经验式，本文 §6.1 的 $72h^2$ 结论依据）
+8. Kaplan et al. *Scaling Laws for Neural Language Models*. arXiv:2001.08361（“6N FLOPs/token”的训练算力经验式，本文 §6.1 的 $72h^2$ 结论依据）
 9. Liu et al. *The Llama 3 Herd of Models*. arXiv:2407.21783；及 *Scaling Llama 3 Training with Efficient Parallelism Strategies*（ISCA 2025）（8B 用 FSDP；405B 用 4D 并行：TP=8 × PP=16 × DP=128（×CP），共 16,384 张 H100）
 10. NVIDIA. *Megatron-LM 官方仓库*: https://github.com/NVIDIA/Megatron-LM
-11. DeepSeek-AI. *DeepSeek-V3 Technical Report*. arXiv:2412.19437（训练用 PP=16 + EP=64 + ZeRO-1；原文明确"optimize the memory footprint…train DeepSeek-V3 without using costly TP"，即 MoE 大模型可完全弃用张量并行）
+11. DeepSeek-AI. *DeepSeek-V3 Technical Report*. arXiv:2412.19437（训练用 PP=16 + EP=64 + ZeRO-1；原文明确“optimize the memory footprint…train DeepSeek-V3 without using costly TP”，即 MoE 大模型可完全弃用张量并行）
 12. NVIDIA. *DGX GB200 NVL72 / Blackwell 白皮书*: https://www.nvidia.com/en-us/data-center/dgx-gb200-nvl72/（全 mesh NVLink 支持跨 72 GPU 的 TP）
 
 ---

@@ -46,7 +46,7 @@ mathjax: true
 | 解释器对照组 | numpy eager 对照组 | —— |
 
 关键差异只有两处：
-1. **优化对象从标量变为张量**：收益模型从"指令数"变成"内存往返次数"——这是融合成为第一优化的原因；
+1. **优化对象从标量变为张量**：收益模型从“指令数”变成“内存往返次数”——这是融合成为第一优化的原因；
 2. **正确性判据从容差为零变为容差预算**：浮点重结合允许微小偏差，验收用 `allclose(atol=1e-5)`。
 
 <a name="2"></a>
@@ -190,7 +190,7 @@ def pass_const_fold(g):
 
 **问题一：闭包条件**。中间成员若还被链外消费者引用（fan-out > 1），把它内联进 fuse 组就会重复计算甚至改变语义。解法：入组条件加 `consumer_count == 1`。
 
-**问题二：引用重接**。Python 对象图里，"删节点"不会自动更新别人的 `inputs` 列表；漏掉重接会产生悬空引用和幽灵重复融合。解法：替换后显式遍历全图改写引用。
+**问题二：引用重接**。Python 对象图里，“删节点”不会自动更新别人的 `inputs` 列表；漏掉重接会产生悬空引用和幽灵重复融合。解法：替换后显式遍历全图改写引用。
 
 ```python
 def consumer_counts(g):
@@ -429,7 +429,7 @@ static void compute(const float *restrict p_x, const float *restrict p_y, float 
 }
 ```
 
-七个中间值全部是标量局部变量——`restrict` 告诉 clang 无别名混叠，`-O2` 自动向量化为 NEON 指令。对比 eager 版本：同样这六个操作，numpy 要启动六个 kernel、读写七次 64 MB 数组。**这就是"融合消除 HBM 往返"的字面意思。**
+七个中间值全部是标量局部变量——`restrict` 告诉 clang 无别名混叠，`-O2` 自动向量化为 NEON 指令。对比 eager 版本：同样这六个操作，numpy 要启动六个 kernel、读写七次 64 MB 数组。**这就是“融合消除 HBM 往返”的字面意思。**
 
 <a name="5"></a>
 ## 5. Triton 工件与双目标的意义
@@ -482,7 +482,7 @@ def fused_silu_mul_add(x_ptr, y_ptr, out_ptr, n_elements, BLOCK: tl.constexpr):
 | 数组往返次数 | 7 × 256 MB | 3 × 256 MB（读 x/y，写 out）|
 | 数值一致性 | —— | allclose(r_eager, r_c, atol=1e-5) = True |
 
-**加速比 19.45x**。拆解一下账本：eager 的 53 ms ≈ 1792 MB 流量 ÷ ~34 GB/s 有效带宽；融合版 2.75 ms ≈ 192 MB ÷ 70 GB/s——后者已经贴近 arm64 单核可达的带宽天花板。**融合的收益上限就是"省掉的流量 ÷ 剩余流量"，当剩余部分贴住带宽极限时加速比自然封顶**。这也解释了为什么 Inductor/TensorRT 在访存受限模型上收益巨大，而在纯 GEMM 大矩阵上收益有限（GEMM 是计算受限，瓶颈不在往返）。
+**加速比 19.45x**。拆解一下账本：eager 的 53 ms ≈ 1792 MB 流量 ÷ ~34 GB/s 有效带宽；融合版 2.75 ms ≈ 192 MB ÷ 70 GB/s——后者已经贴近 arm64 单核可达的带宽天花板。**融合的收益上限就是“省掉的流量 ÷ 剩余流量”，当剩余部分贴住带宽极限时加速比自然封顶**。这也解释了为什么 Inductor/TensorRT 在访存受限模型上收益巨大，而在纯 GEMM 大矩阵上收益有限（GEMM 是计算受限，瓶颈不在往返）。
 
 <a name="7"></a>
 ## 7. 调试战报：三个真 bug
@@ -491,7 +491,7 @@ def fused_silu_mul_add(x_ptr, y_ptr, out_ptr, n_elements, BLOCK: tl.constexpr):
 症状：小图融合后出现两个 fuse 节点且其中一个引用已被删除的死成员。根因：创建 fuse 节点并删除旧成员后，没有把外部消费者（包括 output）对根节点的引用改接到新节点——旧 add 节点仍被 silu 的 inputs 持有，下一轮又把它当活节点吞了一次。教训：**图重写的完整性 = 结构替换 + 全图引用重写，缺一不可**。Inductor 内部为此维护统一的 mutation 机制，道理相同。
 
 **Bug 2：flat 成员表漏叶子**
-症状：C 生成时 KeyError。根因：递归收集成员时只登记了组内 elementwise 节点，作为叶子的 input/const 没进表。教训：**序列化表达式树时叶子也是节点**。"能内联的东西也要出现在 IR 里"是调试期最重要的纪律——优化掉它们是代码生成的职责，不是 IR 构造的职责。
+症状：C 生成时 KeyError。根因：递归收集成员时只登记了组内 elementwise 节点，作为叶子的 input/const 没进表。教训：**序列化表达式树时叶子也是节点**。“能内联的东西也要出现在 IR 里”是调试期最重要的纪律——优化掉它们是代码生成的职责，不是 IR 构造的职责。
 
 **Bug 3：基准被文件 I/O 污染**
 症状：第一版基准显示加速比 0.99x——因为每次迭代都重新从磁盘读 192 MB 输入，I/O 时间完全淹没计算差异。修复：数据驻留进程内、循环计时取 best-of-7。教训：**测融合性能必须隔离数据搬运**；反过来，部署场景中如果输入真的每次都来自磁盘，融合收益确实会被吃掉大半——benchmark 方法论本身就是编译器工程的一部分（第 12 篇展开）。
@@ -500,7 +500,7 @@ def fused_silu_mul_add(x_ptr, y_ptr, out_ptr, n_elements, BLOCK: tl.constexpr):
 ## 8. 批判与展望
 
 * **MAC 距离可用产品还差三座山**：自动微分（训练侧）、动态 shape（guard/符号推导）、真正的 tuning 回路（tile 尺寸枚举）。每一座都是工业团队数年投入——但方向全部在本系列的射程内。
-* **归约（mean/sum）尚未支持**：跨行归约打破"单循环"结构，需要两层循环或 welford 分段——Inductor 用 template + Reduction hint 处理，是很好的进阶阅读材料。
+* **归约（mean/sum）尚未支持**：跨行归约打破“单循环”结构，需要两层循环或 welford 分段——Inductor 用 template + Reduction hint 处理，是很好的进阶阅读材料。
 * **最有价值的迁移练习**：把第 02 篇的支配树/SSA 构建接进来，让 MAC 支持带控制流的图；再把第 03 篇的 DCE 接到融合之后清理死分支。做完这两件事，你对 AI 编译器的理解会超过大多数面试者。
 
 ## FAQ
@@ -523,4 +523,4 @@ def fused_silu_mul_add(x_ptr, y_ptr, out_ptr, n_elements, BLOCK: tl.constexpr):
 
 ---
 
-> **下一篇**：[第 12 篇 编译器工程化](/2026/08/25/compiler-12-engineering/)——lit/FileCheck 测试体系、差分测试与 fuzzing、benchmark 方法学，以及"自研还是复用"的决策框架：编译器项目的成败一半在仓库之外。
+> **下一篇**：[第 12 篇 编译器工程化](/2026/08/25/compiler-12-engineering/)——lit/FileCheck 测试体系、差分测试与 fuzzing、benchmark 方法学，以及“自研还是复用”的决策框架：编译器项目的成败一半在仓库之外。

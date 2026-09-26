@@ -13,12 +13,12 @@ mathjax: true
 > [04 流水并行](/2026/08/31/dist-train-04-pipeline-parallel/) ← **本篇** → [06 专家并行](/2026/08/31/dist-train-06-expert-parallel/)
 
 **TL;DR**
-> * DP 拆 batch、TP 拆矩阵、PP 拆层——**序列并行（SP）拆的是"序列"**：当上下文长度 $S$ 大到单卡放不下注意力矩阵/激活时，把序列切成 $N$ 段分发到 $N$ 张卡。**超长上下文（128K+）训练/推理的基本盘就是它。**
-> * 两种"序列并行"要分清：
->   - **Megatron 的序列并行（SP，2022）**：只把 LayerNorm / Dropout 这类"沿序列独立"的算子沿序列切开，配合 TP 复用同一套 All-Reduce **省掉一组激活的归约**，通信量几乎不变、显存略降——**它是 TP 的附赠优化**，不是独立并行。
->   - **上下文并行 / Ring Attention（2023-）**：把注意力计算本身沿序列切分，卡间用 **Ring All-to-All** 传递 KV 分块，让**注意力矩阵不用整体驻留**就能算完——**这才是真正解决"单卡装不下超长序列"的并行**。
+> * DP 拆 batch、TP 拆矩阵、PP 拆层——**序列并行（SP）拆的是“序列”**：当上下文长度 $S$ 大到单卡放不下注意力矩阵/激活时，把序列切成 $N$ 段分发到 $N$ 张卡。**超长上下文（128K+）训练/推理的基本盘就是它。**
+> * 两种“序列并行”要分清：
+>   - **Megatron 的序列并行（SP，2022）**：只把 LayerNorm / Dropout 这类“沿序列独立”的算子沿序列切开，配合 TP 复用同一套 All-Reduce **省掉一组激活的归约**，通信量几乎不变、显存略降——**它是 TP 的附赠优化**，不是独立并行。
+>   - **上下文并行 / Ring Attention（2023-）**：把注意力计算本身沿序列切分，卡间用 **Ring All-to-All** 传递 KV 分块，让**注意力矩阵不用整体驻留**就能算完——**这才是真正解决“单卡装不下超长序列”的并行**。
 > * **Ring Attention 的核心数学**：把完整注意力 $O = \text{softmax}(QK^\top)V$（$Q,K,V \in \mathbb{R}^{S\times d}$）切成 $N$ 块 $Q_i, K_j, V_j$。每个 query 块 $O_i$ 需要全部 $N$ 个 key/value 块，串联成环每次只持有一个 $K_j,V_j$ 块、**用 Online Softmax 的流式技巧**（分片 max/sum 的可结合性）逐块更新 $O_i$——总通信量 = 每卡传 $N-1$ 轮 KV 块，**约 $2 \times \frac{N-1}{N} \times$ 单卡 KV 总量**，与 07 篇 Ring All-Reduce 同构。
-> * **工程铁律**：SP 的正确性取决于 **Online Softmax 分片更新的可结合性**；别用朴素 $\frac{e^{q\cdot k}}{\sum e^{q\cdot k}}$ 逐块拼接（必须全局归一）。配合 Flash Attention 的 kernel 内融合，Ring Attention 在现代实现里就是"FA + 环传输"。
+> * **工程铁律**：SP 的正确性取决于 **Online Softmax 分片更新的可结合性**；别用朴素 $\frac{e^{q\cdot k}}{\sum e^{q\cdot k}}$ 逐块拼接（必须全局归一）。配合 Flash Attention 的 kernel 内融合，Ring Attention 在现代实现里就是“FA + 环传输”。
 
 ```mermaid
 flowchart LR
@@ -33,7 +33,7 @@ flowchart LR
 
 ---
 
-## 1. 问题定义：注意力是"全对全"，序列长了就爆显存
+## 1. 问题定义：注意力是“全对全”，序列长了就爆显存
 
 单头注意力计算 $O = \text{softmax}(Q K^\top / \sqrt{d}) V$。**中间量 $QK^\top \in \mathbb{R}^{S \times S}$ 是平方级**：
 
@@ -64,13 +64,13 @@ $$O^{(t+1)} = O^{(t)} \cdot e^{m^{(t)} - m^{(t+1)}} + e^{S_t - m^{(t+1)}} V_t$$
 
 ---
 
-## 3. 另一种"序列并行"：Megatron-SP（TP 的附赠品）
+## 3. 另一种“序列并行”：Megatron-SP（TP 的附赠品）
 
 Megatron 的 Sequence Parallel（2022，与 Colossal-AI 同期）完全不是一回事：
 
-- Transformer 里 **LayerNorm 与 Dropout 是"沿序列逐 token 独立"的算子**：输出第 $s$ 行只依赖输入第 $s$ 行。
+- Transformer 里 **LayerNorm 与 Dropout 是“沿序列逐 token 独立”的算子**：输出第 $s$ 行只依赖输入第 $s$ 行。
 - 在 TP=2/4/8 时，这些算子的输入 $X \in \mathbb{R}^{S \times d}$ 被**每卡完整复制**（因为矩阵算子的 All-Reduce 输出完整激活）。SP 把 $X$ 沿序列切成 $N$ 份给 $N$ 卡，**让 LayerNorm/Dropout 各算各的，省掉一次激活的跨卡复制**。
-- 代价：在矩阵算子边界仍要 Hit 一次 All-Reduce 把激活拼回来。**净效果：通信量不变（或略省），显存省下"LayerNorm/Dropout 的激活复制"那份**。
+- 代价：在矩阵算子边界仍要 Hit 一次 All-Reduce 把激活拼回来。**净效果：通信量不变（或略省），显存省下“LayerNorm/Dropout 的激活复制”那份**。
 
 结论：**Megatron-SP 是小优化；真正解决长序列的是 Ring Attention / Context Parallel（上下文并行）。** 大模型实践通常两者叠加（Transformer 矩阵部分用 TP-Ring，Norm/Dropout 用 SP），DeepSeek 的 DeepSeek-V3 也用了 Sparse Attention 的 context parallel 变体。
 
@@ -81,7 +81,7 @@ Megatron 的 Sequence Parallel（2022，与 Colossal-AI 同期）完全不是一
 1. **Ring Attention 的 kernel 选择**：最佳实现是 FlashAttention 的 kernel 融合 + 分块 KV 缓存 + 环传输。参考实现：`flash-attn` 的 ring 变体（`ring_flash_attn` in Liger/FlashAttention-3 相关）、PyTorch 2.2+ 的 `context_parallel`、以及 `fms`（IBM）的 Ring Attention。2025-2026 年社区主流是 **PyTorch `context_parallel` API**（`torch.distributed.tensor.parallel` 之外的自研）与 **DeepSeek 的 sparse attention**。
 2. **负载均衡**：Ring 要求各段的 KV 块**等长**。变长序列（如文档级推理）需要 padding 或用 poplar 式的变长 SP。
 3. **与 PP/TP 的组合**：SP 独立于 TP/PP——推荐顺序：**TP（单机）→ SP（上下文）→ PP（跨机）**；128K 训练的组合通常为 TP=8 × SP（Ring 覆盖全部上下文）× DP/ZeRO。
-4. **因果掩码的妙处**：LLM 的注意力是 causally masked（右上三角为 0）。Ring Attention 可以更激进：**query 块 $i$ 只需要 $j \le i$ 的 KV 块**，环可以只转"下半环"，通信量再省一半（实现如 DeepSeek-V3 的 FA 改进）。
+4. **因果掩码的妙处**：LLM 的注意力是 causally masked（右上三角为 0）。Ring Attention 可以更激进：**query 块 $i$ 只需要 $j \le i$ 的 KV 块**，环可以只转“下半环”，通信量再省一半（实现如 DeepSeek-V3 的 FA 改进）。
 
 ---
 

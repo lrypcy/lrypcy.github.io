@@ -13,9 +13,9 @@ mathjax: true
 > [第 06 篇 LLVM/Clang 剖析](/2026/08/25/compiler-06-llvm-clang/) ← **本篇** → [第 8 篇 XLA 与 MLIR/IREE](/2026/08/25/compiler-08-xla-mlir-iree/)
 
 **TL;DR**
-* TVM 的架构答案是"两层 IR + 一条搜索回路"：**Relax**（图级 IR，管融合/内存规划/动态 shape）逐算子下发到 **TensorIR**（算子级 IR，管循环变换），再由 **MetaSchedule** 把调度选择变成可缓存的搜索问题。这与第 04 篇的经典后端三工序形成精确同构。
+* TVM 的架构答案是“两层 IR + 一条搜索回路”：**Relax**（图级 IR，管融合/内存规划/动态 shape）逐算子下发到 **TensorIR**（算子级 IR，管循环变换），再由 **MetaSchedule** 把调度选择变成可缓存的搜索问题。这与第 04 篇的经典后端三工序形成精确同构。
 * 本文是架构级解剖，聚焦三个机制的设计动机：`call_tir` 约定如何让图级与算子级解耦、DataflowBlock 如何标注融合边界、tuning record 如何让编译产物跨机器复用。手把手操作层面请配合本地已有文章[1][2]。
-* 客观评价放在最后：TVM 是开源 AI 编译器中"教学完备度"最高的项目，但工业落地率低于其声量——原因值得每一个自研编译器团队深思。
+* 客观评价放在最后：TVM 是开源 AI 编译器中“教学完备度”最高的项目，但工业落地率低于其声量——原因值得每一个自研编译器团队深思。
 
 ---
 
@@ -69,7 +69,7 @@ graph TD
 
 ### 3.1 设计动机
 
-Relay 的静态 shape 推导在 LLM 场景全面失灵：变长序列、batch 动态、KV cache 增长都要求"shape 是运行时值而非编译期常量"。Relax 的应对是把 shape 提升为一等符号对象（`T.SymbolicVar`），推导从"算出具体数字"改为"维护符号约束"。
+Relay 的静态 shape 推导在 LLM 场景全面失灵：变长序列、batch 动态、KV cache 增长都要求“shape 是运行时值而非编译期常量”。Relax 的应对是把 shape 提升为一等符号对象（`T.SymbolicVar`），推导从“算出具体数字”改为“维护符号约束”。
 
 ### 3.2 两个关键机制
 
@@ -79,11 +79,11 @@ Relay 的静态 shape 推导在 LLM 场景全面失灵：变长序列、batch �
 lv1 = R.call_tir(te_matmul, (lv0, w0), out_sinfo=R.Tensor((M, N), "float16"))
 ```
 
-语义被严格限定为"纯函数：给定输入张量，写满输出张量，无副作用"。这个约定带来两个结构性收益：
+语义被严格限定为“纯函数：给定输入张量，写满输出张量，无副作用”。这个约定带来两个结构性收益：
 1. 图级 pass 不需要理解算子内部即可做融合决策（只看纯函数边界）；
 2. 下发的 TensorIR 可以独立缓存/独立调优——编译产物天然分块。
 
-**DataflowBlock**——融合范围的显式声明。Relax 函数体由若干 `R.dataflow()` 块组成，块内的中间张量保证不被外部引用（locality 保证），因此块内可以做积极的内存复用与融合，块边界则是保守屏障。这相当于把经典编译器的"use 不逃逸分析"结果做成了语法结构，pass 不必再自己证明。
+**DataflowBlock**——融合范围的显式声明。Relax 函数体由若干 `R.dataflow()` 块组成，块内的中间张量保证不被外部引用（locality 保证），因此块内可以做积极的内存复用与融合，块边界则是保守屏障。这相当于把经典编译器的“use 不逃逸分析”结果做成了语法结构，pass 不必再自己证明。
 
 ### 3.3 Relay → Relax 对照
 
@@ -131,14 +131,14 @@ TensorIR 的形式：一个张量程序的**初始状态**（朴素循环实现�
 2. **Mutation**：在骨架上随机扰动参数（tile 大小、unroll 因子……），生成具体候选；
 3. **Measure**：真实跑一遍取时延，写入 tuning record 数据库。
 
-三段式的精髓在**知识的持久化**：tuning record 按 target + workload 键控存储，换机器只需增量调优，CI 里可以离线回放。这解决了 AutoTVM 时代"每次发版重调一周"的工程噩梦。
+三段式的精髓在**知识的持久化**：tuning record 按 target + workload 键控存储，换机器只需增量调优，CI 里可以离线回放。这解决了 AutoTVM 时代“每次发版重调一周”的工程噩梦。
 
 与 Ansor 的关系值得澄清：Ansor 的贡献是免模板的搜索空间生成（derivation rules 替代人工模板），MetaSchedule 在工程上继承了其思想并统一进 TensorIR 抽象。两者论文分别见[3][4]。
 
 <a name="6"></a>
 ## 6. BYOC：务实的旁路
 
-不是所有硬件都值得写全栈后端。BYOC（Bring Your Own Codegen）允许把"白名单算子子图"直接交给厂商库（cuBLAS/CANN/自研工具链），其余留在 TVM 主线。架构上是把"部分图替换"做成通用 pass 框架——本质是第 02 篇讲的 pattern rewrite 的商业应用。
+不是所有硬件都值得写全栈后端。BYOC（Bring Your Own Codegen）允许把“白名单算子子图”直接交给厂商库（cuBLAS/CANN/自研工具链），其余留在 TVM 主线。架构上是把“部分图替换”做成通用 pass 框架——本质是第 02 篇讲的 pattern rewrite 的商业应用。
 
 选型判断标准一句话：**有成熟厂商库且算子覆盖率 >80%，用 BYOC；需要极致定制（新 ISA、特殊数据流），才考虑全栈接入 TensorIR**。地平线等国内团队的实践复盘见本地文章[2]。
 
@@ -158,7 +158,7 @@ Relax。Relay 已处于维护模式，官方文档的 deep dive 系列全部围�
 定位不同。TensorIR 是完整调度语言（tiling/layout/异步流水全覆盖），Triton 是面向 kernel 作者的生产力 DSL（隐藏了大部分 layout 细节）。前者表达力上限高、上手陡；后者相反。Inductor 选 Triton、部分 NPU 团队选 TensorIR，都是各自约束下的理性选择。
 
 **Q3：MetaSchedule 调出来的结果能信任吗？**
-要区分两种信任：数值正确性由 TensorIR 变换的可验证性保证（可信）；性能最优性只是"测过的候选里最好"，换硬件/换输入分布就可能失效——所以 tuning record 必须绑定 target 元数据，部署前建议抽样复测。
+要区分两种信任：数值正确性由 TensorIR 变换的可验证性保证（可信）；性能最优性只是“测过的候选里最好”，换硬件/换输入分布就可能失效——所以 tuning record 必须绑定 target 元数据，部署前建议抽样复测。
 
 ## 参考资料
 

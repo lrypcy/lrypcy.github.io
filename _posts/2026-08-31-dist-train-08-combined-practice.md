@@ -13,10 +13,10 @@ mathjax: true
 > [07 集合通信地基](/2026/08/31/dist-train-07-collective-comm/) ← **本篇**（系列完结）→ [00 全景总览](/2026/08/31/dist-train-00-overview/)
 
 **TL;DR**
-> * 前 7 篇各解决一个轴，**真正的生产系统是"多维并行"的组合**：把 DP、ZeRO、TP、PP、EP、SP 按"通信必须靠近硬件"的纪律编排进 2D/3D 并行网格。**目标函数只有一句话：高频通信锁 NVLink，低频通信过跨机网络。**
-> * **2D 并行＝（跨机 DP/ZeRO）×（单机 TP+PP，Megatron 式）**：最常见的工业配置是 **DP=跨机数 × TP=8 × PP=每机段数**。每个"TP×PP"进程组构成一张"模型并行卡组（MP node）"，DP 在组间复制——梯度 All-Reduce 只在组间发生。
+> * 前 7 篇各解决一个轴，**真正的生产系统是“多维并行”的组合**：把 DP、ZeRO、TP、PP、EP、SP 按“通信必须靠近硬件”的纪律编排进 2D/3D 并行网格。**目标函数只有一句话：高频通信锁 NVLink，低频通信过跨机网络。**
+> * **2D 并行＝（跨机 DP/ZeRO）×（单机 TP+PP，Megatron 式）**：最常见的工业配置是 **DP=跨机数 × TP=8 × PP=每机段数**。每个“TP×PP”进程组构成一张“模型并行卡组（MP node）”，DP 在组间复制——梯度 All-Reduce 只在组间发生。
 > * **3D 并行＝在 2D 上再叠一层**：要么加 **EP**（超大 MoE），要么加 **SP**（超长上下文）。DeepSeek-V3 的 DSA 就是 3D 的教科书：ZeRO-3（DP 轴）+ TP/EP（域内）+ Sparse Attention（SP）。**关键等式**（全局卡数 = DP × TP × PP × EP 所用的轴乘积）：$N_{\text{total}} = N_{\text{DP}} \times N_{\text{TP}} \times N_{\text{PP}} \times N_{\text{EP}}$。
-> * **编排顺序是性能的一半**：先决定"单机内并行组合"（TP+PP 或 TP+EP），再决定"跨机复制"（DP/ZeRO），最后决定"序列/上下文轴"（SP）。**模型规模 → 轴分配表**是唯一的仲裁官（见 §5 决策树）。
+> * **编排顺序是性能的一半**：先决定“单机内并行组合”（TP+PP 或 TP+EP），再决定“跨机复制”（DP/ZeRO），最后决定“序列/上下文轴”（SP）。**模型规模 → 轴分配表**是唯一的仲裁官（见 §5 决策树）。
 > * **最小可运行配置**：`Megatron-LM + DeepSpeed` 双引擎（Transformer 层用 Megatron TP/PP、优化器用 DeepSpeed ZeRO）是 700B 级训练的标准组合；本节给出**一套 64 卡可跑的 2D 配置的 step-by-step 清单**。
 
 ```mermaid
@@ -35,7 +35,7 @@ flowchart TD
 
 ---
 
-## 1. 为什么"组合"不是灵机一动，而是被带宽逼出来的
+## 1. 为什么“组合”不是灵机一动，而是被带宽逼出来的
 
 刷一遍前 7 篇的通信/带宽属性，唯一的硬约束浮现出来：
 
@@ -48,7 +48,7 @@ flowchart TD
 | EP | 每 MoE 层 | token 块 | 每层 2 次 | 勉强（DeepSeek 锁单机） |
 | SP (Ring) | 每轮 | KV 块 | **串行每轮** | 延迟敏感，域内优先 |
 
-**结论是铁律**：TP 永远在 NVLink 内；PP 是最好的跨机候选；DP/ZeRO 是"最灵活"的轴（任何地方都能加，只需管好梯度带宽）；EP 和 SP 要贴着拓扑。**于是最小可行组合 = (TP×PP) 组内 + (DP/ZeRO) 组间——这就是 2D 并行的全部秘密。**
+**结论是铁律**：TP 永远在 NVLink 内；PP 是最好的跨机候选；DP/ZeRO 是“最灵活”的轴（任何地方都能加，只需管好梯度带宽）；EP 和 SP 要贴着拓扑。**于是最小可行组合 = (TP×PP) 组内 + (DP/ZeRO) 组间——这就是 2D 并行的全部秘密。**
 
 ---
 
@@ -58,13 +58,13 @@ flowchart TD
 
 1. **进程组划分**：`world_size=64`。定义两个组：
    - `model_parallel_group`（TP×PP）= 每 8 卡（1 机）一个 TP 组；每 4 机（32 卡）组成一条流水线；
-   - `data_parallel_group` = 跨"模型并行组"的复制组（8 条流水线的同序号卡）。
+   - `data_parallel_group` = 跨“模型并行组”的复制组（8 条流水线的同序号卡）。
 2. **TP 通信**：只在 `model_parallel_group` 内 All-Reduce（NVLink，4 μs 级延迟）。
 3. **PP 通信**：`p2p` 只发生在流水线相邻段（跨机，但低频大量）。
 4. **梯度同步**：DP 的 All-Reduce 走 `data_parallel_group`（跨机那条链路），每步 1 次 $2\Phi$。
 5. **ZeRO 合并 DP**：把 DP 的 All-Reduce 换成 ZeRO-2/3 的 reduce-scatter + all-gather（跨机带宽此刻被平摊成 $\Phi/N$）。
 
-**为什么这样是对的（性能账）**：TP=8 × PP=4 时，跨机通信只有两条：PP 激活（每微批 1 次）与 DP 梯度（每步 1 次）。对比"无脑 DP=64"——梯度 All-Reduce 每步 $2\Phi$ 且**每台机器都要跨机传**，跨机带宽瞬间耗光。**编排的本质就是在带宽受限的边界上少发消息。**
+**为什么这样是对的（性能账）**：TP=8 × PP=4 时，跨机通信只有两条：PP 激活（每微批 1 次）与 DP 梯度（每步 1 次）。对比“无脑 DP=64”——梯度 All-Reduce 每步 $2\Phi$ 且**每台机器都要跨机传**，跨机带宽瞬间耗光。**编排的本质就是在带宽受限的边界上少发消息。**
 
 > **Megatron-LM 的 `parallel-size` 三个 flag** 与上述一一对应：`--tensor-model-parallel-size 8`、`--pipeline-model-parallel-size 4`、`--data-parallel-size 2`（最后算出来的 DP = total / (TP*PP)，无需显式给出——**不用手填 `--data-parallel-size`**，分布在你配置的一组命令里；Tensor 并行与流水并行的大小和机制详见 Megatron 仓库注释）。
 
@@ -72,7 +72,7 @@ flowchart TD
 
 ## 3. 3D 并行：何时叠 EP、何时叠 SP
 
-**叠 EP（MoE 模型）**：TP/PP/DP 保持，把 MoE 层重排为"专家并行"：
+**叠 EP（MoE 模型）**：TP/PP/DP 保持，把 MoE 层重排为“专家并行”：
 
 - 非 MoE 层走 2D（TP×PP+DP）；
 - MoE 层上的专家按 EP 放满一张机器（NVLink 内），All-to-All 只在机内；
@@ -146,7 +146,7 @@ which nccl-tests all_reduce_perf || echo "装 nccl-tests 并先验证带宽"  # 
   预算到顶 → 用 07 篇的带宽账本再压一轮
 ```
 
-**收尾一句话**：这一串决策的终点不是一个"配置文件"，而是**一张通信账本**——把每一步通信标上"在哪条链路上、多大、多频繁"，你的并行方案是否合格，账本一算即知。
+**收尾一句话**：这一串决策的终点不是一个“配置文件”，而是**一张通信账本**——把每一步通信标上“在哪条链路上、多大、多频繁”，你的并行方案是否合格，账本一算即知。
 
 ---
 

@@ -16,11 +16,11 @@ mathjax: true
 
 > **TL;DR**
 >
-> * **主线 26 篇漏掉了一个整块**：它们都在做同一件事——**固定权重字母表（均匀整数网格），优化 scale / 裁剪 / 舍入方向 / 旋转**。1-bit 与三元量化做的是另一件事：**换掉字母表本身**，把权重的可取值从"几千个电平"压到 $\{-1,0,+1\}$ 或 $\{-1,+1\}$。这不是同一条路的更远一端，是另一条路。
+> * **主线 26 篇漏掉了一个整块**：它们都在做同一件事——**固定权重字母表（均匀整数网格），优化 scale / 裁剪 / 舍入方向 / 旋转**。1-bit 与三元量化做的是另一件事：**换掉字母表本身**，把权重的可取值从“几千个电平”压到 $\{-1,0,+1\}$ 或 $\{-1,+1\}$。这不是同一条路的更远一端，是另一条路。
 > * **Bonsai 有两个，别混**：① **deepgrove-ai/Bonsai**（2025-03，500M，三元 $\{-1,0,1\}$ + per-output-feature 可学习 scale，<5B tokens 从零训练，**代码全开源**）；② **PrismML Bonsai**（2026-03 起 8B，2026-07 起 27B，**1-bit binary g128 + 分组 FP16 scale**，端到端覆盖 embedding 与 LM head，**权重开源 Apache 2.0、方法闭源**）。本文两个都拆。
 > * **反直觉发现（本文实测，§7）**：三元字母表下**细化粒度几乎没用**——g256→g32 让位宽涨 27%（1.65→2.09 bpw），重建误差只从 65.96% 降到 63.85%。同样这笔位宽花在 INT4 上，误差能从 74.36%（per-tensor）砍到 14.97%（g32）。**位宽预算该花在哪，取决于字母表**：字母表越粗，粒度越不值钱。这是 Bonsai 敢用 g128 的真正原因。
-> * **第二个反直觉发现（§8 实验 D）**：在小规模可控任务上，**"训完再量化" 并不一定输给 "量化在环内训练"**——从随机初始化开始做 STE 原生训练（0.339）反而差于训完再量化（0.256），最优路径是**第三条：从全精度解出发做量化在环微调**（0.221）。而且三条路径距离全精度上界（0.0025）都还有两个数量级。**结论：低比特的瓶颈是表示容量，不是优化器**——这正是 Bonsai 必须叠蒸馏、而不只是叠 STE 的原因。
-> * **可核验性警告**：PrismML 的核心训练配方**没有公开**（Caltech 授权专利，白皮书只披露格式与 benchmark）。二手来源对"是 PTQ 还是 QAT"说法互相矛盾。本文会明确区分**格式层事实**（可核验）与**方法层说法**（待验证）。
+> * **第二个反直觉发现（§8 实验 D）**：在小规模可控任务上，**“训完再量化” 并不一定输给 “量化在环内训练”**——从随机初始化开始做 STE 原生训练（0.339）反而差于训完再量化（0.256），最优路径是**第三条：从全精度解出发做量化在环微调**（0.221）。而且三条路径距离全精度上界（0.0025）都还有两个数量级。**结论：低比特的瓶颈是表示容量，不是优化器**——这正是 Bonsai 必须叠蒸馏、而不只是叠 STE 的原因。
+> * **可核验性警告**：PrismML 的核心训练配方**没有公开**（Caltech 授权专利，白皮书只披露格式与 benchmark）。二手来源对“是 PTQ 还是 QAT”说法互相矛盾。本文会明确区分**格式层事实**（可核验）与**方法层说法**（待验证）。
 
 ---
 
@@ -65,11 +65,11 @@ $$\mathcal{A}_{\text{INT4}} = \{-8,\dots,7\}\ (16\ \text{个电平})\quad\longri
 这个动作的后果是**双重的**：
 
 1. **好的一面**：权重矩阵乘法 $y = \sum_j x_j w_j$ 中 $w_j\in\{-1,0,+1\}$，乘法退化为**加法/减法/跳过**，可以完全绕开浮点乘加单元。
-2. **坏的一面**：均匀量化在 $b\to 1$ 时的 $\text{SQNR}\approx 6.02b$ dB 直接崩到 6 dB，且**这个损失不可能靠调 scale 找回来**——因为误差来自"网格太稀"，而不是"网格没对齐"。
+2. **坏的一面**：均匀量化在 $b\to 1$ 时的 $\text{SQNR}\approx 6.02b$ dB 直接崩到 6 dB，且**这个损失不可能靠调 scale 找回来**——因为误差来自“网格太稀”，而不是“网格没对齐”。
 
-于是这条线只有一条活路：**让模型在训练时就看见这个损失，并学会在里面活着**。这就是 BitNet 与 Bonsai 的共同底座，也是它们必须"从零训练 / 重训 + 蒸馏"而不能"训完压一下"的根本原因。
+于是这条线只有一条活路：**让模型在训练时就看见这个损失，并学会在里面活着**。这就是 BitNet 与 Bonsai 的共同底座，也是它们必须“从零训练 / 重训 + 蒸馏”而不能“训完压一下”的根本原因。
 
-[E2 篇](/2026/09/19/llm-quant-E2-history-convergence-map/)里那句"2-bit 的失败是**计算崩溃**而非信号退化，必须结构重建"——三元/1-bit 就是这句话的极端版本：**它们干脆承认计算已经崩了，然后重建一个能在这个计算上工作的模型**。
+[E2 篇](/2026/09/19/llm-quant-E2-history-convergence-map/)里那句“2-bit 的失败是**计算崩溃**而非信号退化，必须结构重建”——三元/1-bit 就是这句话的极端版本：**它们干脆承认计算已经崩了，然后重建一个能在这个计算上工作的模型**。
 
 ---
 
@@ -95,9 +95,9 @@ $$b_{\text{eff}} = \underbrace{\log_2\lvert\mathcal{A}\rvert}_{\text{码本}} + 
 
 **三个必须记住的陷阱**：
 
-1. **"1.58 bit" 是不存 scale 的理论值**。$\log_2 3 = 1.585$。真实系统必须存 scale，所以 BitNet 的 1.58 是个**信息论下界**，不是文件大小。这是很多科普文章的错处。
+1. **“1.58 bit” 是不存 scale 的理论值**。$\log_2 3 = 1.585$。真实系统必须存 scale，所以 BitNet 的 1.58 是个**信息论下界**，不是文件大小。这是很多科普文章的错处。
 2. **三元用 2-bit slot 存时，1.71 会退化成 2.125**——和 INT2 完全一样。PrismML 的 ternary 27B 目前正是这样：理想 5.9 GB，实存约 7.2 GB（[来源](https://fernando-nog.netlify.app/bonsai-distillation-explained-from-qwen36-27b-to-a-phone-friendly-39-gb-model)，二手，待验证）。**没有原生三元 kernel，1.71 就只是纸面数字。**
-3. **MLX 的 1.25 是个"打包税"**。MLX 的量化格式要求每组同时给 scale 与 bias（$w = s_{\text{mlx}}\cdot b_i + b_{\text{mlx}}$），PrismML 的 scale-only 1-bit 权重只能这样塞进去：
+3. **MLX 的 1.25 是个“打包税”**。MLX 的量化格式要求每组同时给 scale 与 bias（$w = s_{\text{mlx}}\cdot b_i + b_{\text{mlx}}$），PrismML 的 scale-only 1-bit 权重只能这样塞进去：
    $$s_{\text{mlx}} = 2s_g,\qquad b_{\text{mlx}} = -s_g$$
    重建 $b_i=0\Rightarrow -s_g$、$b_i=1\Rightarrow +s_g$，数学上等价，但每组多存一个 FP16，**位宽从 1.125 涨到 1.25**（[白皮书 §4.1](https://github.com/PrismML-Eng/Bonsai-demo)）。
 
@@ -122,7 +122,7 @@ def absmean_quantize(w):
     return w_hat, gamma                                   # 推理时 y = x @ (w_hat * gamma).T
 ```
 
-直觉：让 $0$ 承担"自然剪枝"的角色——$\lvert W_{ij}\rvert < 0.5\gamma$ 的权重直接归零。实测中三元码本里 $0$ 的占比约 **32.7%**（本文实验 B，权重服从高斯时）。
+直觉：让 $0$ 承担“自然剪枝”的角色——$\lvert W_{ij}\rvert < 0.5\gamma$ 的权重直接归零。实测中三元码本里 $0$ 的占比约 **32.7%**（本文实验 B，权重服从高斯时）。
 
 ### 3.2 deepgrove Bonsai：clamp + round，尺度交给可学习参数
 
@@ -152,7 +152,7 @@ $$\boxed{w_i = s_g\cdot(2b_i-1)},\qquad b_i\in\{0,1\}$$
 
 存储时 $b_i$ 就是 1 个 bit（bitpacked），推理时 $b_i=0\to -s_g$、$b_i=1\to +s_g$。每 128 个权重共享一个 FP16 的 $s_g$。ternary 变体则是 $w_i = s_g\cdot t_i,\ t_i\in\{-1,0,+1\}$。
 
-与 §3.1/§3.2 的结构性差别：**尺度粒度从 per-tensor / per-output-feature 细化到了 per-128-group**，但字母表更狠（1 bit）。这正好落在 §7 实测出的"字母表粗时粒度不值钱"的那个区间——所以 g128 是它敢用的最粗粒度，再细不划算。
+与 §3.1/§3.2 的结构性差别：**尺度粒度从 per-tensor / per-output-feature 细化到了 per-128-group**，但字母表更狠（1 bit）。这正好落在 §7 实测出的“字母表粗时粒度不值钱”的那个区间——所以 g128 是它敢用的最粗粒度，再细不划算。
 
 ---
 
@@ -180,7 +180,7 @@ w_q = w + (self.quantizer(w) - w).detach()
 
 拆开看：`forward` 取 `self.quantizer(w)`（离散值），`backward` 走 `w`（连续值）——因为 `.detach()` 项在反传中梯度为 0。
 
-**为什么必须有影子权重**：离散权重本身没有"微调"的余地——一个权重从 $+1$ 变到 $0$ 是跳变，梯度无法表达"往这个方向再走一点点"。影子权重提供了连续的参数空间，让"积累梯度、直到某一步跨过舍入边界"成为可能。**这是 1-bit 训练与 4-bit QAT 唯一的机制差别，也是唯一的关键差别。**
+**为什么必须有影子权重**：离散权重本身没有“微调”的余地——一个权重从 $+1$ 变到 $0$ 是跳变，梯度无法表达“往这个方向再走一点点”。影子权重提供了连续的参数空间，让“积累梯度、直到某一步跨过舍入边界”成为可能。**这是 1-bit 训练与 4-bit QAT 唯一的机制差别，也是唯一的关键差别。**
 
 实验 D 里我做了个反证：如果 `round()` 的导数真的为 0（即不用 STE），1200 步后 test MSE 停在 **1.00320**，与初始随机权重同一量级——**训练完全停滞**（[实测输出](https://github.com/lrypcy/ipynbs/blob/main/experiments/quantization/onebit_ternary_bonsai/results/stdout.txt)）。STE 不是优化技巧，是这条线的存在前提。
 
@@ -215,7 +215,7 @@ w_q = w + (self.quantizer(w) - w).detach()
 
 **两个诚实的局限（README 自己写的）**：
 
-1. **"all operations are currently performed in 16 bit precision"** —— 权重是三元的，但计算仍然是 16-bit。**没有原生三元 kernel，就只有存储收益、没有算力收益**。这直接对应 §2 的陷阱 2。
+1. **“all operations are currently performed in 16 bit precision”** —— 权重是三元的，但计算仍然是 16-bit。**没有原生三元 kernel，就只有存储收益、没有算力收益**。这直接对应 §2 的陷阱 2。
 2. 未做 instruction tuning，官方建议下游先微调。
 
 ---
@@ -238,7 +238,7 @@ PrismML（Caltech Babak Hassibi 组孵化，2026-03 种子轮 1625 万美元）�
 
 ### 6.2 与 BitNet 的分岔点
 
-MarkTechPost 的原话：**"Bonsai 27B is a low-bit representation of Qwen3.6-27B, not a new pretrain. The architecture is unchanged."** 而 BitNet 是**从零预训练**——这是两者最本质的差别。
+MarkTechPost 的原话：**“Bonsai 27B is a low-bit representation of Qwen3.6-27B, not a new pretrain. The architecture is unchanged.”** 而 BitNet 是**从零预训练**——这是两者最本质的差别。
 
 BitNet 的路线代价很重：每个新基座都要重新烧一遍预训练算力。Bonsai 想证明的是**不需要**。
 
@@ -248,19 +248,19 @@ BitNet 的路线代价很重：每个新基座都要重新烧一遍预训练算�
 
 | 说法 | 来源 |
 |---|---|
-| "训练时权重就已约束在字母表内（量化在环），并对 FP16 教师做蒸馏" | [fernando-nog 技术博客](https://fernando-nog.netlify.app/bonsai-distillation-explained-from-qwen36-27b-to-a-phone-friendly-39-gb-model)、[Machine Brief](https://www.machinebrief.com/news/prismml-releases-1-bit-bonsai-the-first-commercially-viable-1-bit-llm-that-runs-on-your-phone) |
-| "不重训，是训练后的量化（PTQ）+ 每组 128 权重共享 scale" | [digital3d](https://www.digital3d.com/Blog/702?lang=en) |
-| "PrismML 的贡献完全在权重如何存储与计算" | [awesomeagents.ai](https://awesomeagents.ai/models/bonsai-27b/) |
+| “训练时权重就已约束在字母表内（量化在环），并对 FP16 教师做蒸馏” | [fernando-nog 技术博客](https://fernando-nog.netlify.app/bonsai-distillation-explained-from-qwen36-27b-to-a-phone-friendly-39-gb-model)、[Machine Brief](https://www.machinebrief.com/news/prismml-releases-1-bit-bonsai-the-first-commercially-viable-1-bit-llm-that-runs-on-your-phone) |
+| “不重训，是训练后的量化（PTQ）+ 每组 128 权重共享 scale” | [digital3d](https://www.digital3d.com/Blog/702?lang=en) |
+| “PrismML 的贡献完全在权重如何存储与计算” | [awesomeagents.ai](https://awesomeagents.ai/models/bonsai-27b/) |
 
 **可以确认的（格式层，可核验）**：
 
-- 端到端 1-bit：embedding、attention 投影、MLP 投影、LM head **全部** 1-bit，没有高精度"逃生舱"（这点与绝大多数低比特方案不同，白皮书 §3 明确强调）。
+- 端到端 1-bit：embedding、attention 投影、MLP 投影、LM head **全部** 1-bit，没有高精度“逃生舱”（这点与绝大多数低比特方案不同，白皮书 §3 明确强调）。
 - 只有归一化参数与 scale 元数据保持高精度，占比可忽略。
 - 27B 的视觉塔单独用 4-bit HQQ（**没有**压到 1-bit，理由是视觉质量在极限压缩下降解更快）。
 - 部署格式：`GGUF Q1_0_g128` / `Q2_0_g128`，需要 PrismML 的 llama.cpp fork；Apple 侧用 MLX fork；**权重在 kernel 内即时解码，不展开成 FP16**。
 - 27B 用 4-bit KV cache：262K 上下文的 KV 从 ~17.2 GB 降到 ~4.3 GB。
 
-**可以合理推断的（方法层，待验证）**：从"不是新预训练"+"保持率 94.6%/89.5%"这两条事实看，它必然包含**某种形式的量化在环训练 + 蒸馏**——因为 §8 实验 D 会证明，纯 PTQ 在这个位宽下拿不到这个结果。但**损失函数、数据量、步数、是否用 shadow weights 全部未知**。
+**可以合理推断的（方法层，待验证）**：从“不是新预训练”+“保持率 94.6%/89.5%”这两条事实看，它必然包含**某种形式的量化在环训练 + 蒸馏**——因为 §8 实验 D 会证明，纯 PTQ 在这个位宽下拿不到这个结果。但**损失函数、数据量、步数、是否用 shadow weights 全部未知**。
 
 ### 6.4 数字
 
@@ -269,8 +269,8 @@ BitNet 的路线代价很重：每个新基座都要重新烧一遍预训练算�
 | 变体 | 真实 bpw | 体积 | thinking 均分 | 保持率 | 智能密度 (1/GB) |
 |---|---|---|---|---|---|
 | Qwen3.6-27B FP16 | 16.0 | 54 GB | 85.07 | 100% | 0.051 |
-| Qwen3.6-27B Q4_K_XL（"4-bit"） | 5.2 | 17.6 GB | 84.99 | 99.9% | 0.155 |
-| Qwen3.6-27B IQ2_XXS（"2-bit"） | 2.8 | 9.4 GB | 72.73 | 85.5% | 0.199 |
+| Qwen3.6-27B Q4_K_XL（“4-bit”） | 5.2 | 17.6 GB | 84.99 | 99.9% | 0.155 |
+| Qwen3.6-27B IQ2_XXS（“2-bit”） | 2.8 | 9.4 GB | 72.73 | 85.5% | 0.199 |
 | **Ternary Bonsai 27B** | 1.71 | 5.9 GB | 80.49 | **94.6%** | 0.400 |
 | **1-bit Bonsai 27B** | 1.125 | 3.9 GB | 76.11 | **89.5%** | **0.530** |
 
@@ -322,7 +322,7 @@ BitNet 的路线代价很重：每个新基座都要重新烧一遍预训练算�
 
 1. **粒度收益随字母表变粗而坍塌**。从 per-tensor 细化到 g32：INT4 误差降 **79.4%**（72.74% → 14.97%），INT2 降 43.6%（93.75% → 52.87%），**Ternary 只降 3.6%**（66.21% → 63.85%），而位宽涨了 31.5%。**在三元字母表上细化粒度，是把位宽花在几乎不产生收益的地方。** 这解释了 Bonsai 选 g128 而不是 g32。
 2. **三元码本比同 bpw 的均匀 INT2 更高效**。Ternary g128（1.710 bpw，65.69%）优于 INT2 g128（2.125 bpw，69.23%）——**更少的位、更低的误差**。因为高斯的钟形分布与 $\{-1,0,+1\}$ 更匹配（中间的 0 承接了密集的小权重）。这是三元路线成立的信息论基础。
-3. **但两者都远差于 INT4**。65% vs 25%——**这是 2.4 倍的误差差，也是"为什么必须用训练补偿"的全部理由**。
+3. **但两者都远差于 INT4**。65% vs 25%——**这是 2.4 倍的误差差，也是“为什么必须用训练补偿”的全部理由**。
 
 ### 实验 C：误差传到输出
 
@@ -361,9 +361,9 @@ BitNet 的路线代价很重：每个新基座都要重新烧一遍预训练算�
 
 **三条结论，其中两条是反直觉的**：
 
-1. **B 反而输给 A**。这个结果值得强调，因为它反直觉：BitNet/Bonsai 的卖点就是"从零原生训练更好"，但在**训练预算有限**的小任务上，从随机初始化做 STE 训练（0.347）**差于**先训好再量化（0.262）。原因：随机起点时，量化噪声与优化噪声叠加，STE 的梯度信号太脏，收敛不到好解。**原生低比特训练要赢，需要海量 token 把它喂饱**——BitNet b1.58 用 100B~4T tokens，deepgrove Bonsai 用 <5B tokens，都不是这个小实验能比的量级。
-2. **C 是最优路径，但只比 A 好 10.5%**，且距全精度上界（0.00253）仍有 **103×（A）/ 93×（C）** 的鸿沟。**这才是本文最重要的一句话：低比特的瓶颈是表示容量，不是优化器。** STE 微调能修的是"网格没对齐"的那部分，修不了"网格太稀"的那部分。
-3. **推论**：这解释了为什么 Bonsai 必须叠**蒸馏**。单纯让训练"看见量化误差"只能吃到 10.5%；要做的是换监督信号——从 FP16 教师那里拿软标签与隐藏态对齐（[20 篇](/2026/09/19/llm-quant-20-distillation-qat/)讲的是同一件事在 4-bit 上的版本）。这也与 [E2 篇](/2026/09/19/llm-quant-E2-history-convergence-map/)的"QAT 从补 PTQ 的坑升级为低比特的唯一解"完全对上。
+1. **B 反而输给 A**。这个结果值得强调，因为它反直觉：BitNet/Bonsai 的卖点就是“从零原生训练更好”，但在**训练预算有限**的小任务上，从随机初始化做 STE 训练（0.347）**差于**先训好再量化（0.262）。原因：随机起点时，量化噪声与优化噪声叠加，STE 的梯度信号太脏，收敛不到好解。**原生低比特训练要赢，需要海量 token 把它喂饱**——BitNet b1.58 用 100B~4T tokens，deepgrove Bonsai 用 <5B tokens，都不是这个小实验能比的量级。
+2. **C 是最优路径，但只比 A 好 10.5%**，且距全精度上界（0.00253）仍有 **103×（A）/ 93×（C）** 的鸿沟。**这才是本文最重要的一句话：低比特的瓶颈是表示容量，不是优化器。** STE 微调能修的是“网格没对齐”的那部分，修不了“网格太稀”的那部分。
+3. **推论**：这解释了为什么 Bonsai 必须叠**蒸馏**。单纯让训练“看见量化误差”只能吃到 10.5%；要做的是换监督信号——从 FP16 教师那里拿软标签与隐藏态对齐（[20 篇](/2026/09/19/llm-quant-20-distillation-qat/)讲的是同一件事在 4-bit 上的版本）。这也与 [E2 篇](/2026/09/19/llm-quant-E2-history-convergence-map/)的“QAT 从补 PTQ 的坑升级为低比特的唯一解”完全对上。
 
 ---
 
@@ -386,15 +386,15 @@ graph LR
 
 - **没有原生 kernel 时，1-bit 的全部收益 = 带宽 + 显存**。这在 **memory-bandwidth-bound 的 decode 阶段**依然是巨大收益——端侧 LLM 的瓶颈正是带宽不是算力，所以 PrismML 在 RTX 3060 laptop 上测到 23× 加速（小显存 + 小带宽的机器上收益最大）是完全合理的。
 - **有原生 kernel 时**，矩阵乘法退化为整数加减，BitNet 论文估算 7nm 工艺下算术能耗降 **71.4×**（[arXiv:2402.17764](https://arxiv.org/abs/2402.17764)）。但那是**算术单元**的账，不含数据搬运与 Attention 开销，别当成端到端数字。
-- **生态代价是真的**：标准 llama.cpp / MLX **不支持** `Q1_0_g128`，必须用 PrismML 的 fork。对照 [E3 篇](/2026/09/19/llm-quant-E3-deployment-support/)的四层分级——1-bit 目前处在"**能跑但需要自建工具链**"这一档，不是一等公民。
+- **生态代价是真的**：标准 llama.cpp / MLX **不支持** `Q1_0_g128`，必须用 PrismML 的 fork。对照 [E3 篇](/2026/09/19/llm-quant-E3-deployment-support/)的四层分级——1-bit 目前处在“**能跑但需要自建工具链**”这一档，不是一等公民。
 
 ---
 
 ## 10. 怀疑者清单：买之前先问这六个问题
 
-1. **方法公开了吗？** PrismML 没有。你能核验的只有格式定义与它自己报的 benchmark。**二手来源对"PTQ 还是 QAT"说法矛盾**（§6.3）。deepgrove 的完全公开。
+1. **方法公开了吗？** PrismML 没有。你能核验的只有格式定义与它自己报的 benchmark。**二手来源对“PTQ 还是 QAT”说法矛盾**（§6.3）。deepgrove 的完全公开。
 2. **1.71 bpw 是真的吗？** 三元按 2-bit slot 存就是 2.125 bpw，与 INT2 相同。**有没有原生三元 kernel 决定了这个数字是否兑现。**
-3. **"端到端无逃生舱"是真的吗？** 27B 的视觉塔就是 4-bit HQQ——这是合理工程妥协，但说明"端到端"有边界。
+3. **“端到端无逃生舱”是真的吗？** 27B 的视觉塔就是 4-bit HQQ——这是合理工程妥协，但说明“端到端”有边界。
 4. **吞吐数字谁测的？** 官方 iPhone 11 tok/s vs 独立复测 Mac 26 tok/s（§6.4）。**自己机器上测一遍再说。**
 5. **退化落在哪？** 别看总分。1-bit 27B 总分保持 89.5%，但工具调用只剩 82.5%、视觉 82.0%。**如果你的场景是 agent 或多模态，这个落差就是不可用的。**（§6.4 表格）
 6. **短答案 benchmark 会骗人。** IQ2_XXS 在 MMLU-Redux 上还有 88.93，AIME26 已经崩到 57.5。**评估低比特模型必须用长链推理 benchmark。**
@@ -408,7 +408,7 @@ graph LR
 | 想复现 / 学这条线 | 从 [deepgrove Bonsai 500M](https://github.com/deepgrove-ai/Bonsai) 入手：代码 200 行量级，`QLinear` + STE + 可学习 scale 一眼看完，几张卡能训 |
 | 端侧部署、追求体积 | PrismML 1-bit GGUF，但**必须接受 fork 工具链**与官方吞吐打折 |
 | 要 agent / 工具调用 | 谨慎。§6.4 显示这是退化最严重的类别（82.5%） |
-| 追求精度/成本比 | ternary 27B（94.6%）比 1-bit（89.5%）更划算，除非你的硬约束是"必须进手机内存" |
+| 追求精度/成本比 | ternary 27B（94.6%）比 1-bit（89.5%）更划算，除非你的硬约束是“必须进手机内存” |
 | 研究低比特算法 | 先读 §7/§8 的两个反直觉结论：**粒度在粗字母表上不值钱**、**瓶颈是容量不是优化器**——这两条决定了新算法该往哪使劲 |
 
 ---

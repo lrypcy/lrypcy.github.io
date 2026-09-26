@@ -53,7 +53,7 @@ flowchart TD
 
 与此同时，DeepSeek-R1 证明了另一条路：**RL 能把模型从「会模仿」推到「会推理与泛化」**。R1 之后，社区很快意识到：推理任务能 RL，工具调用为什么不能 RL？这就是 ToolRL 论文的出发点。论文原文的表述是：
 
-> "Recent advancements in reinforcement learning, particularly with R1-like models, have demonstrated promising reasoning and generalization abilities. Yet, reward design for tool use presents unique challenges."
+> “Recent advancements in reinforcement learning, particularly with R1-like models, have demonstrated promising reasoning and generalization abilities. Yet, reward design for tool use presents unique challenges.”
 
 **RL 做工具调用的独特难点在哪？** 推理任务（如数学）的奖励是「最终答案对不对」，简单粗暴但有效。工具调用不一样：
 
@@ -274,7 +274,7 @@ ToolRL 的价值是「把奖励从玄学变成工程」，但它的边界也要�
 
 展望一条主线：**ToolRL（单轮工具奖励）→ RAGEN（多轮轨迹 MDP）→ 带学习型过程奖励的 Agent RL → 与世界交互的完整闭环**。奖励设计的原则（尺度分层、粒度匹配、防 hack）会贯穿始终——这才是这篇文章真正想沉淀的东西。
 
-> 🧪 **动手练习**：① 调整格式/正确性奖励权重比，找到格式开始崩坏的临界点，验证"正确性必须压过格式"；② 仿照 `rlla.py` 插件结构给你的自定义工具写一个奖励函数，跑通一组 4-sample 组相对优势。
+> 🧪 **动手练习**：① 调整格式/正确性奖励权重比，找到格式开始崩坏的临界点，验证“正确性必须压过格式”；② 仿照 `rlla.py` 插件结构给你的自定义工具写一个奖励函数，跑通一组 4-sample 组相对优势。
 
 ## 参考与延伸阅读
 

@@ -15,7 +15,7 @@ mathjax: true
 > **TL;DR**
 >
 > * **核心结论**：量化算法的「论文分数」和「部署分数」是两套分，而且**经常不一致**。判定一个算法能不能用的真正标准不是它的 PPL，而是**四件事能不能同时成立**：① 有没有官方工具链把它写成 checkpoint；② 推理框架有没有对应的 `QuantizationConfig`；③ 有没有匹配你 GPU 架构的 kernel 后端；④ 这条路径有没有被 CI 覆盖。缺任何一条，它就只是「能加载」，不是「能用」。
-> * **反直觉发现**：① **AQLM 被 vLLM 移除了**——vLLM v0.10.1 的 breaking change 明确写着 "Removed AQLM quantization support"，而 VPTQ 从未进入过主干。这是 [E2 篇](/2026/09/19/llm-quant-E2-history-convergence-map/) §4.3 那个判断最硬的证据：**码本/向量量化路线的精度再好，打不过 INT4 Tensor Core 的工程惯性**。② **llm-compressor 里没有 AQLM 和 VPTQ，但有 SpinQuant 和 QuIP**——官方工具链的选择已经替你做了一轮筛选：旋转类进了，码本类没进。③ **同一份 FP8 checkpoint 在 Ada 和 Hopper 上走的是完全不同的 kernel**（Ada 只有 Marlin 一条路，Hopper 上有 CUTLASS / DeepGEMM / Triton 三条），所以「FP8 很快」这句话必须带上限定语：在哪一代卡上、哪个后端、哪个 batch。
+> * **反直觉发现**：① **AQLM 被 vLLM 移除了**——vLLM v0.10.1 的 breaking change 明确写着 “Removed AQLM quantization support”，而 VPTQ 从未进入过主干。这是 [E2 篇](/2026/09/19/llm-quant-E2-history-convergence-map/) §4.3 那个判断最硬的证据：**码本/向量量化路线的精度再好，打不过 INT4 Tensor Core 的工程惯性**。② **llm-compressor 里没有 AQLM 和 VPTQ，但有 SpinQuant 和 QuIP**——官方工具链的选择已经替你做了一轮筛选：旋转类进了，码本类没进。③ **同一份 FP8 checkpoint 在 Ada 和 Hopper 上走的是完全不同的 kernel**（Ada 只有 Marlin 一条路，Hopper 上有 CUTLASS / DeepGEMM / Triton 三条），所以「FP8 很快」这句话必须带上限定语：在哪一代卡上、哪个后端、哪个 batch。
 > * **本篇定位**：如果说 [E2 篇](/2026/09/19/llm-quant-E2-history-convergence-map/)回答「这个算法处于收敛地图的哪个格子」，本篇回答「这个格子在你的机器上跑不跑得起来」。所有支持矩阵均来自 vLLM / SGLang / llm-compressor 的公开文档与仓库状态（**截至 2026-09**），并在 §11 给出核对命令——这类信息变化极快，**动手前请自己再跑一次**。
 
 ---
@@ -136,9 +136,9 @@ MoE 层还有一套独立选择逻辑（SM100 优先 FlashInfer+TRTLLM/CUTLASS�
 
 | 算法 | 状态 | 说明 |
 |---|---|---|
-| **AQLM** | **已移除** | vLLM v0.10.1 breaking change："Removed AQLM quantization support"，官方建议迁移到 BitsAndBytes 或 ModelOpt |
+| **AQLM** | **已移除** | vLLM v0.10.1 breaking change：“Removed AQLM quantization support”，官方建议迁移到 BitsAndBytes 或 ModelOpt |
 | **VPTQ** | 未入主干 | 2-bit 以下向量量化，仅 HF Transformers 侧可用 |
-| **2:4 稀疏** | 已移除 | llm-compressor 明确写道："no longer supported due to lack of hardware support and user interest" |
+| **2:4 稀疏** | 已移除 | llm-compressor 明确写道：“no longer supported due to lack of hardware support and user interest” |
 
 **这三条合起来是一个很强的信号**：精度优势敌不过工程惯性。码本、向量量化、结构化稀疏——三个在论文里都很漂亮的方向，在 2026 年的生产栈里全部退出。
 

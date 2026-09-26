@@ -12,11 +12,11 @@
 把投机解码部署到生产环境的团队，往往发现其实际表现比实验室数据**低 40–60%**[1](https://tianpan.co/zh/blog/2026-04-17-speculative-decoding-production-hidden-traps)。这不是该技术存在缺陷，而是因为**工作负载特征以重要的方式发生了变化**：更大的批量、更短的输出、更严格的输出约束。理解投机解码何时真正有效、何时会悄然造成伤害，是负责任部署的前提。
 
 > **类比（直觉先行）**
-> 投机解码就像在机场开了一条"快速安检通道"：让一个小而快的模型（草稿）先快速办理 K 位旅客（候选 token），再让大模型一次性并行复核。在客流低峰（小 batch）时，复核整批人的成本约等于复核一个人——收益巨大。但在客流高峰（大 batch）时，复核通道本身就成了瓶颈，反而拖慢所有人。
+> 投机解码就像在机场开了一条“快速安检通道”：让一个小而快的模型（草稿）先快速办理 K 位旅客（候选 token），再让大模型一次性并行复核。在客流低峰（小 batch）时，复核整批人的成本约等于复核一个人——收益巨大。但在客流高峰（大 batch）时，复核通道本身就成了瓶颈，反而拖慢所有人。
 
 ---
 
-## 2. 机制回顾：为什么"验证整段 ≈ 验证一个"
+## 2. 机制回顾：为什么“验证整段 ≈ 验证一个”
 
 草稿模型生成 K 个候选 token（通常 **5–7** 个），目标模型在**单次前向传播中并行验证全部 K 个**[2](https://tianpan.co/zh/blog/2026-04-12-speculative-decoding-in-practice-the-free-lunch-that-isnt-free)。目标模型依次检查每个候选：若草稿 token $i$ 与目标模型本应选择的一致，则接受并继续验证 $i+1$；在首次不匹配处（位置 $j$），目标模型为位置 $j$ 提供正确 token，草稿循环重新开始。任何被接受的前缀——哪怕是部分前缀——都比用目标模型逐个顺序生成这些 token 成本更低。
 
@@ -24,9 +24,9 @@
 
 $$\mathbb{E}[X] = \frac{1-\alpha^{\gamma+1}}{1-\alpha}$$
 
-当 α = 0.8、γ = 5 时，每轮平均接受约 **4.5** 个 token [2](https://tianpan.co/zh/blog/2026-04-12-speculative-decoding-in-practice-the-free-lunch-that-isnt-free)——昂贵的"逐 token 前向"次数减少了 4.5 倍。
+当 α = 0.8、γ = 5 时，每轮平均接受约 **4.5** 个 token [2](https://tianpan.co/zh/blog/2026-04-12-speculative-decoding-in-practice-the-free-lunch-that-isnt-free)——昂贵的“逐 token 前向”次数减少了 4.5 倍。
 
-**输出保证是这一机制的核心价值**：数学上可以证明，最终 token 序列与目标模型单独生成的结果**完全相同**——没有近似，没有质量损失 [1](https://tianpan.co/zh/blog/2026-04-17-speculative-decoding-production-hidden-traps)。但注意：这个保证约束的是"离开推理引擎的字节"，而**不是用户屏幕上先出现又被撤回的字节**（详见第 6 节的协议层陷阱）[3](https://tianpan.co/zh/blog/2026-04-27-speculative-decoding-streaming-protocol-decision)。
+**输出保证是这一机制的核心价值**：数学上可以证明，最终 token 序列与目标模型单独生成的结果**完全相同**——没有近似，没有质量损失 [1](https://tianpan.co/zh/blog/2026-04-17-speculative-decoding-production-hidden-traps)。但注意：这个保证约束的是“离开推理引擎的字节”，而**不是用户屏幕上先出现又被撤回的字节**（详见第 6 节的协议层陷阱）[3](https://tianpan.co/zh/blog/2026-04-27-speculative-decoding-streaming-protocol-decision)。
 
 ---
 
@@ -132,7 +132,7 @@ graph LR
 - **草稿模型状态**在 H100 上增加 **10–20 GB** GPU 内存用量 [1](https://tianpan.co/zh/blog/2026-04-17-speculative-decoding-production-hidden-traps)。
 - 需要对**两个模型**进行版本管理、测试和同步更新——目标模型的任何分词器变更都需要重新训练草稿模型。
 - **KV 缓存管理更复杂**：草稿与目标模型都维护独立的 KV 状态，必须在请求间保持同步。
-- 运维不是"一次设置就忘掉"：需要选择草稿、监控每个流量段的接受率，并在新请求分布导致接受率下降时调试性能退化 [1](https://tianpan.co/zh/blog/2026-04-17-speculative-decoding-production-hidden-traps)。
+- 运维不是“一次设置就忘掉”：需要选择草稿、监控每个流量段的接受率，并在新请求分布导致接受率下降时调试性能退化 [1](https://tianpan.co/zh/blog/2026-04-17-speculative-decoding-production-hidden-traps)。
 
 ### 6.2 评估盲区：不能只看 tokens/s
 
@@ -179,9 +179,9 @@ batch 投机解码至少需要同时看 **7 类指标**，而非单个吞吐量 
 
 ## 8. 协议层陷阱：被撤回的字节（衔接 08）
 
-"完全一致的输出分布"并不等同于"完全一致的用户体验"。生产 EAGLE 类系统中接受率通常在 **60–80%**，但这是**逐 token**的、处于 4–8 token 的步长窗口内；在给定的投机窗口中**所有** token 都被接受的概率要低得多——而在长回复中**某个**投机窗口出现拒绝的概率几乎是 100% [3](https://tianpan.co/zh/blog/2026-04-27-speculative-decoding-streaming-protocol-decision)。
+“完全一致的输出分布”并不等同于“完全一致的用户体验”。生产 EAGLE 类系统中接受率通常在 **60–80%**，但这是**逐 token**的、处于 4–8 token 的步长窗口内；在给定的投机窗口中**所有** token 都被接受的概率要低得多——而在长回复中**某个**投机窗口出现拒绝的概率几乎是 100% [3](https://tianpan.co/zh/blog/2026-04-27-speculative-decoding-streaming-protocol-decision)。
 
-逐 token 推送时，被拒后缀必须撤回（"回退到位置 N"控制帧），客户端的文本组件会实时重写。量化该影响的新指标是**用户可见 Token 抖动（user-visible token churn）** = 流向客户端的总 token 数 ÷ 响应最终 token 数：纯逐 token 推送 + 70% 接受率下轻松达到 **1.3–1.5**（约 1/3 的网络字节在定稿前被回撤）。对 TTS 等不可回滚的消费端，这直接决定协议选型（accept-then-flush 还是句边界缓冲）[3](https://tianpan.co/zh/blog/2026-04-27-speculative-decoding-streaming-protocol-decision)。完整讨论见 [08 未来方向与开放问题](08-future-directions.md)。
+逐 token 推送时，被拒后缀必须撤回（“回退到位置 N”控制帧），客户端的文本组件会实时重写。量化该影响的新指标是**用户可见 Token 抖动（user-visible token churn）** = 流向客户端的总 token 数 ÷ 响应最终 token 数：纯逐 token 推送 + 70% 接受率下轻松达到 **1.3–1.5**（约 1/3 的网络字节在定稿前被回撤）。对 TTS 等不可回滚的消费端，这直接决定协议选型（accept-then-flush 还是句边界缓冲）[3](https://tianpan.co/zh/blog/2026-04-27-speculative-decoding-streaming-protocol-decision)。完整讨论见 [08 未来方向与开放问题](08-future-directions.md)。
 
 ---
 

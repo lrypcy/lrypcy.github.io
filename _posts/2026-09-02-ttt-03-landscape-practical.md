@@ -12,7 +12,7 @@ mathjax: true
 >
 > [02 LLM 推理增强与工程优化](/2026/09/02/ttt-02-llm-inference/) ← **本篇**
 >
-> 收尾篇：把 TTT 放进**更广阔的序列模型图景**里——DeltaNet、Gated Linear Attention、Mamba2、RetNet、Titans 全部是"test-time regression"这一个框架在不同损失/正则/优化器下的特例；再讲 TTRL、MesaNet、LaCT、E2-TTT 等前沿；最后给一张**决策树 + 常见陷阱**帮你落地。
+> 收尾篇：把 TTT 放进**更广阔的序列模型图景**里——DeltaNet、Gated Linear Attention、Mamba2、RetNet、Titans 全部是“test-time regression”这一个框架在不同损失/正则/优化器下的特例；再讲 TTRL、MesaNet、LaCT、E2-TTT 等前沿；最后给一张**决策树 + 常见陷阱**帮你落地。
 
 **TL;DR**
 > * **统一视角（test-time regression）**：所有高效序列模型的隐藏状态都是一个 fast weight 矩阵 $\Phi$，用在线学习规则更新。区别只在**损失函数**（inner product vs MSE）和**正则项**（固定 vs 可遗忘 $\alpha_t$）。
@@ -91,7 +91,7 @@ $$
 \Phi_t = \Phi_{t-1}(I - \beta_t k_t k_t^\top) + \beta_t v_t k_t^\top
 $$
 
-**直觉**：在更新中先"擦除"旧关联（$I - \beta_t k_t k_t^\top$），再写入新关联（$\beta_t v_t k_t^\top$）。这比线性 attention 的纯累加（Hebbian rule）更精确。
+**直觉**：在更新中先“擦除”旧关联（$I - \beta_t k_t k_t^\top$），再写入新关联（$\beta_t v_t k_t^\top$）。这比线性 attention 的纯累加（Hebbian rule）更精确。
 
 **优点**：
 - 比 Mamba2 更强的记忆容量（Delta rule > Hebbian rule）
@@ -112,7 +112,7 @@ $$
 
 其中 $\alpha_t \in (0, 1)$ 是数据相关的门控。
 
-**改进**：门控让模型可以自适应地"忘记"旧信息，解决 DeltaNet 的饱和问题。
+**改进**：门控让模型可以自适应地“忘记”旧信息，解决 DeltaNet 的饱和问题。
 
 **性能**：在语言建模、ICL、长上下文理解等基准上超越 Mamba2 和 DeltaNet。
 
@@ -134,7 +134,7 @@ $$
 
 **核心思想**：将 TTT 与遗忘机制、动量结合：
 
-1. **Momentum**：同时考虑"瞬时 surprise"和"历史 surprise"
+1. **Momentum**：同时考虑“瞬时 surprise”和“历史 surprise”
 2. **Forgetting (weight decay)**：$\Phi_t \to \alpha \Phi_{t-1}$，管理有限记忆容量
 3. **深度非线性记忆**：MLP 作为 fast weights
 
@@ -252,7 +252,7 @@ $$
 | **TTT-MLP** | 10.81 | 10.28 | 9.92 |
 | **Titans (MAC)** | 10.72 | 10.08 | 9.74 |
 
-> 注：以上精确数值来自论文/公开基准，本环境"未验证"，仅作相对量级参考。核心结论是**长序列下 TTT 类方法持续下降，Mamba 在 16k 后饱和**。
+> 注：以上精确数值来自论文/公开基准，本环境“未验证”，仅作相对量级参考。核心结论是**长序列下 TTT 类方法持续下降，Mamba 在 16k 后饱和**。
 
 ---
 
@@ -427,7 +427,7 @@ for seq_len in [100, 500, 1000, 5000]:
 
 **TTT 的核心价值**在于三个层面：
 
-1. **概念层面**：打破了"训练/推理"严格分离的范式，使模型能在推理时持续学习
+1. **概念层面**：打破了“训练/推理”严格分离的范式，使模型能在推理时持续学习
 2. **工程层面**：提供了线性复杂度的序列建模方法，同时保持固定内存
 3. **统一视角**：统一了 DeltaNet、Mamba、RetNet 等众多模型，揭示了它们都是同一框架的特例
 
@@ -438,4 +438,4 @@ for seq_len in [100, 500, 1000, 5000]:
 - 与多模态模型的集成
 - 大规模验证（1B+ params）
 
-> 本系列 4 篇至此完结。从"TTT 是什么"（00）→"数学怎么构成"（01）→"LLM 怎么用 + 工程怎么落地"（02）→"和谁有关系 + 怎么选"（03），希望这条路径把一个看似反直觉的"推理时训练"讲清楚了。
+> 本系列 4 篇至此完结。从“TTT 是什么”（00）→“数学怎么构成”（01）→“LLM 怎么用 + 工程怎么落地”（02）→“和谁有关系 + 怎么选”（03），希望这条路径把一个看似反直觉的“推理时训练”讲清楚了。

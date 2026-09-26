@@ -22,7 +22,7 @@ $$\mathcal{M} = \langle \mathcal{S}, \mathcal{A}, \mathcal{O}, T, E, R, \gamma \
 
 目标是策略 $\pi(a_t \mid o_{\le t}, l)$ 最大化 $J(\pi) = \mathbb{E}\left[\sum_{t} \gamma^t R(s_t, a_t)\right]$。
 
-关键困难是**部分可观测**：$o_t$ 里没有速度、没有接触力、没有遮挡物。所以任何只吃 $o_t$ 的反应式策略都在被迫"盲决策"——这正是 WAM 要解决的问题。
+关键困难是**部分可观测**：$o_t$ 里没有速度、没有接触力、没有遮挡物。所以任何只吃 $o_t$ 的反应式策略都在被迫“盲决策”——这正是 WAM 要解决的问题。
 
 ### 1.2 为什么需要世界模型
 
@@ -165,13 +165,13 @@ $$x_{t+\Delta t} = x_t + \Delta t \cdot v_\theta(x_t, t, c)$$
 
 ### 4.3 动作与观测的联合流匹配
 
-把视频 latent $x$ 与动作 chunk $a$ 拼成"联合样本" $y = [x; a]$，共用一个速度场：
+把视频 latent $x$ 与动作 chunk $a$ 拼成“联合样本” $y = [x; a]$，共用一个速度场：
 
 $$y_t = (1-t) y_0 + t y_1, \quad \mathcal{L} = \mathbb{E}\big\|v_\theta(y_t, t, c) - (y_1 - y_0)\big\|^2 \tag{4.3}$$
 
 这就是 [MotuBrain](https://arxiv.org/abs/2604.27792) 的 UniDiffuser 形式与 [DreamZero](https://arxiv.org/abs/2602.15922) 的 joint flow matching。
 
-**关键设计自由度在"可见性掩码"**：哪些 token 能看见哪些 token。设掩码矩阵 $M \in \{0,1\}^{N \times N}$，注意力
+**关键设计自由度在“可见性掩码”**：哪些 token 能看见哪些 token。设掩码矩阵 $M \in \{0,1\}^{N \times N}$，注意力
 
 $$\mathrm{Attn}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d}} + \log M\right) V$$
 
@@ -185,26 +185,26 @@ $$\mathrm{Attn}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d}} + \log
 
 ## 5. 动作条件注入的四种数学形式
 
-给定观测 latent $z^{\text{obs}}$ 与动作 $a$，注入方式决定了动作能"管到哪里"：
+给定观测 latent $z^{\text{obs}}$ 与动作 $a$，注入方式决定了动作能“管到哪里”：
 
 | 方式 | 公式 | 代表 | 特点 |
 |:---|:---|:---|:---|
 | 拼接 token | $z = [z^{\text{obs}};\, \phi(a)]$ | τ₀-WM、SimWAM | 动作与视频同一序列，注意力自然交互 |
 | 自适应归一化 | $z' = \gamma(a) \odot \frac{z-\mu}{\sigma} + \beta(a)$ | DiT 标准 AdaLN | 参数量小，但只能做**全局**调制，空间定位弱 |
 | 交叉注意力 | $\mathrm{Attn}(Q_{\text{vid}}, K_{\text{act}}, V_{\text{act}})$ | DriveWAM 的 VLM 引导 | 语义层引导，密度低 |
-| **潜帧注入** | 把 $a$ 编码成"额外的一帧"塞进视频序列 | **Cosmos Policy** | **不改架构**，动作/未来/值都是帧 |
+| **潜帧注入** | 把 $a$ 编码成“额外的一帧”塞进视频序列 | **Cosmos Policy** | **不改架构**，动作/未来/值都是帧 |
 
 ### 5.1 潜帧注入（latent frame injection）
 
-[Cosmos Policy (2601.16163)](https://arxiv.org/abs/2601.16163) 的做法值得单独说：它把一段视频 latent 序列的 11 个"帧槽"分配为
+[Cosmos Policy (2601.16163)](https://arxiv.org/abs/2601.16163) 的做法值得单独说：它把一段视频 latent 序列的 11 个“帧槽”分配为
 
 $$\big[\,\varnothing,\ q^{\text{proprio}},\ I^{\text{wrist}},\ I^{\text{cam}_1},\ I^{\text{cam}_2},\ \mathbf{a}^{\text{chunk}},\ \hat{q}^{\text{future}},\ \hat{I}^{\text{wrist}},\ \hat{I}^{\text{cam}_1},\ \hat{I}^{\text{cam}_2},\ \mathbf{V}\,\big]$$
 
-即 **action chunk 是帧，future value 也是帧**。整个模型仍是"生成 11 帧视频"，损失函数一行都不用改。
+即 **action chunk 是帧，future value 也是帧**。整个模型仍是“生成 11 帧视频”，损失函数一行都不用改。
 
 数学含义：把条件分布 $p(o', a, V \mid o, l)$ 编码成**一个序列生成问题**，而不是三个头。
 - 优点：零架构改动，直接继承视频预训练权重。
-- 代价：动作被强行塞进视频的时空归纳偏置里（相邻帧应该"空间连续"），这在物理上是错的——动作帧和图像帧不应该共享空间平滑先验。**这是"不改架构"路线的理论上限**，也解释了为什么后来有 Faster-WAM 的显式解耦。
+- 代价：动作被强行塞进视频的时空归纳偏置里（相邻帧应该“空间连续”），这在物理上是错的——动作帧和图像帧不应该共享空间平滑先验。**这是“不改架构”路线的理论上限**，也解释了为什么后来有 Faster-WAM 的显式解耦。
 
 ---
 
@@ -228,7 +228,7 @@ $$\mathcal{S}(f) = \mathbb{E}_{o, a_1, a_2}\left[\frac{d\big(f(o,a_1),\, f(o,a_2
 
 $$\inf_f \varepsilon_{\text{pred}} \approx \mathrm{Var}[\xi]$$
 
-而"忽略动作"的模型 $f_0(o,a) = \mathbb{E}[o' \mid o]$ 也能达到 $\varepsilon_{\text{pred}} \approx \mathrm{Var}[\xi] + \mathrm{Var}[g]$，**与最优模型的差距只有 $\mathrm{Var}[g]$**——但 $\mathcal{S}(f_0) = 0$。
+而“忽略动作”的模型 $f_0(o,a) = \mathbb{E}[o' \mid o]$ 也能达到 $\varepsilon_{\text{pred}} \approx \mathrm{Var}[\xi] + \mathrm{Var}[g]$，**与最优模型的差距只有 $\mathrm{Var}[g]$**——但 $\mathcal{S}(f_0) = 0$。
 
 ### 6.2 信息论刻画
 
@@ -240,7 +240,7 @@ $$I\big(A ;\, \hat{O}' \mid O \big) = H(\hat{O}' \mid O) - H(\hat{O}' \mid O, A)
 
 ### 6.3 Lab A：实测
 
-构造 toy 动力学 $s' = A s + B a + \xi$，其中刻意把动作增益 $B$ 做小、噪声 $\xi$ 做大（这模拟真实机器人数据里"动作只解释未来变化的一小部分"）。拟合两个线性模型：一个用 $(s,a)$，一个只用 $s$。
+构造 toy 动力学 $s' = A s + B a + \xi$，其中刻意把动作增益 $B$ 做小、噪声 $\xi$ 做大（这模拟真实机器人数据里“动作只解释未来变化的一小部分”）。拟合两个线性模型：一个用 $(s,a)$，一个只用 $s$。
 
 ```
 == Lab A: MSE 看起来差不多，决策能力已经塌了 ==
@@ -253,12 +253,12 @@ $$I\big(A ;\, \hat{O}' \mid O \big) = H(\hat{O}' \mid O) - H(\hat{O}' \mid O, A)
 
 读法：
 
-- 两个模型的 MSE 只差 **10.4%**——如果只看像素/状态空间误差，你会认为"动作无关模型也还行"。
+- 两个模型的 MSE 只差 **10.4%**——如果只看像素/状态空间误差，你会认为“动作无关模型也还行”。
 - 但动作敏感度一个是 **0.437**，一个是 **0**。
 - 下游决策（16 个候选里挑最好的）：感知模型 **96.3%** 命中，无关模型 **6.0%** ——正好是随机猜（1/16 = 6.25%）。
 - Pearson 相关系数对无关模型是 **nan**：因为它对所有候选给出同一个预测，方差为 0，相关系数无定义。这个 nan 本身就是最好的诊断信号。
 
-**结论**：WAM 的评测不能只看 $\varepsilon_{\text{pred}}$。至少要同时报 $\mathcal{S}(f)$ 和一个决策层指标（Top-1 命中 / 排序相关）。这正是 [OSCAR](https://arxiv.org/abs/2606.04463) 报告 Spearman/Pearson 排序相关、[WorldGym](https://arxiv.org/abs/2506.00613) 报告"排序保持"的原因（详见方向 D5）。
+**结论**：WAM 的评测不能只看 $\varepsilon_{\text{pred}}$。至少要同时报 $\mathcal{S}(f)$ 和一个决策层指标（Top-1 命中 / 排序相关）。这正是 [OSCAR](https://arxiv.org/abs/2606.04463) 报告 Spearman/Pearson 排序相关、[WorldGym](https://arxiv.org/abs/2506.00613) 报告“排序保持”的原因（详见方向 D5）。
 
 ---
 
@@ -279,17 +279,17 @@ $$e_H \le \varepsilon \sum_{k=0}^{H-1} \rho^k = \begin{cases}
 
 三个regime：
 
-- $\rho < 1$：**有界**，$e_\infty \le \varepsilon/(1-\rho)$。这是"收缩动力学"的好处。
+- $\rho < 1$：**有界**，$e_\infty \le \varepsilon/(1-\rho)$。这是“收缩动力学”的好处。
 - $\rho = 1$：线性增长 $\varepsilon H$。
 - $\rho > 1$：**指数爆炸** $\varepsilon \rho^H$。32 步、$\rho=1.05$、$\varepsilon=0.02$ 时界为 $1.5$ 量级——已经完全不可用。
 
-### 7.2 观测刷新把开环变成"分段有界"
+### 7.2 观测刷新把开环变成“分段有界”
 
 若每 $k$ 步用真实观测重置一次（$\hat{s} \leftarrow s$），则误差上界变成
 
 $$e_H^{\text{refresh}} \le \varepsilon \sum_{j=0}^{k-1} \rho^j = \varepsilon\frac{1-\rho^k}{1-\rho} \tag{7.2}$$
 
-**与总视野 $H$ 无关**。这是"periodic observation refresh"这一工程技巧的完整数学根据。
+**与总视野 $H$ 无关**。这是“periodic observation refresh”这一工程技巧的完整数学根据。
 
 ### 7.3 Lab B：实测
 
@@ -307,7 +307,7 @@ $$e_H^{\text{refresh}} \le \varepsilon \sum_{j=0}^{k-1} \rho^j = \varepsilon\fra
 2. **刷新周期 $k$ 的收益是次线性的**：$k=16 \to k=4$ 只把峰值从 0.389 降到 0.121，而 $k=4 \to k=1$ 只从 0.121 降到 0.050。**$k=4$–$8$ 是性价比拐点**——这对实时部署很关键，因为刷新要等真机观测，有延迟成本。
 3. **刷新把 $\rho$ 的影响几乎抹平**：$k=1$ 时四个 $\rho$ 的误差完全一样（0.047）。这说明**长程一致性的治本方法是闭环刷新，不是把 context window 做大**。
 
-对应到工程：[MotuBrain](https://arxiv.org/abs/2604.27792) 的"real-time chunked closed-loop execution"、[DriveWAM](https://arxiv.org/abs/2605.28544) 的"selective KV memory"都是这条定理的不同实现。
+对应到工程：[MotuBrain](https://arxiv.org/abs/2604.27792) 的“real-time chunked closed-loop execution”、[DriveWAM](https://arxiv.org/abs/2605.28544) 的“selective KV memory”都是这条定理的不同实现。
 
 ---
 
@@ -337,11 +337,11 @@ $$\mu_{t+1} = \frac{\sum_{i \in \text{top-}k} w_i a_i}{\sum w_i}, \quad \Sigma_{
 
 **（c）Rectify**（τ₀-WM 的新机制）
 
-不满足于"从已有候选里选"，而是**用最好的想象未来重新生成动作**：
+不满足于“从已有候选里选”，而是**用最好的想象未来重新生成动作**：
 
 $$a^{\text{new}} \sim p_\theta\big(a \mid o, l, \hat{o}'_{*}\big), \quad \hat{o}'_{*} = f(o, a_{i^*}) \tag{8.2}$$
 
-数学上这是在做一步 **EM / 坐标上升**：固定未来 → 改进动作 → 再固定动作 → 改进未来。它把式 (2.1) 和 (2.2) 两个因子分解**交替使用**，这是对 §2.1 那个"cascade 缺陷"的直接修补。
+数学上这是在做一步 **EM / 坐标上升**：固定未来 → 改进动作 → 再固定动作 → 改进未来。它把式 (2.1) 和 (2.2) 两个因子分解**交替使用**，这是对 §2.1 那个“cascade 缺陷”的直接修补。
 
 ### 8.2 一致性打分（re-denoising consistency）
 
@@ -349,7 +349,7 @@ $$a^{\text{new}} \sim p_\theta\big(a \mid o, l, \hat{o}'_{*}\big), \quad \hat{o}
 
 $$s(a_i) = -\Big\|\, \underbrace{v_\theta \circ \cdots \circ v_\theta}_{\text{re-denoise}}\big(a_i + \sigma \epsilon\big) - a_i \,\Big\|$$
 
-这是**无需外部裁判**的质量度量，本质是检查 $a_i$ 是否位于学到的条件分布 $p(a|o,l)$ 的高密度区。它与 value 打分互补：一致性高 = "这个动作像模型会做的"，value 高 = "这个动作的后果好"。两者都高才执行。
+这是**无需外部裁判**的质量度量，本质是检查 $a_i$ 是否位于学到的条件分布 $p(a|o,l)$ 的高密度区。它与 value 打分互补：一致性高 = “这个动作像模型会做的”，value 高 = “这个动作的后果好”。两者都高才执行。
 
 ---
 
@@ -364,7 +364,7 @@ $$s(a_i) = -\Big\|\, \underbrace{v_\theta \circ \cdots \circ v_\theta}_{\text{re
 | L3 **动作对齐** | 敏感度 $\mathcal{S}(f)$、反事实准确率 $I(A;\hat{O}'\mid O)$ | 未来是否随动作变 | ✓✓ |
 | L4 **决策相关** | Top-1 命中、Spearman/Pearson 排序相关、任务成功率 | 选出来的动作好不好 | ✓✓✓ |
 
-L1/L2 高而 L3/L4 低，是"漂亮但没用的世界模型"——Lab A 里那个 MSE 只差 10% 的模型就是典型。
+L1/L2 高而 L3/L4 低，是“漂亮但没用的世界模型”——Lab A 里那个 MSE 只差 10% 的模型就是典型。
 
 [OSCAR](https://arxiv.org/abs/2606.04463) 的 PSNR 24.24 / SSIM 0.846 / LPIPS 0.094 / FVD 7.08 属于 L1；它真正有价值的数字是 **Spearman 0.750 / Pearson 0.852**（L4）。
 
@@ -373,7 +373,7 @@ L1/L2 高而 L3/L4 低，是"漂亮但没用的世界模型"——Lab A 里那�
 ## 10. 本篇要点
 
 1. WAM 的联合分布有两种因子分解（action-first / scene-first），**数学等价、学习不等价**——cascade 的系统性缺陷来源于此（§2.1）。
-2. WAM 是"foundation-model 化的 MBRL"：把单步潜转移换成 chunk 级条件生成（§3.2）。
+2. WAM 是“foundation-model 化的 MBRL”：把单步潜转移换成 chunk 级条件生成（§3.2）。
 3. Rectified flow 的**直线路径**使 Euler 误差与步数无关（理论上），这是 NFE 从 50 → 4 的根据（§4.2，Lab C）。
 4. **动作对齐是核心难题**：$\varepsilon_{\text{pred}}$ 小推不出敏感度高（§6.1，Lab A）。
 5. **长视野误差由谱半径 $\rho$ 主导，观测刷新把它变成与 $H$ 无关**（§7，Lab B），且 $k=4$–$8$ 是性价比拐点。

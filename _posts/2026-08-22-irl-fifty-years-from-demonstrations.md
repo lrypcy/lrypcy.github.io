@@ -11,7 +11,7 @@ mathjax: true
 > **TL;DR 三连**
 >
 > - **核心结论**：逆强化学习（IRL）把强化学习倒过来——正向 RL 从奖励学策略，IRL 从专家示范反推奖励函数。它是 RLHF 奖励建模、偏好优化这些 LLM 后训练组件的共同数学祖先。
-> - **反直觉发现**：IRL 的解天然不唯一——给任意奖励加一个势函数整形项，最优策略纹丝不动；线性情形下解集是一个凸多面体。五十年方法论史不是在"修 bug"，而是在解空间上不断换先验。
+> - **反直觉发现**：IRL 的解天然不唯一——给任意奖励加一个势函数整形项，最优策略纹丝不动；线性情形下解集是一个凸多面体。五十年方法论史不是在“修 bug”，而是在解空间上不断换先验。
 > - **定位**：本篇补齐本站后训练四象限地图的第 Ⅱ 象限（示范→奖励），是《从 MDP 到 GRPO》系列（象限 Ⅲ）与 OPD 系列（象限 Ⅰ）的姊妹篇。姊妹篇《[IRL 复活：LLM 对齐里的逆向强化学习](/2026/08/22/irl-renaissance-in-llm-alignment/)》讲它在 LLM 时代的复活。
 
 ```mermaid
@@ -31,7 +31,7 @@ graph TD
 
 正向 RL 的问题陈述是：**给定奖励函数 $$r(s,a)$$，求最优策略 $$\pi^*$$**。《从 MDP 到 GRPO》系列五篇讲的全部是这个方向。
 
-但现实里更常见的窘境恰恰相反：你有一批专家示范——围棋名局、人类驾驶记录、客服对话日志——却说不出奖励到底是什么。"什么样的奖励函数能解释这些示范？"这就是逆强化学习（Inverse RL, IRL），也叫模仿目标下的奖励反演。
+但现实里更常见的窘境恰恰相反：你有一批专家示范——围棋名局、人类驾驶记录、客服对话日志——却说不出奖励到底是什么。“什么样的奖励函数能解释这些示范？”这就是逆强化学习（Inverse RL, IRL），也叫模仿目标下的奖励反演。
 
 用本站的四象限地图定位：
 
@@ -78,7 +78,7 @@ $$
 
 中间项两两相消，只剩首尾。于是对有限 horizon，两个奖励下的最优策略完全相同（$$\gamma<1$$ 且 $$\Phi$$ 有界时末项趋零，结论保持）。
 
-**一个最小数值直觉**：在 $$4\times4$$ GridWorld（本站 MDP 篇 §7 的环境）里取 $$\Phi(s)$$ = 该格到终点的曼哈顿距离的负值。整形后的每步奖励随位置变化，轨迹的"分步得分"完全不同——但贪心最短路一模一样。**分步奖励是表征，不是本质**。
+**一个最小数值直觉**：在 $$4\times4$$ GridWorld（本站 MDP 篇 §7 的环境）里取 $$\Phi(s)$$ = 该格到终点的曼哈顿距离的负值。整形后的每步奖励随位置变化，轨迹的“分步得分”完全不同——但贪心最短路一模一样。**分步奖励是表征，不是本质**。
 
 ### 2.3 不可辨识性的完整刻划
 
@@ -100,7 +100,7 @@ $$
 f_\pi = \mathbb{E}_\pi\left[\sum_{t=0}^{\infty} \gamma^t \phi(s_t,a_t)\right] \in \mathbb{R}^k
 $$
 
-注意一个漂亮的恒等式：$$w^\top f_\pi = \mathbb{E}_\pi[\sum_t \gamma^t r_w]$$ ——**特征期望的内积就是值函数**。于是"$$\pi_E$$ 在 $$r_w$$ 下最优"可以改写为：
+注意一个漂亮的恒等式：$$w^\top f_\pi = \mathbb{E}_\pi[\sum_t \gamma^t r_w]$$ ——**特征期望的内积就是值函数**。于是“$$\pi_E$$ 在 $$r_w$$ 下最优”可以改写为：
 
 $$
 w^\top f_E \;\ge\; w^\top f_\pi \quad \forall\, \pi \in \Pi
@@ -116,7 +116,7 @@ $$
 \max_{w,\;t_1,\dots,t_m} \;\sum_i t_i - \lambda \|w\|_1 \quad \text{s.t.} \quad w^\top (f_E - f_{\pi_i}) \ge t_i,\;\; t_i \ge 0
 $$
 
-每个 $$t_i$$ 是对策略 $$\pi_i$$ 的"超越裕度"，线性规划一次解出。**Abbeel & Ng 2004 的 Apprenticeship Learning** 换了个更工程的目标：不求恢复 $$w$$，只找混合策略使 $$f_{\hat\pi}$$ 与 $$f_E$$ 的 $$\ell_\infty$$ 距离小于 $$\epsilon$$——直升机特技飞行就是这么飞起来的。
+每个 $$t_i$$ 是对策略 $$\pi_i$$ 的“超越裕度”，线性规划一次解出。**Abbeel & Ng 2004 的 Apprenticeship Learning** 换了个更工程的目标：不求恢复 $$w$$，只找混合策略使 $$f_{\hat\pi}$$ 与 $$f_E$$ 的 $$\ell_\infty$$ 距离小于 $$\epsilon$$——直升机特技飞行就是这么飞起来的。
 
 **三大痛点埋下伏笔**：① 特征 $$\phi$$ 要手调，换一个领域推倒重来；② 可行域里无穷多 $$w$$，任何挑法都是偷运先验；③ 特征期望匹配是**矩匹配**——一阶矩对上了，轨迹分布未必对上（两条不同路线可以有相同期望特征）。
 
@@ -124,13 +124,13 @@ $$
 
 ### 4.1 先验的选择：最坏情况噪声下最合理的示范
 
-既然解不唯一，就换一个问题："哪个 $$r$$ 让示范成为**最不意外**的行为？"假设人类演示叠加了与奖励幅度成正比的观测噪声（Laplace 噪声假设下可严格导出），示范轨迹的条件分布为指数族：
+既然解不唯一，就换一个问题：“哪个 $$r$$ 让示范成为**最不意外**的行为？”假设人类演示叠加了与奖励幅度成正比的观测噪声（Laplace 噪声假设下可严格导出），示范轨迹的条件分布为指数族：
 
 $$
 P(\tau \mid w) = \frac{1}{Z(w)} \exp\left( r_w(\tau) \right), \qquad r_w(\tau) = \sum_t r_w(s_t,a_t)
 $$
 
-高奖励的轨迹指数级更可能出现，但**任何轨迹都有非零概率**——这自动处理了"专家也会失误"的现实。配分函数 $$Z(w)=\int e^{r_w(\tau)}d\tau$$ 对所有可能轨迹求和，是唯一的计算障碍。
+高奖励的轨迹指数级更可能出现，但**任何轨迹都有非零概率**——这自动处理了“专家也会失误”的现实。配分函数 $$Z(w)=\int e^{r_w(\tau)}d\tau$$ 对所有可能轨迹求和，是唯一的计算障碍。
 
 ### 4.2 软值函数：把配分函数变成动态规划
 
@@ -150,7 +150,7 @@ $$
 e^{V_{soft}(s_0)} = \sum_{a_0} e^{r_0} \cdot \mathbb{E}\left[e^{V_{soft}(s_1)}\right] = \sum_{a_0,s_1,\dots} e^{r_0+r_1+\cdots} = Z(w)
 $$
 
-即 $$Z(w) = e^{V_{soft}(s_0)}$$——**配分函数这个"对所有轨迹的积分"被一步动态规划吃掉了**。这是 MaxEnt IRL 在表格情形可解的根本原因，也是它区别于暴力枚举的分水岭。
+即 $$Z(w) = e^{V_{soft}(s_0)}$$——**配分函数这个“对所有轨迹的积分”被一步动态规划吃掉了**。这是 MaxEnt IRL 在表格情形可解的根本原因，也是它区别于暴力枚举的分水岭。
 
 ### 4.3 梯度：一步到位的漂亮结果
 
@@ -166,7 +166,7 @@ $$
 \nabla_w \mathcal{L} = \underbrace{\mathbb{E}_{\tau\sim \mathcal{D}}\left[\phi(\tau)\right]}_{\text{专家特征期望 } f_E} - \underbrace{\mathbb{E}_{\tau\sim P(\cdot\mid w)}\left[\phi(\tau)\right]}_{\text{软模型特征期望 } f_\pi}
 $$
 
-**梯度为零当且仅当 $$f_E = f_\pi$$**——第 3 节那个"必要条件"在这里升格为极大似然驻点。但注意升级了什么：匹配的不再是特征期望这一个矩，而是整条指数族分布 $$P(\tau\mid w)$$；特征期望相等只是它的驻点条件。
+**梯度为零当且仅当 $$f_E = f_\pi$$**——第 3 节那个“必要条件”在这里升格为极大似然驻点。但注意升级了什么：匹配的不再是特征期望这一个矩，而是整条指数族分布 $$P(\tau\mid w)$$；特征期望相等只是它的驻点条件。
 
 **$$f_\pi$$ 怎么算**：不需要采样轨迹。由 $$P(a\mid s) = \exp(Q_{soft}(s,a) - V_{soft}(s))$$（softmax 形式）做**前向消息传递**，递推期望状态访问频率 $$d_t(s)$$，$$f_\pi = \sum_{s,a} d(s,a)\,\phi(s,a)$$——一次前向-后向扫过，复杂度与值迭代同阶。
 
@@ -195,7 +195,7 @@ for it in range(n_iters):
     w += lr * grad                                                   # 梯度上升
 ```
 
-### 4.4 三种"模仿"的对照
+### 4.4 三种“模仿”的对照
 
 | 方法 | 匹配对象 | 奖励是否显式 | 失效场景 |
 |---|---|---|---|
@@ -203,17 +203,17 @@ for it in range(n_iters):
 | 特征期望匹配（§3） | 特征一阶矩 | 是（线性） | 高阶矩丢失 |
 | MaxEnt IRL | 指数族轨迹分布 | 是（任意可参数化） | 配分函数估计（大空间） |
 
-## 5. 对抗时代：GAIL 把"学奖励"绕了过去
+## 5. 对抗时代：GAIL 把“学奖励”绕了过去
 
 ### 5.1 占用测度：模仿问题的正确状态空间
 
-定义策略的**占用测度** $$\rho_\pi(s,a) = \pi(a\mid s)\sum_t \gamma^t P(s_t=s)$$——策略与轨迹分布的信息在此一一对应（$$\rho$$ 相同当且仅当策略相同，折扣情形下）。于是"模仿专家"有一个干净的目标：
+定义策略的**占用测度** $$\rho_\pi(s,a) = \pi(a\mid s)\sum_t \gamma^t P(s_t=s)$$——策略与轨迹分布的信息在此一一对应（$$\rho$$ 相同当且仅当策略相同，折扣情形下）。于是“模仿专家”有一个干净的目标：
 
 $$
 \min_\pi \; D_{JS}\big(\rho_\pi \,\|\, \rho_E\big)
 $$
 
-行为克隆的复合误差、特征匹配的高阶矩丢失，在这里都被"整个分布对齐"的目标取代。
+行为克隆的复合误差、特征匹配的高阶矩丢失，在这里都被“整个分布对齐”的目标取代。
 
 ### 5.2 GAIL = 对抗式分布匹配（Ho & Ermon, 2016）
 
@@ -231,7 +231,7 @@ $$
 
 判别器越分不清真假，奖励越平；哪里假得明显，哪里奖励梯度越大——一个自动聚焦误差区域的奖励整形器。
 
-**与 MaxEnt 的精确关系**：GAIL 相当于把 MaxEnt IRL 里的"显式 $$r_w$$ + 配分函数"替换成"对抗学出的 $$-\log D$$"，分布匹配的目标不变、计算方式改变。代价是奖励只在训练中隐式存在，训完拿不走。**AIRL**（Adversarial IRL, [arXiv:1804.10690](https://arxiv.org/abs/1804.10690)）修补了这一点：把判别器重参数化为 $$D(s,a) = \frac{e^{f(s,a)}}{e^{f(s,a)} + \pi(a\mid s)}$$ 并令 $$f$$ 分解为"奖励项 + 整形项"，在环境动力学变化下仍能恢复**可迁移的显式奖励**——对抗时代给自己补上了"奖励可带走"的短板。
+**与 MaxEnt 的精确关系**：GAIL 相当于把 MaxEnt IRL 里的“显式 $$r_w$$ + 配分函数”替换成“对抗学出的 $$-\log D$$”，分布匹配的目标不变、计算方式改变。代价是奖励只在训练中隐式存在，训完拿不走。**AIRL**（Adversarial IRL, [arXiv:1804.10690](https://arxiv.org/abs/1804.10690)）修补了这一点：把判别器重参数化为 $$D(s,a) = \frac{e^{f(s,a)}}{e^{f(s,a)} + \pi(a\mid s)}$$ 并令 $$f$$ 分解为“奖励项 + 整形项”，在环境动力学变化下仍能恢复**可迁移的显式奖励**——对抗时代给自己补上了“奖励可带走”的短板。
 
 ## 6. 为什么 GAIL 在文本上失败了
 
@@ -256,30 +256,30 @@ $$
 
 **批判与展望——三大遗留问题，五十年未竟**：
 
-1. **不可辨识性**：解集结构性巨大。MaxEnt 挑了"最软"的代表，对抗法挑了"最可分"的代表，但"人类真实奖励"没有任何方法保证收敛到——这个问题在 LLM 时代升级为"RM 的 prompt 敏感与分数漂移"，贝叶斯后验式审计（见姊妹篇 §4.4）是当前最认真的回应；
+1. **不可辨识性**：解集结构性巨大。MaxEnt 挑了“最软”的代表，对抗法挑了“最可分”的代表，但“人类真实奖励”没有任何方法保证收敛到——这个问题在 LLM 时代升级为“RM 的 prompt 敏感与分数漂移”，贝叶斯后验式审计（见姊妹篇 §4.4）是当前最认真的回应；
 2. **样本与计算效率**：配分函数估计昂贵、对抗训练脆弱。LLM 大规模预训练充当了通用特征提取器 $$\phi$$——这是 IRL 此刻能在对齐领域复兴的根本物质条件；
 3. **奖励误设**：分布外区域学到的 $$r$$ 被 reward hacking 利用。语言条件消歧与失败样本迭代（姊妹篇 §4.3、§4.5）在对症下药，但猫鼠游戏没有终局。
 
-**展望**：LLM 把 IRL 从"小状态空间的工程活"变成"高维语义空间的可行任务"。2025-2026 年 IRL 论文在对齐领域的密集回归不是偶然，具体战报见姊妹篇《[IRL 复活：LLM 对齐里的逆向强化学习](/2026/08/22/irl-renaissance-in-llm-alignment/)》。
+**展望**：LLM 把 IRL 从“小状态空间的工程活”变成“高维语义空间的可行任务”。2025-2026 年 IRL 论文在对齐领域的密集回归不是偶然，具体战报见姊妹篇《[IRL 复活：LLM 对齐里的逆向强化学习](/2026/08/22/irl-renaissance-in-llm-alignment/)》。
 
 ## 8. Takeaway
 
-- **解决了什么**：给"从示范恢复价值标准"建立了形式化与三代可运行算法（代数可行域 → MaxEnt 似然 → 对抗分布匹配），并证明了它们共享同一根骨架——在不可辨识解集上施加先验。
-- **致命局限**：解不唯一是定理不是缺陷；所有"恢复的奖励"都只是等价类的一个代表元，分布外行为无保证。
+- **解决了什么**：给“从示范恢复价值标准”建立了形式化与三代可运行算法（代数可行域 → MaxEnt 似然 → 对抗分布匹配），并证明了它们共享同一根骨架——在不可辨识解集上施加先验。
+- **致命局限**：解不唯一是定理不是缺陷；所有“恢复的奖励”都只是等价类的一个代表元，分布外行为无保证。
 - **如何引出下一篇**：MaxEnt 的指数族结构在成对偏好数据上退化成一个 logistic 回归——这恰好就是 RLHF 奖励模型的训练目标。IRL 与 LLM 后训练的血缘关系，下一篇用推导说话。
 
 > 🧪 **动手练习**：① 在 $$3\times3$$ 玩具网格上用有限差分验证 $$\partial \log Z(w)/\partial w = f_\pi$$（数值 vs 解析，容差 < 1e-6）；② 给学到的奖励加任意势函数整形项 $$\Phi(s)$$ 重跑求解器，逐格对比新旧贪心策略——复现 §2 的整形不变性定理。
 
 ## 参考与延伸阅读
 
-* Ng, Harada & Russell, "Policy invariance under reward transformations: Theory and application to reward shaping" (ICML 1999) —— §2 定理出处
-* Ng & Russell, "Algorithms for Inverse Reinforcement Learning" (ICML 2000) —— 线性代数时代开山，解集凸性
-* Abbeel & Ng, "Apprenticeship Learning via Inverse Reinforcement Learning" (ICML 2004) —— 特征期望匹配与直升机控制
-* Ratliff, Bagnell & Zinkevich, "Maximum Margin Planning" (ICML 2006) —— §3.2 margin 规划形式
-* Ziebart et al., "Maximum Entropy Inverse Reinforcement Learning" ([AAAI 2008](https://www.aaai.org/Papers/AAAI/2008/AAAI08-227.pdf)) —— 概率时代奠基
-* Ho & Ermon, "Generative Adversarial Imitation Learning" ([arXiv:1606.03476](https://arxiv.org/abs/1606.03476)) —— 对抗时代奠基
-* Finn, Levine & Abbeel, "Guided Cost Learning" ([arXiv:1603.00448](https://arxiv.org/abs/1603.00448)) —— 深度 MaxEnt 与重要性采样
-* Fu, Luo & Levine, "Learning Robust Rewards with Adversarial Inverse Reinforcement Learning" ([arXiv:1804.10690](https://arxiv.org/abs/1804.10690)) —— AIRL，奖励可恢复性修补
+* Ng, Harada & Russell, “Policy invariance under reward transformations: Theory and application to reward shaping” (ICML 1999) —— §2 定理出处
+* Ng & Russell, “Algorithms for Inverse Reinforcement Learning” (ICML 2000) —— 线性代数时代开山，解集凸性
+* Abbeel & Ng, “Apprenticeship Learning via Inverse Reinforcement Learning” (ICML 2004) —— 特征期望匹配与直升机控制
+* Ratliff, Bagnell & Zinkevich, “Maximum Margin Planning” (ICML 2006) —— §3.2 margin 规划形式
+* Ziebart et al., “Maximum Entropy Inverse Reinforcement Learning” ([AAAI 2008](https://www.aaai.org/Papers/AAAI/2008/AAAI08-227.pdf)) —— 概率时代奠基
+* Ho & Ermon, “Generative Adversarial Imitation Learning” ([arXiv:1606.03476](https://arxiv.org/abs/1606.03476)) —— 对抗时代奠基
+* Finn, Levine & Abbeel, “Guided Cost Learning” ([arXiv:1603.00448](https://arxiv.org/abs/1603.00448)) —— 深度 MaxEnt 与重要性采样
+* Fu, Luo & Levine, “Learning Robust Rewards with Adversarial Inverse Reinforcement Learning” ([arXiv:1804.10690](https://arxiv.org/abs/1804.10690)) —— AIRL，奖励可恢复性修补
 * Sutton & Barto, *Reinforcement Learning: An Introduction* (2nd ed.), [免费全文](http://incompleteideas.net/book/the-book-2nd.html) —— 本系列公共底座
 * 本站《从 MDP 到 GRPO》系列（象限Ⅲ）：[一](/2026/08/21/mdp-to-grpo-01-mdp-bellman-foundation/) · [二](/2026/08/21/mdp-to-grpo-02-policy-gradient-reinforce/) · [三](/2026/08/21/mdp-to-grpo-03-trpo-trust-region/) · [四](/2026/08/21/mdp-to-grpo-04-ppo-clipped-surrogate/) · [五](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/)
 * 本站《On-Policy Distillation 深度剖析》（象限Ⅰ）：[/2026/08/11/on-policy-distillation-deepdive/](/2026/08/11/on-policy-distillation-deepdive/)

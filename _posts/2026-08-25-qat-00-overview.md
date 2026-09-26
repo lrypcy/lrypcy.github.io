@@ -16,9 +16,9 @@ mathjax: true
 
 > **TL;DR 1｜一句话**：QAT 把量化操作放进前向计算图、用梯度下降让权重和量化参数共同适应低比特网格；它的全部技术难点收敛为一个问题——round() 不可导，而过去十年的方法演进（STE → LSQ/PACT → AdaRound/BRECQ → LLM-QAT/QLoRA）就是这个问题在不同约束下的四种解法。
 
-> **TL;DR 2｜反直觉发现**：QAT 并非总是优于 PTQ——在 4-bit 及以上，现代 PTQ（GPTQ/AWQ 配合旋转）几乎打平甚至超过轻量 QAT；QAT 的真正主场是 **2~4-bit 的 W2/W4 训练后精调、量化感知的蒸馏、以及 QLoRA 这类"冻结底座 + 量化分支反传"的参数高效场景**。
+> **TL;DR 2｜反直觉发现**：QAT 并非总是优于 PTQ——在 4-bit 及以上，现代 PTQ（GPTQ/AWQ 配合旋转）几乎打平甚至超过轻量 QAT；QAT 的真正主场是 **2~4-bit 的 W2/W4 训练后精调、量化感知的蒸馏、以及 QLoRA 这类“冻结底座 + 量化分支反传”的参数高效场景**。
 
-> **TL;DR 3｜系列定位**：本文是 QAT 方向的总纲，按"地基（STE）→ 参数学习（LSQ/PACT）→ PTQ 桥梁（AdaRound/BRECQ）→ LLM 实践（LLM-QAT/QLoRA）"四层组织。每层的数学内核都会给出完整推导，配套实验见文末读者 Lab。
+> **TL;DR 3｜系列定位**：本文是 QAT 方向的总纲，按“地基（STE）→ 参数学习（LSQ/PACT）→ PTQ 桥梁（AdaRound/BRECQ）→ LLM 实践（LLM-QAT/QLoRA）”四层组织。每层的数学内核都会给出完整推导，配套实验见文末读者 Lab。
 
 ## 符号约定与变量映射表
 
@@ -38,7 +38,7 @@ mathjax: true
 
 ## 1. PTQ 的能力边界：为什么还需要 QAT
 
-PTQ 系列给出了一个清晰的结论链：per-group INT4 + 旋转/缩放校正可以做到几乎无损（[QuaRot](/2026/08/24/ptq-07-quarot-spinquant/)、[SmoothQuant](/2026/08/24/llm-quant-02-smoothquant-w8a8/)），但这条能力曲线在 2-bit 附近断崖式失效——我们在[量化00](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)里实测过，高斯分布在 b=2 时 SQNR 比 6.02b 规律低约 2.5 dB，网格太粗导致任何"事后校正"都无济于事。
+PTQ 系列给出了一个清晰的结论链：per-group INT4 + 旋转/缩放校正可以做到几乎无损（[QuaRot](/2026/08/24/ptq-07-quarot-spinquant/)、[SmoothQuant](/2026/08/24/llm-quant-02-smoothquant-w8a8/)），但这条能力曲线在 2-bit 附近断崖式失效——我们在[量化00](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)里实测过，高斯分布在 b=2 时 SQNR 比 6.02b 规律低约 2.5 dB，网格太粗导致任何“事后校正”都无济于事。
 
 此时只剩一条路：**让模型自己长成适合低比特网格的样子**。这就是 QAT（Quantization-Aware Training）的本质——量化不再是部署期的事后近似，而是训练目标的一部分。两种范式的系统对比：
 
@@ -51,7 +51,7 @@ PTQ 系列给出了一个清晰的结论链：per-group INT4 + 旋转/缩放校�
 | 部署友好度 | 高（离线完成） | 需要训练管线支持 |
 | 代表工作 | GPTQ、AWQ、QuaRot | LSQ、AdaRound、QLoRA |
 
-一个务实的决策规则：**先跑 PTQ 基线，只有当目标比特下 PTQ 掉点超过容忍度（如 ppl 劣化 >5%）时才升级 QAT**。这也是工业界 LLM 部署的主流路径——QLoRA 的爆红恰恰说明，多数团队需要的不是全量 QAT，而是"量化底座上的低成本适配"。
+一个务实的决策规则：**先跑 PTQ 基线，只有当目标比特下 PTQ 掉点超过容忍度（如 ppl 劣化 >5%）时才升级 QAT**。这也是工业界 LLM 部署的主流路径——QLoRA 的爆红恰恰说明，多数团队需要的不是全量 QAT，而是“量化底座上的低成本适配”。
 
 ## 2. 地基：直通估计器（STE）
 
@@ -65,7 +65,7 @@ $$\bar{w} = s \cdot Q(w/s), \quad Q(u) = \mathrm{clamp}\big(\mathrm{round}(u), -
 
 $$\frac{\partial L}{\partial w} \approx \frac{\partial L}{\partial \bar{w}}$$
 
-最常用的替代恒等函数（identity STE）：把 round 当作不存在，梯度原样通过。这显然是有偏的估计——但它简单、方差可控，且在实践中"偏差换可训性"是一笔划算的交易（原始论证见 [arXiv:1308.3432](https://arxiv.org/abs/1308.3432)）。
+最常用的替代恒等函数（identity STE）：把 round 当作不存在，梯度原样通过。这显然是有偏的估计——但它简单、方差可控，且在实践中“偏差换可训性”是一笔划算的交易（原始论证见 [arXiv:1308.3432](https://arxiv.org/abs/1308.3432)）。
 
 ### 2.2 一个最小实现与两个工程细节
 
@@ -86,7 +86,7 @@ class FakeQuant(torch.autograd.Function):
 # PyTorch FX 量化）会把它裁掉，只对 |u| <= qmax 的位置回传。
 ```
 
-两个决定成败的细节：其一，**clamp 区间外的梯度要截断**，否则离群权重收到持续推向外界的梯度、训练震荡；其二，**scale 的取整稳定性**——若每步都用当前 min/max 重算 scale，量化网格会随权重漂移，损失曲面出现"移动台阶"。这两个细节正是下一节 LSQ/PACT 要形式化解决的问题。DoReFa-Net 则展示了把直通思想推广到低比特梯度本身的早期尝试（[arXiv:1606.06160](https://arxiv.org/abs/1606.06160)）。
+两个决定成败的细节：其一，**clamp 区间外的梯度要截断**，否则离群权重收到持续推向外界的梯度、训练震荡；其二，**scale 的取整稳定性**——若每步都用当前 min/max 重算 scale，量化网格会随权重漂移，损失曲面出现“移动台阶”。这两个细节正是下一节 LSQ/PACT 要形式化解决的问题。DoReFa-Net 则展示了把直通思想推广到低比特梯度本身的早期尝试（[arXiv:1606.06160](https://arxiv.org/abs/1606.06160)）。
 
 ## 3. 让量化参数也可学：LSQ 与 PACT
 
@@ -96,11 +96,11 @@ LSQ（Learned Step Size Quantization，[arXiv:1902.08153](https://arxiv.org/abs/
 
 $$\frac{\partial u_i}{\partial s} = \begin{cases} -v_i / s^2 & \vert u_i\vert \le q_{max} \\ 0 & \text{otherwise} \end{cases}$$
 
-再配合 round 的 STE（$$\partial\,\mathrm{round}/\partial u \approx 1$$）与 clamp 的指示函数，得到完整的尺度梯度。这个看似简单的改动带来两个质变：其一，scale 从"被动统计量"变成"主动权衡者"——它会自动收缩以换取更小的整体重建误差；其二，训练后期可以给 scale 加上逐通道自由度，等效于学出一组最优粒度。
+再配合 round 的 STE（$$\partial\,\mathrm{round}/\partial u \approx 1$$）与 clamp 的指示函数，得到完整的尺度梯度。这个看似简单的改动带来两个质变：其一，scale 从“被动统计量”变成“主动权衡者”——它会自动收缩以换取更小的整体重建误差；其二，训练后期可以给 scale 加上逐通道自由度，等效于学出一组最优粒度。
 
 ### 3.2 PACT：把截断上界交给训练
 
-PACT（Parameterized Clipping Activation，[arXiv:1805.06085](https://arxiv.org/abs/1805.06085)）解决的是另一半问题：激活值的动态范围。它把激活的 clamp 上界参数化为 $$\alpha$$，前向 $$y = \min(x, \alpha)$$，反向梯度为 $$\mathbb{1}[x > \alpha]$$。随着训练推进，$$\alpha$$ 单调收紧，激活分布被"修剪"进窄区间，使得低比特量化不再被尾部拖累。
+PACT（Parameterized Clipping Activation，[arXiv:1805.06085](https://arxiv.org/abs/1805.06085)）解决的是另一半问题：激活值的动态范围。它把激活的 clamp 上界参数化为 $$\alpha$$，前向 $$y = \min(x, \alpha)$$，反向梯度为 $$\mathbb{1}[x > \alpha]$$。随着训练推进，$$\alpha$$ 单调收紧，激活分布被“修剪”进窄区间，使得低比特量化不再被尾部拖累。
 
 | | LSQ | PACT |
 |---|---|---|
@@ -110,7 +110,7 @@ PACT（Parameterized Clipping Activation，[arXiv:1805.06085](https://arxiv.org/
 | 与 PTQ 的对应物 | MSE 最优裁剪（[量化00](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/)） | OmniQuant 的可学习 clip（[OmniQuant](/2026/08/24/ptq-03-awq-omniq/)） |
 | 典型用法 | 权重/激活统一量化训练 | 激活量化、与 LSQ 组合 |
 
-值得玩味的是最后一行：LSQ/PACT 学的东西，OmniQuant 用免训练的方式也学了个七七八八——这是"PTQ 吞噬 QAT"叙事的第一个信号。
+值得玩味的是最后一行：LSQ/PACT 学的东西，OmniQuant 用免训练的方式也学了个七七八八——这是“PTQ 吞噬 QAT”叙事的第一个信号。
 
 ## 4. 通往 PTQ 的桥：AdaRound 与 BRECQ
 
@@ -132,7 +132,7 @@ AdaRound 只在单层内做重构，跨层误差累积无人管辖。BRECQ（Li 
 
 **LLM-QAT**（[arXiv:2305.17888](https://arxiv.org/abs/2305.17888)）回应前者：data-free 蒸馏——从模型自身采样生成句首词、让原模型补全出合成数据集，再用原模型（teacher）对量化模型（student）做 token 级 KL 蒸馏。整条管线无需任何真实训练语料，把 7B/13B 模型压到 4-bit 权重+激活仍保持可用困惑度。
 
-**QLoRA**（[arXiv:2305.14314](https://arxiv.org/abs/2305.14314)）回应后者：底座权重冻结并量化为 NF4（信息论最优的 4-bit 常数码本，我们已在实验中实测其 SQNR 约 20.7 dB，见配套实验 `fp8_mxfp4_formats`），反传时按需上转到 BF16 计算，可训练参数只有 LoRA 低秩分支。严格说 QLoRA 不训练底座、不算经典 QAT，但"**量化底座上的量化感知适配**"让它在工程语义上是 QAT 思想的最高效变体——单卡 48GB 微调 65B 模型的成绩单至今仍是行业标杆。
+**QLoRA**（[arXiv:2305.14314](https://arxiv.org/abs/2305.14314)）回应后者：底座权重冻结并量化为 NF4（信息论最优的 4-bit 常数码本，我们已在实验中实测其 SQNR 约 20.7 dB，见配套实验 `fp8_mxfp4_formats`），反传时按需上转到 BF16 计算，可训练参数只有 LoRA 低秩分支。严格说 QLoRA 不训练底座、不算经典 QAT，但“**量化底座上的量化感知适配**”让它在工程语义上是 QAT 思想的最高效变体——单卡 48GB 微调 65B 模型的成绩单至今仍是行业标杆。
 
 ```mermaid
 flowchart LR

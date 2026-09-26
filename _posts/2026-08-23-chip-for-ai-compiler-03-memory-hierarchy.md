@@ -10,8 +10,8 @@ mathjax: true
 
 > **TL;DR**
 >
-> * **这是「给 AI 编译器工程师的芯片课」第三篇**。前两篇建立了四层契约全景、拆开了 SRAM/DRAM 电路，本篇沿着"数据住得离计算多远"这条主线走一遍存储层次：**寄存器堆(多端口 SRAM) → SMEM(bank conflict 的电路根源) → L1/L2 cache(tag/index/offset 数学) → HBM(3D 堆叠 DRAM)**。
-> * **三个对编译器最值钱的结论**：1 bank conflict 不是玄学，是"每 bank 每周期一次访问"的电路约束，$$冲突度 = \gcd(stride, 32)$$ 一行公式算尽;2 HBM 十年把带宽翻了几倍但延迟几乎没动，Little 定律告诉你 kernel 必须同时保持约 1 MB 数据"在飞";3 Roofline 拐点 = 峰值算力/带宽，A100 FP16 TC 是 153 FLOPs/byte--这个数字决定你的算子该做融合还是做 tensorize。
+> * **这是「给 AI 编译器工程师的芯片课」第三篇**。前两篇建立了四层契约全景、拆开了 SRAM/DRAM 电路，本篇沿着“数据住得离计算多远”这条主线走一遍存储层次：**寄存器堆(多端口 SRAM) → SMEM(bank conflict 的电路根源) → L1/L2 cache(tag/index/offset 数学) → HBM(3D 堆叠 DRAM)**。
+> * **三个对编译器最值钱的结论**：1 bank conflict 不是玄学，是“每 bank 每周期一次访问”的电路约束，$$冲突度 = \gcd(stride, 32)$$ 一行公式算尽;2 HBM 十年把带宽翻了几倍但延迟几乎没动，Little 定律告诉你 kernel 必须同时保持约 1 MB 数据“在飞”;3 Roofline 拐点 = 峰值算力/带宽，A100 FP16 TC 是 153 FLOPs/byte--这个数字决定你的算子该做融合还是做 tensorize。
 > * **本篇动手实验**：纯 Python 写一个 bank conflict 模拟器和 Roofline 计算器(无需 GPU)，再用 ncu 把真实硬件的冲突计数器读出来对照。
 
 ## 1. 存储层次：一座用妥协搭起来的金字塔
@@ -35,7 +35,7 @@ graph TD
 
 > 数字为 A100 公开口径，不同 SKU 有差异，以官方 datasheet 为准。
 
-为什么必须分这么多层?第 02 篇给过电路根源：SRAM 一个 bit 要 6 个晶体管，快但贵;DRAM 一个 bit 只要 1 管 1 电容，便宜但要刷新、读出破坏性。**没有一种存储技术能同时做到快、大、便宜**，唯一的工程解就是金字塔。而编译器的全部访存优化可以压缩成一句话：**在每一层的容量预算内，最大化数据的复用次数**。tile size、double buffer、融合、布局变换，全是这句话的具体化。下面逐层看"容量预算"和"访问代价"由什么物理结构决定。
+为什么必须分这么多层?第 02 篇给过电路根源：SRAM 一个 bit 要 6 个晶体管，快但贵;DRAM 一个 bit 只要 1 管 1 电容，便宜但要刷新、读出破坏性。**没有一种存储技术能同时做到快、大、便宜**，唯一的工程解就是金字塔。而编译器的全部访存优化可以压缩成一句话：**在每一层的容量预算内，最大化数据的复用次数**。tile size、double buffer、融合、布局变换，全是这句话的具体化。下面逐层看“容量预算”和“访问代价”由什么物理结构决定。
 
 ## 2. 寄存器堆：GPU 上最贵的一块 SRAM
 
@@ -62,7 +62,7 @@ $$A_{RF} \approx N_{cell} \times \big(a_0 + k \cdot (R + W)^2\big)$$
 
 ### 2.3 GPU 的解法：bank 化 + operand collector
 
-真把几十个端口堆上去太贵，GPU 用两招组合：**把 RF 切成多个单端口 bank 靠并行凑带宽**;再用 **operand collector(操作数收集器)**--一个交叉开关网络，把各 bank 读出的字路由到正确的 lane，撞同一个 bank 的请求硬件自动推迟一周期重放(replay)。这套机制对软件完全不可见，但它解释了指令延迟表里"寄存器读取"那几个周期，以及某些指令组合被静默插 replay 的现象([arXiv:1804.06826](https://arxiv.org/abs/1804.06826) 用微基准系统测过)。
+真把几十个端口堆上去太贵，GPU 用两招组合：**把 RF 切成多个单端口 bank 靠并行凑带宽**;再用 **operand collector(操作数收集器)**--一个交叉开关网络，把各 bank 读出的字路由到正确的 lane，撞同一个 bank 的请求硬件自动推迟一周期重放(replay)。这套机制对软件完全不可见，但它解释了指令延迟表里“寄存器读取”那几个周期，以及某些指令组合被静默插 replay 的现象([arXiv:1804.06826](https://arxiv.org/abs/1804.06826) 用微基准系统测过)。
 
 现在算一笔 occupancy 账。A100 每 SM 的 RF 是 256 KB = 65536 个 32 位寄存器，驻留上限 2048 线程：
 
@@ -126,7 +126,7 @@ $$C(s) = \gcd(s, 32)$$
 
 经典踩坑现场：**矩阵转置或按列遍历行主序矩阵**。宽 32 列的 float 矩阵按列访问，stride 正好 32 → 32 路冲突。解法叫 **padding(补边)**：声明 `[N][N+1]`，行距挪成非 2 的幂，$$\gcd(33,32)=1$$，瞬间无冲突。更系统的做法是 **swizzle(XOR 交织)**：读写时对 bank 地址位做异或扰动，不改物理布局就打散冲突(cuBLAS/CUTLASS 内部大量使用，Triton 编译器也会自动插入)。
 
-> 💡 **编译器关联**：bank conflict 是编译器**可以静态消灭**的性能杀手--前提是知道目标硬件的 bank 数和宽度。这就是 Target 描述里"shared memory 分多少 bank"这个参数存在的原因;layout 变换的正确性判据就是上面那条 gcd 公式。第 10 篇会用 ncu 冲突计数器回来验证。
+> 💡 **编译器关联**：bank conflict 是编译器**可以静态消灭**的性能杀手--前提是知道目标硬件的 bank 数和宽度。这就是 Target 描述里“shared memory 分多少 bank”这个参数存在的原因;layout 变换的正确性判据就是上面那条 gcd 公式。第 10 篇会用 ncu 冲突计数器回来验证。
 
 ## 4. Cache：硬件管理的自动版
 
@@ -153,17 +153,17 @@ $$AMAT = T_{hit} + R_{miss} \times T_{miss}$$
 
 ### 4.2 GPU 的 cache 与 CPU 教科书的三点差异
 
-1. **L1 与 SMEM 共享同一块 SRAM**(A100 合计 192 KB，划分可配置，以官方文档为准)--"缓存多大、scratchpad 多大"本身是编译期决策。
-2. **L1 不跨 SM 保持一致**：SM 0 的 L1 不知道 SM 1 改了什么，跨 SM 通信必须过 L2 或显式同步。"全局变量在两个 block 间隐式传值"在 GPU 上是正确性 bug，不只是性能 bug。
+1. **L1 与 SMEM 共享同一块 SRAM**(A100 合计 192 KB，划分可配置，以官方文档为准)--“缓存多大、scratchpad 多大”本身是编译期决策。
+2. **L1 不跨 SM 保持一致**：SM 0 的 L1 不知道 SM 1 改了什么，跨 SM 通信必须过 L2 或显式同步。“全局变量在两个 block 间隐式传值”在 GPU 上是正确性 bug，不只是性能 bug。
 3. **传输粒度按 sector**：L1↔L2 以 32 字节 sector 为粒度(Ampere 白皮书口径)。warp 连续读 32 个 float = 128 字节 = 4 个 sector，一次搞定;跳着读则每线程独占一个 sector，**有效带宽最多跌到 1/32**。这就是 coalescing 的物理依据，也是编译器坚持向量化加载(`ld.global.v4`)和检查对齐的原因。
 
-> 💡 **编译器关联**：CPU 上 autovectorizer 主要操心对齐和别名;GPU 上还要操心"warp 内 32 条地址流是否连续"。TVM/Triton 的分析 pass 沿循环推导每个 thread 的地址表达式判断 coalescing，不成立时宁可插入 shared memory 中转也要把全局访问排成连续的。
+> 💡 **编译器关联**：CPU 上 autovectorizer 主要操心对齐和别名;GPU 上还要操心“warp 内 32 条地址流是否连续”。TVM/Triton 的分析 pass 沿循环推导每个 thread 的地址表达式判断 coalescing，不成立时宁可插入 shared memory 中转也要把全局访问排成连续的。
 
 ## 5. HBM：把 DRAM 摞起来换带宽
 
 ### 5.1 DRAM 内部：row buffer 才是真正的 cache line
 
-第 02 篇讲过 DRAM 单元是 1T1C、读出破坏性、要刷新。往上一层，DRAM 的组织是四级目录：**channel → rank → bank → row/column**，每个 bank 内有一整行(row buffer，量级 KB，具体值未验证)作为当前"打开"的行：row hit 直接放大输出最快;row miss 要先 precharge 再 activate(tRCD 量级十几 ns);refresh 每 64 ms 每行至少一遍(JEDEC 口径)，期间 bank 不服务。DRAM 也偏爱顺序访问--和 cache line 同构的逻辑，只是这次没人替你排地址流。
+第 02 篇讲过 DRAM 单元是 1T1C、读出破坏性、要刷新。往上一层，DRAM 的组织是四级目录：**channel → rank → bank → row/column**，每个 bank 内有一整行(row buffer，量级 KB，具体值未验证)作为当前“打开”的行：row hit 直接放大输出最快;row miss 要先 precharge 再 activate(tRCD 量级十几 ns);refresh 每 64 ms 每行至少一遍(JEDEC 口径)，期间 bank 不服务。DRAM 也偏爱顺序访问--和 cache line 同构的逻辑，只是这次没人替你排地址流。
 
 ### 5.2 3D 堆叠：TSV 换来的超宽接口
 
@@ -210,9 +210,9 @@ $$\text{在飞字节数 } N = BW \times Latency$$
 |:---:|:---|:---|:---|
 | $$BW$$ | 目标带宽 | 2.04 TB/s | 字节/秒 |
 | $$Latency$$ | 一次访问往返延迟 | ~500 ns | 秒 |
-| $$N$$ | 同时"在路上"的数据量 | ≈ 1 MB | 字节 |
+| $$N$$ | 同时“在路上”的数据量 | ≈ 1 MB | 字节 |
 
-含义直白得可怕：**要让 HBM 持续吐 2 TB/s，kernel 必须任何时刻都有约 1 MB 数据处于"已发请求、还没拿到"的状态**。摊到 108 个 SM，每个 SM 平均养 ~10 KB 在飞数据。凑不够，HBM 就在干等，kernel 是 memory-latency-bound 而非 memory-bandwidth-bound。
+含义直白得可怕：**要让 HBM 持续吐 2 TB/s，kernel 必须任何时刻都有约 1 MB 数据处于“已发请求、还没拿到”的状态**。摊到 108 个 SM，每个 SM 平均养 ~10 KB 在飞数据。凑不够，HBM 就在干等，kernel 是 memory-latency-bound 而非 memory-bandwidth-bound。
 
 ### 6.2 凑够在飞量的三种手段
 
@@ -222,7 +222,7 @@ $$\text{在飞字节数 } N = BW \times Latency$$
 | 更深的 unroll / MLP | 单线程发出多条独立 load | 循环展开、多缓冲指针 |
 | 异步拷贝流水 | cp.async/TMA 后台搬数进 SMEM | double/multi buffering，`num_stages`(第 06 篇) |
 
-三条路殊途同归：**用并发换延迟**。这也解释了为什么"低 occupancy 但深流水"和"高 occupancy 浅流水"都能跑满带宽--Little 定律只看乘积，不看构成。autotuner 里 `num_stages`、unroll factor 的搜索上限，正是由"在飞 ≥ BW×latency"反推最小流水深度，再被 SMEM 容量和 RF 预算截断。
+三条路殊途同归：**用并发换延迟**。这也解释了为什么“低 occupancy 但深流水”和“高 occupancy 浅流水”都能跑满带宽--Little 定律只看乘积，不看构成。autotuner 里 `num_stages`、unroll factor 的搜索上限，正是由“在飞 ≥ BW×latency”反推最小流水深度，再被 SMEM 容量和 RF 预算截断。
 
 ## 7. Roofline：把整篇压缩成一个公式
 
@@ -282,7 +282,7 @@ flowchart TD
 | HBM 延迟降不动 | ~500ns，BW×latency ≈ 1MB | 异步拷贝深度、double buffer、MLP 下限推导 |
 | 算力增速 > 带宽增速 | 拐点 9.6 → 295 | fusion 与 tensorize 分流判据;autotuner 剪枝 |
 
-一句话收束：**存储层次不是背景知识，它是编译器每一个 schedule 原语的定价表**。你写下的每次 `cache_read`、每个 tile size、每段 pipeline stage，都在为"字节移动的距离 × 等待的时间"付费，而价目表每一栏都来自本篇的某块电路。
+一句话收束：**存储层次不是背景知识，它是编译器每一个 schedule 原语的定价表**。你写下的每次 `cache_read`、每个 tile size、每段 pipeline stage，都在为“字节移动的距离 × 等待的时间”付费，而价目表每一栏都来自本篇的某块电路。
 
 ## 9. 收官小结与局限
 
@@ -291,9 +291,9 @@ flowchart TD
 1. 寄存器堆是为多读多写定制端口结构的 SRAM，端口面积平方诅咒决定了 255/thread 天花板，进而牵动 occupancy。
 2. bank conflict = 同 bank 不同地址被迫串行，$$C=\gcd(stride, bank数)$$;padding 和 swizzle 是编译器的静态解法。
 3. cache 的 tag/index/offset 数学 + AMAT 公式解释了 tiling 为什么有效;$$R_{miss}$$ 是指数敏感项。
-4. HBM 带宽靠堆叠并行硬抬、延迟纹丝不动，Little 定律给出"在飞 1 MB"硬指标;Roofline 拐点是 fusion 与 tensorize 的分流闸口。
+4. HBM 带宽靠堆叠并行硬抬、延迟纹丝不动，Little 定律给出“在飞 1 MB”硬指标;Roofline 拐点是 fusion 与 tensorize 的分流闸口。
 
-**本篇的局限**：延迟与带宽均为公开资料的量级示意，同代不同 SKU、不同频率档差异显著，以官方 datasheet 为准;operand collector 仲裁细节与 DRAM 时序参数族(tRCD/CL/tRP)未展开，留待第 06 篇结合执行引擎补齐;Roofline 只考虑 HBM 单层供数，分层 roofline 见第 10 篇。展望：HBM3e/CXL 内存池化和近存计算落地后，"数据移动的距离"正在被重新定价，编译器 cost model 也要跟着改写。
+**本篇的局限**：延迟与带宽均为公开资料的量级示意，同代不同 SKU、不同频率档差异显著，以官方 datasheet 为准;operand collector 仲裁细节与 DRAM 时序参数族(tRCD/CL/tRP)未展开，留待第 06 篇结合执行引擎补齐;Roofline 只考虑 HBM 单层供数，分层 roofline 见第 10 篇。展望：HBM3e/CXL 内存池化和近存计算落地后，“数据移动的距离”正在被重新定价，编译器 cost model 也要跟着改写。
 
 ## 动手实验(Lab)
 

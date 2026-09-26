@@ -47,7 +47,7 @@ flowchart TD
 
 ## 1. 定位：xDSL 在编译器生态中的坐标
 
-### 1.1 不是绑定，是"精神移植"
+### 1.1 不是绑定，是“精神移植”
 
 MLIR 提供了一套**多级 IR 基础设施**：同一套 `Operation/Type/Attribute` 抽象可以承载从高层 DSL（Linalg、Triton）到底层指令（LLVM、RISC-V）的任意方言，配合 Dialect Conversion 与 Pass 管线实现渐进式下降。但其工程实现是 C++ + TableGen（ODS），对研究者、教学场景和快速原型并不友好：改一行方言定义要重新编译，构建链让入门成本变得很高。
 
@@ -69,7 +69,7 @@ flowchart LR
 
 ### 1.2 为什么值得深入研究
 
-1. **可读性**：整个核心代码量级远小于 MLIR C++ 代码库，且是 Python——适合把"编译器是怎么把方言一步步降下去"这件事读透。
+1. **可读性**：整个核心代码量级远小于 MLIR C++ 代码库，且是 Python——适合把“编译器是怎么把方言一步步降下去”这件事读透。
 2. **可运行**：`pip install xdsl` 即可跑起完整示例，改方言定义无需编译。
 3. **研究价值**：xDSL 的 IRDL（IR 定义语言）让方言成为**一等的可序列化数据**，方言可以动态加载、跨进程传输，甚至用 IR 程序（PDL-interp）描述重写规则。
 4. **教学价值**：TensorIR / MLIR 中的概念（约束、模式、转换）在 xDSL 里都有极短的 Python 实现，是最佳的学习标本。
@@ -141,11 +141,11 @@ x = TensorAddOp.create(
 
 ---
 
-## 3. IRDL 与 PyRDL：让方言"自描述"
+## 3. IRDL 与 PyRDL：让方言“自描述”
 
 ### 3.1 什么是 IRDL
 
-IRDL（IR Definition Language）是 xDSL 的**方言定义语言**——用 IR 自身来描述方言。也就是说，"方言的定义"本身是一段可解析、可验证、可传输的 IR（`irdl` dialect）。这与 MLIR 的 ODS（TableGen）有本质区别：ODS 是编译期的代码生成器，IRDL 是运行时的数据。
+IRDL（IR Definition Language）是 xDSL 的**方言定义语言**——用 IR 自身来描述方言。也就是说，“方言的定义”本身是一段可解析、可验证、可传输的 IR（`irdl` dialect）。这与 MLIR 的 ODS（TableGen）有本质区别：ODS 是编译期的代码生成器，IRDL 是运行时的数据。
 
 ```
 我们定义方言 D 的操作 op：              IRDL 表示（也是一段 IR）：
@@ -184,7 +184,7 @@ class TensorAddOp(IRDLOperation):
 
 - **动态方言**：从文本/网络加载一个方言定义，不需要重启进程；
 - **方言即数据**：方言可作为 IR 的一部分随模块传输，实现分布式场景的方言协商；
-- **工具链复用**：校验器、打印机都能作用在"方言定义"本身。
+- **工具链复用**：校验器、打印机都能作用在“方言定义”本身。
 
 ```python
 def op_def_to_irdl(op: type[IRDLOperation]) -> OperationOp:
@@ -203,7 +203,7 @@ def op_def_to_irdl(op: type[IRDLOperation]) -> OperationOp:
 
 ---
 
-## 4. IRDL 约束系统：方言的"类型系统"
+## 4. IRDL 约束系统：方言的“类型系统”
 
 ### 4.1 三阶段生命周期
 
@@ -230,7 +230,7 @@ class AttrConstraint(ABC, Generic[AttributeCovT]):
 ```
 
 - **verify**：检验某个具体 Attribute/Type 是否满足约束（验证时被递归调用）；
-- **variables**：声明该约束能"提取"哪些变量名（例如 `tensor<...xf32>` 提取形状参数）；
+- **variables**：声明该约束能“提取”哪些变量名（例如 `tensor<...xf32>` 提取形状参数）；
 - **can_infer / infer**：当关联变量已绑定时，能否/怎样反推出属性——这是**类型推断**的基础。
 
 ### 4.2 内置约束矩阵
@@ -271,7 +271,7 @@ class ConstraintContext:
         return self._variables[name]
 ```
 
-第一次遇到变量时绑定，后续每次使用都验证一致性——"操作数类型 = 结果类型"这类约束就是这样实现的。
+第一次遇到变量时绑定，后续每次使用都验证一致性——“操作数类型 = 结果类型”这类约束就是这样实现的。
 
 ### 4.4 泛型操作与类型推断的完整流程
 
@@ -527,7 +527,7 @@ class PatternRewriter(Builder, PatternRewriterListener):
 
 ### 7.1 Trait：操作语义约束
 
-xDSL 的 Trait 系统合并了 MLIR 的 Traits 与 Interfaces：Trait 既声明语义（如"我是终止符"），也提供可查询的行为接口。
+xDSL 的 Trait 系统合并了 MLIR 的 Traits 与 Interfaces：Trait 既声明语义（如“我是终止符”），也提供可查询的行为接口。
 
 | Trait | 语义 | 验证行为 |
 |-------|------|---------|
@@ -612,7 +612,7 @@ class MyTypeConversion(TypeConversionPattern):
         return typ
 ```
 
-**PDL-interp 模式匹配**把"重写规则"也变成 IR：
+**PDL-interp 模式匹配**把“重写规则”也变成 IR：
 
 ```python
 class ApplyPDLInterpPass(ModulePass):
@@ -634,7 +634,7 @@ class ApplyPDLInterpPass(ModulePass):
 
 ### 9.1 前端：MLIR 兼容 Lexer / Parser
 
-xDSL 自带与 MLIR 文本格式兼容的 Lexer/Parser：`%0 = arith.constant 10 : i32` 这种语法可以直接解析进 IR。parser 遇到方言中不认识的语法时按"泛型操作"（`"dialect.op"(...) : (...) -> (...)`）解析，保证**部分方言未注册也能读入模块**。
+xDSL 自带与 MLIR 文本格式兼容的 Lexer/Parser：`%0 = arith.constant 10 : i32` 这种语法可以直接解析进 IR。parser 遇到方言中不认识的语法时按“泛型操作”（`"dialect.op"(...) : (...) -> (...)`）解析，保证**部分方言未注册也能读入模块**。
 
 ### 9.2 后端：AssemblyPrinter 汇编输出
 
@@ -647,13 +647,13 @@ flowchart LR
     E --> F["可执行文件"]
 ```
 
-xDSL 内置 RISC-V、x86、CSL 等后端方言。实现后端的操作继承 `AssemblyPrintable`，通过 `AssemblyPrinter.print_module()` 统一驱动输出汇编。这让 xDSL 能跑通"DSL → 多级 IR → 汇编"的完整工具链，很适合做架构探索（如 RISC-V 向量扩展的编译器研究）。
+xDSL 内置 RISC-V、x86、CSL 等后端方言。实现后端的操作继承 `AssemblyPrintable`，通过 `AssemblyPrinter.print_module()` 统一驱动输出汇编。这让 xDSL 能跑通“DSL → 多级 IR → 汇编”的完整工具链，很适合做架构探索（如 RISC-V 向量扩展的编译器研究）。
 
 ---
 
 ## 10. 实战：从零构建一个可运行的张量方言
 
-下面这个例子在 **xDSL 0.63** 上实测通过，完整覆盖"定义方言 → 装配格式 → 重写模式 → 运行变换"全流程。
+下面这个例子在 **xDSL 0.63** 上实测通过，完整覆盖“定义方言 → 装配格式 → 重写模式 → 运行变换”全流程。
 
 ```python
 from typing import TypeVar
@@ -741,7 +741,7 @@ builtin.module {
 }
 ```
 
-可以看到 `tensor.add` 被"吸收"——两个操作数都来自 `tensor.zeros`，重写为直接返回左操作数，加法操作消失。
+可以看到 `tensor.add` 被“吸收”——两个操作数都来自 `tensor.zeros`，重写为直接返回左操作数，加法操作消失。
 
 ### 10.1 组合成 Pass 管线
 
@@ -822,7 +822,7 @@ print(stub.generate())
 ### 12.2 核心回顾
 
 1. **五层体系**：方言定义（PyRDL）→ 约束系统（IRDL）→ IR 数据模型 → 变换引擎 → 序列化/后端，每一层都对应 MLIR 的抽象；
-2. **约束三阶段**：`verify / variables / infer` 让"操作数类型 = 结果类型"这类泛型约束可声明、可推断；
+2. **约束三阶段**：`verify / variables / infer` 让“操作数类型 = 结果类型”这类泛型约束可声明、可推断；
 3. **声明式装配**：`assembly_format` 把 parser/printer 代码量降低约 80%，锚定机制保证可选组解析的确定性；
 4. **worklist 贪婪重写**：`apply_recursively` + `has_one_use` 启发式实现高效迭代收敛；
 5. **方言即数据**：PyRDL ↔ IRDL 双向转换 + PDL-interp，让方言定义和重写规则都能作为 IR 程序处理。
@@ -834,7 +834,7 @@ print(stub.generate())
 - **形式化验证**：IR 变换等价性证明（IRDL 的可序列化特性让这变得可行）；
 - **生产化**：RISC-V 等后端方言持续演进，在 DSA（领域专用架构）编译器研究中逐步落地。
 
-xDSL 的价值不在于替代 MLIR，而在于**用 1/100 的代码量复刻了 MLIR 的抽象体系**——对想深入理解多级 IR 编译器的人而言，它是目前最清晰、最可运行的"教科书实现"。
+xDSL 的价值不在于替代 MLIR，而在于**用 1/100 的代码量复刻了 MLIR 的抽象体系**——对想深入理解多级 IR 编译器的人而言，它是目前最清晰、最可运行的“教科书实现”。
 
 ##### 概念映射表（MLIR ↔ xDSL）
 
