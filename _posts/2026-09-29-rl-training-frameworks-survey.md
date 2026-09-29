@@ -23,6 +23,7 @@ mathjax: true
 > * **异步是 2026 的主线**：AReaL 全异步 2.77×、veRL fully async 2.35–2.67×@128 GPU、LlamaRL 分离+异步在 405B 上 10.7×。代价是 staleness 引入 off-policy，必须配 TIS / IcePop / CISPO 修正。
 > * **MoE 的 RL 有专属坑**：专家路由在一次更新后约 10% 变化，token 级重要性比剧烈抖动。Qwen 用 Routing Replay 兜，GSPO 改序列级重要性比根治，NeMo-RL 至今还在做 R3（Router Replay Rollouts）。
 > * **环境接口正在收敛**：OpenEnv（HF，Gymnasium 风格 + MCP 一等公民，2026-06 治理移交多组织委员会）和 Harbor（Terminal-Bench 作者，ATIF 轨迹格式）是两个主要候选，MCP 是实际公约数。
+> * **本篇初稿漏掉了 RLinf**（清华 + 无问芯穹 + 中关村学院，[arXiv 2509.15965](https://arxiv.org/abs/2509.15965)），已补。它是唯一把**具身智能（VLA + 仿真器 + 真机）**与 LLM 后训练塞进同一套基础设施的框架，核心是 M2Flow 范式；在 BEHAVIOR-1K 上把端到端延迟从 1028 ms/step 压到 **41 ms/step（25×）**，RLinf-VLA 拿了 CVPR 2026 ScaleBot Workshop 最佳论文。
 
 ---
 
@@ -51,6 +52,8 @@ mathjax: true
 | **Agentic RL Runtime** | verl-agent、rLLM、SkyRL-agent、AReaL v2、prime-rl + verifiers | 多轮工具调用 + 沙箱，轨迹分钟级 | 同上，且轨迹更长 | 异步编排、轨迹协议、I/O |
 
 第三族是 2025 年下半年才真正分出来的。它与第二族的差别不在算法，而在**控制对象**：第二族的 rollout 是「一批独立的 completion」，第三族是「一个有状态的、可能跑几十步的 episode」，中间还要插入工具返回、环境反馈、上下文 compaction。这直接把「同步屏障」这个设计变成了不可接受的开销——于是异步从优化项变成了必需品。
+
+**这个三族划分有一个重要的反例：RLinf**。它同时出现在第一族和第三族里——采样端是 ManiSkill3 / LIBERO / IsaacLab / RoboTwin 这类**物理仿真器**（第一族的地盘），被训练的模型却是 OpenVLA / π₀ / GR00T 这种**数十亿参数的 VLA 大模型**（第二族的地盘），而且已经做到真机上的在线 RL。它证明「仿真器 RL」和「大模型 RL」并不天然分居，只是此前没人把两者塞进同一套基础设施。详见第 5.1 节。
 
 后面第 4、5、6 章按这三族展开；第 3 章是贯穿它们的解剖框架。
 
@@ -139,11 +142,11 @@ HybridFlow 论文（[arXiv 2409.19256](https://arxiv.org/abs/2409.19256)，EuroS
 
 | 同步路径 | 量级 | 能否做热同步 |
 |---|---|---|
-| 进程内 reshard（colocate / 3D-HybridEngine） | 亚秒级，且优化器状态完全不搬 | ✅ 最优 |
-| 机内直连（CUDA IPC / 共享内存） | 亚秒级 | ✅ |
-| 跨机直连（NCCL / RDMA） | 秒级 | ✅ |
-| 经 CPU / object store 中转 | 十秒到百秒级 | ⚠️ 勉强 |
-| checkpoint reload（存储往返） | 百秒级 | ❌ 只能做容错 |
+| 进程内 reshard（colocate / 3D-HybridEngine） | 亚秒级，且优化器状态完全不搬 | 最优 |
+| 机内直连（CUDA IPC / 共享内存） | 亚秒级 | 可用 |
+| 跨机直连（NCCL / RDMA） | 秒级 | 可用 |
+| 经 CPU / object store 中转 | 十秒到百秒级 | 勉强 |
+| checkpoint reload（存储往返） | 百秒级 | 只能做容错，不能做热同步 |
 
 LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，LlamaRL 1.15s**，差两个数量级，主因是前者走 Ray object store / CPU 往返、后者直连 NCCL。**选框架时先问它的 refit 走哪条路径**，这一项能决定整体吞吐是几倍还是零点几倍。
 
@@ -247,7 +250,30 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 这一族的共同特征是：**先把异步做成一等公民，再谈别的**。
 
-### 5.1 slime（THUDM / 智谱）
+### 5.1 RLinf（清华 + 无问芯穹 + 中关村学院）
+
+**这是本篇最值得补的一个**——它不在上面任何一个族里，而是横跨两族。
+
+- **出身**：清华大学、北京中关村学院、**无问芯穹（Infinigence AI）**、北京大学、UC Berkeley、北航、上海交大联合发布。2025-09 开源，论文 [arXiv 2509.15965](https://arxiv.org/abs/2509.15965)。名字里的 `inf` 双关 **Infrastructure** 与 **Infinite**。2026 年已加入 PyTorch Ecosystem Landscape。
+- **核心范式 M2Flow（Macro-to-Micro Flow）**：开发者用命令式接口粗粒度地描述「组件之间怎么通信、怎么同步」（宏逻辑流），系统再自动把它拆解、重组成时空两个维度上的优化执行流（微执行流）。**逻辑编程与执行规划彻底解耦**——这是它区别于 veRL 的「手动指定 placement」的根本思路。
+- **三个支撑机制**：**Worker 抽象**（把每个 RL 组件封装成可灵活放置的单元，内置自适应通信，跨 GPU/NPU/CPU 异构）、**弹性流水线 + 自动上下文切换**（不改逻辑流就能调流水线粒度、做加速器的时分复用）、**profiling 引导的调度策略**（自动选执行模式）。
+- **三种执行模式 + 两种调度**：colocated / disaggregated / **hybrid**（两者可定制组合）；dynamic scheduling（运行时动态调整资源）与 static scheduling（按负载自动选模式，免手工配 GPU 与并行度）。
+- **具身智能是它的主场，也是它唯一性所在**：VLA 模型覆盖 OpenVLA、OpenVLA-OFT、**π₀ / π₀.₅**、GR00T-N1.5、LingBot-VLA、Dexbotic；仿真器覆盖 ManiSkill3、LIBERO、IsaacLab、RoboTwin、MetaWorld、CALVIN、RoboCasa、BEHAVIOR-1K；并且做到了**首个 π₀ 系列（flow-matching action expert）的 RL 微调**。
+- **版本节奏很快**：v0.1（2025-12）打通仿真-训练-推理一体化；**v0.2（2026-03）扩展到真实世界**，支持全异构、全异步的真机 RL（口号是「像使用 GPU 一样使用机器人」）、跨域多机真实世界 RL、人在环；v0.3.0 已上 PyPI。2026 年上半年陆续加了世界模型（Wan、OpenSora）、Sim-Real 协同训练（RLinf-Co）、多智能体 RL（WideSeek-R1）、DSRL、SAC-Flow、FUSCO（MoE All-to-All 加速）等。
+- **算法**：GRPO、PPO、DAPO、REINFORCE++、SAC、SFT（全参 / LoRA），以及 DAgger。后端 FSDP + HF（快速适配新模型）与 Megatron + SGLang/vLLM（大规模）二选一，rollout 支持 SGLang / vLLM / HF。
+
+**优势**：
+- **唯一同时吃下「仿真器 RL」与「大模型 RL」的框架**。别人的 rollout 是生成 token，它的 rollout 是「跑仿真器拿轨迹」，同时被训的又是十亿到数十亿参数的 VLA——这两件事此前分属两族。
+- 公开性能数字很硬：论文口径相对 veRL / slime **1.07×–1.70×**（推理 RL），具身 RL 最高 **2.13×**（v0.1 release note 口径 2.434×）；**2026-05 被 StanfordVL / BEHAVIOR-1K 官方上游仓库集成**，端到端延迟从 1028 ms/step 压到 **41 ms/step（25×）**；RLinf-VLA 拿 CVPR 2026 ScaleBot Workshop 最佳论文（1.61×–1.88× 训练加速）；2026-03 入选 EAI-100 具身智能年度十大突破项目。
+- Sim-Real 协同训练的效果很实在：OpenVLA 平均成功率 **16.5% → 64.0%**，π₀.₅ **26.7% → 66.2%**；真实轨迹只有 10–20 条时优势最大，50 条真机轨迹就能追平 SFT 用 200+ 条的效果。
+- 国产硬件适配认真：华为云与昇腾完成了适配、精度对齐与性能优化并合入社区，支持「昇腾卡训推 + 渲染卡仿真」的跨节点异构训练。
+
+**不足**：
+- **具身场景的门槛在框架之外**：仿真器资产、真机硬件、相机标定这些才是真正的工作量，框架只解决调度与吞吐。
+- 生态与社区规模仍小于 veRL；LLM 推理/agentic 那条线上，它的 SOTA 是拿 DeepSeek-R1-Distill-Qwen 做的（RLinf-math-1.5B：AIME24 48.44 / AIME25 35.63 / GPQA-d 38.46；7B：68.33 / 52.19 / 48.18），强但不是唯一卖点。
+- 抽象层（Worker / Scheduler / Channel）比 veRL 更厚，读懂成本更高；安装推荐走 Docker，依赖（Maniskill3、LeRobot、openpi）较重。
+
+### 5.2 slime（THUDM / 智谱）
 
 - **架构**：Megatron-LM（训练）+ SGLang（rollout）经 Data Buffer 桥接，**SGLang-native 单一推理后端、引擎透传**。设计上刻意保持低抽象。
 - **身份**：GLM-4.5 / 4.6 / 4.7 的训练底座。异步有 `examples/fully_async`；MoE 有 GLM-4.5、Qwen3-30B-A3B、DeepSeek-R1 的原生示例，CI 覆盖 dense + MoE。
@@ -255,7 +281,7 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 **优势**：Megatron + SGLang 这条组合调得最深，大规模 agentic 与长视野 rollout 是主场；低抽象意味着看得懂、改得动。**不足**：单一推理后端（想用 vLLM 得走 vime 这类 fork）；文档与社区规模不如 veRL。
 
-### 5.2 AReaL（清华交叉信息院 + 蚂蚁）
+### 5.3 AReaL（清华交叉信息院 + 蚂蚁）
 
 - **全异步是它的定义**：rollout 与 training 彻底解耦，rollout worker 持续生产、learner 独立消费，靠 staleness 上限 $$\eta$$ 控制新鲜度。论文 [arXiv 2505.24298](https://arxiv.org/abs/2505.24298)，实测 **2.77×**。
 - **三个独门机制**：**可中断 rollout**（生成中途换权重、丢弃旧 KV 重算，维持 on-policy 正确性）、**GPU-Direct RDMA 权重同步**（1000 GPU 集群 <3s）、**radix cache 刷新**（SGLang 后端在权重更新后自动刷，保证 on-policy 正确）。
@@ -264,7 +290,7 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 **优势**：异步做得最彻底，公开实测数字最完整；agentic 的接入门槛最低；自带 Archon 引擎（PyTorch 原生 5D 并行）与 FSDP/Megatron 后端可换。**不足**：异步引入的 off-policy 修正（IcePop / KPop）需要调参才稳；v2.0 微服务化后运维复杂度上升。
 
-### 5.3 ROLL（阿里巴巴）
+### 5.4 ROLL（阿里巴巴）
 
 - **架构**：Ray 多角色 + Megatron-Core（5D：DP/TP/PP/CP/EP）+ SGLang/vLLM 训推分离；Rollout Scheduler + AutoDeviceMapping 做异构调度。
 - **异步**：ROLL Flash（[arXiv 2510.11345](https://arxiv.org/abs/2510.11345)）生产者-消费者解耦，用 **Asynchronous Ratio** 控制 stale，集成 Decoupled PPO / TOPR / TIS / CISPO。
@@ -274,14 +300,14 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 > 顺带纠两个常见误传：**ROLL 没有官方中文名「如流」**；**ROME 不是 Prime Intellect 的项目**，它是 ROLL 团队的 agentic 生态（ALE + ROME，2026-01）。
 
-### 5.4 ChatLearn（阿里云 PAI）
+### 5.5 ChatLearn（阿里云 PAI）
 
 - **定位**：计算图式编程，封装几个函数即定义算法。**训练** Megatron / FSDP2，**推理** vLLM / SGLang；Sequence Packing、Ulysses SP、Group GEMM 加速；资源独占/共享调度可选。
 - **性能口径**：官方称 70B+70B 相对 DeepSpeed-Chat / OpenRLHF 提速 **137%–208%**（厂商自测值）。GRPO 与 GSPO（Qwen GSPO 的第一时间复现）都支持；配合 SGLang + LangGraph 做多轮工具调用。
 
 **优势**：PAI 平台上开箱即用，与企业调度集成好；GSPO 跟进快。**不足**：开源社区活跃度明显低于 veRL/AReaL；MoE RL 教程仍在 roadmap。
 
-### 5.5 prime-rl（Prime Intellect）
+### 5.6 prime-rl（Prime Intellect）
 
 - **全异步 + FSDP2 + vLLM**，FP8 推理、PD 分离、EP/CP，目标 1T+ MoE / 1000+ GPU。
 - **两个去中心化组件很有意思**：**SHARDCAST**（权重树状广播）与 **TOPLOC**（可验证推理哈希）——后者用来在不可信的推理 worker 上验证 rollout 真实性，服务于 INTELLECT-2 那种全球分布式异步训练（32B）。
@@ -289,7 +315,7 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 **优势**：为大规模分布式/去中心化场景设计，是少数认真处理「不可信推理 worker」的框架；verifiers 生态好。**不足**：面向特定基础设施形态，常规企业集群用不上那些去中心化机制。
 
-### 5.6 其他值得记的
+### 5.7 其他值得记的
 
 | 框架 | 一句话 | 适用 |
 |---|---|---|
@@ -308,7 +334,7 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 ## 6. 经典 RL 框架：还活着吗
 
-这一族对 LLM 后训练基本无用，但对机器人/控制/游戏/MARL 仍是主力，而且它们的抽象影响了后来所有人。这里给一张「2026 年活跃度真相」表——很多选型文档还在推荐已经停更的项目。
+这一族对 LLM 后训练基本无用（**唯一例外是 5.1 的 RLinf**——它把仿真器和 VLA 大模型接在了一起，是两族之间唯一的桥），但对机器人/控制/游戏/MARL 仍是主力，而且它们的抽象影响了后来所有人。这里给一张「2026 年活跃度真相」表——很多选型文档还在推荐已经停更的项目。
 
 | 框架 | 设计特点 | 现状（2026-09） | 判定 |
 |---|---|---|---|
@@ -390,7 +416,7 @@ GRPO 用在 MoE 上会崩，原因是**专家激活波动**：一次更新后约
 
 按问题顺序走，不要按「哪个框架 star 多」走：
 
-1. **你在训什么？** 机器人/控制/游戏/多智能体 → 第 6 章那一族（SB3 快速起步，RLlib 上规模，JAX 系做可复现研究）。LLM 后训练 → 往下。
+1. **你在训什么？** 机器人/控制/游戏/多智能体 → 第 6 章那一族（SB3 快速起步，RLlib 上规模，JAX 系做可复现研究）。**但如果被训的是 VLA 大模型（OpenVLA / π₀ / GR00T）且要接仿真器或真机 → 直接去 5.1 的 RLinf**，它是这个交叉点上唯一的成熟选择。纯 LLM 后训练 → 往下。
 2. **单机 / ≤30B / 想尽快跑通** → **TRL**（GRPO 稳定 API，colocate vLLM）。显存不够 → **Unsloth**。
 3. **30B–70B，一个集群，要异步与多轮** → **OpenRLHF**（直白、TIS 内置）或 **veRL**（placement 灵活、算法最全）。
 4. **100B+ / MoE / 已有 NVIDIA 全栈** → **NeMo-RL**（Megatron 6D + 原生生成免转换）；若已全量落地 Megatron 预训练栈 → **Megatron 原生 RL**（连 refit 都省了）。
@@ -409,13 +435,14 @@ GRPO 用在 MoE 上会崩，原因是**专家激活波动**：一次更新后约
 
 ## 9. 2026 的趋势与未解问题
 
-**五个已经发生的方向**（都有可核验的落地）：
+**六个已经发生的方向**（都有可核验的落地）：
 
 1. **异步成为默认**。AReaL、prime-rl 从设计上就是异步的；veRL v0.9 把异步合入同一套 V1 训练器；OpenRLHF、slime、ROLL、Tunix 全部支持。同步框架（TRL）把异步 GRPO 挂在路线图上。
 2. **RL 与预训练共用同一套并行栈**。NeMo-RL 直接用 Megatron-Core；slime 把 Megatron 与 SGLang 深度耦合；veRL 默认走 Megatron-Bridge。「RL 框架自己实现一套并行」这条路基本被放弃了。
 3. **训推一体的精度路线**。FP8 rollout 的吞吐增益很可观（有报告称最高约 44%，**待验证**），代价是训推不一致放大，必须配 TIS/MIS 校正——**精度与吞吐现在是同一个旋钮**，不能分开调。
 4. **PD 分离进入训练环**。veRL v0.9 支持 prefill/decode 离散化 rollout（NIXL / Mooncake）。推理侧的服务化架构正在反向输入给训练侧。
 5. **环境标准化与 MCP 化**。OpenEnv 交出治理权、Harbor 被 SkyRL 与 TRL 采纳，训练环境与生产环境用同一套协议这件事正在变成共识。
+6. **具身智能把「仿真器」重新带回 RL 框架**。RLinf 从真机 RL（v0.2）一路做到世界模型（Wan / OpenSora）、Sim-Real 协同训练与多智能体，并被 BEHAVIOR-1K 上游集成（25× 加速）。**仿真器不再只是环境，而是训练流水线里一个要被调度、要被流水线化的一等公民**——这直接把第 1 章那个「三族划分」的边界又模糊了一层。
 
 **三个还没解决的问题**：
 
@@ -435,6 +462,7 @@ GRPO 用在 MoE 上会崩，原因是**专家激活波动**：一次更新后约
 - AReaL：[arXiv 2505.24298](https://arxiv.org/abs/2505.24298)
 - DAPO：[arXiv 2503.14476](https://arxiv.org/abs/2503.14476)；DUPO：[arXiv 2507.02592](https://arxiv.org/abs/2507.02592)
 - GSPO（Qwen3）：[arXiv 2507.18071](https://arxiv.org/abs/2507.18071)；CISPO（MiniMax-M1）：[arXiv 2506.13585](https://arxiv.org/abs/2506.13585)
+- RLinf（M2Flow）：[arXiv 2509.15965](https://arxiv.org/abs/2509.15965)；RLinf-VLA 技术报告获 CVPR 2026 ScaleBot Workshop 最佳论文
 - AsyncFlow：[arXiv 2507.01663](https://arxiv.org/abs/2507.01663)；StreamRL：[arXiv 2504.15930](https://arxiv.org/abs/2504.15930)
 - ROLL Flash：[arXiv 2510.11345](https://arxiv.org/abs/2510.11345)；ROLL：[arXiv 2506.06122](https://arxiv.org/abs/2506.06122)
 
@@ -442,6 +470,7 @@ GRPO 用在 MoE 上会崩，原因是**专家激活波动**：一次更新后约
 - [verl-project/verl](https://github.com/verl-project/verl) ｜ [OpenRLHF](https://github.com/OpenRLHF/OpenRLHF) ｜ [huggingface/trl](https://github.com/huggingface/trl)
 - [NVIDIA-NeMo/RL](https://github.com/NVIDIA-NeMo/RL) ｜ [NVIDIA/Megatron-LM](https://github.com/NVIDIA/Megatron-LM)
 - [THUDM/slime](https://github.com/THUDM/slime) ｜ [inclusionAI/AReaL](https://github.com/inclusionAI/AReaL) ｜ [alibaba/ROLL](https://github.com/alibaba/ROLL) ｜ [alibaba/ChatLearn](https://github.com/alibaba/ChatLearn)
+- [RLinf/RLinf](https://github.com/RLinf/RLinf)（清华 + 无问芯穹，具身 RL 与 LLM 后训练合流；文档 [rlinf.readthedocs.io](https://rlinf.readthedocs.io/)）
 - [PrimeIntellect-ai/prime-rl](https://github.com/PrimeIntellect-ai/prime-rl) ｜ [NovaSky-AI/SkyRL](https://github.com/NovaSky-AI/SkyRL) ｜ [agentica-project/rllm](https://github.com/agentica-project/rllm)
 - [huggingface/OpenEnv](https://github.com/huggingface/OpenEnv) ｜ [google/tunix](https://github.com/google/tunix)
 
