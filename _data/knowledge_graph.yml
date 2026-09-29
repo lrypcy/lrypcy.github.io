@@ -112,6 +112,16 @@ series:
     prefixes: [megatron-]
     desc: 5 篇。源码层走读：00 代码地图与配置系统 → 01 并行体系源码 → 02 优化工具箱 → 03 实测调优 → 04 RL/refit 桥接。承接 dist-train 系列的并行原理，补上源码、实测与 2026 新特性（GTP、MLA/DSA、MFSDP v2、Dynamic CP、full CUDA graph、原生 RL 栈）。
 
+  - id: perf-analysis
+    name: 性能剖析：度量口径、训练栈归因与服务测量
+    short: 性能剖析
+    category: 性能分析
+    layer: 0
+    order: 5
+    prefixes: [profiling-]
+    exclude: [nv-gpu-profiling, op-]
+    desc: 3 篇。00 度量口径（MFU/HFU 分母、Timer 语义、goodput 边界）→ 01 训练栈 profiling（OTel / Perfetto / nsys 三层观测面、overlap 双分母、α-β 判据、掉队卡诊断）→ 02 推理服务 profiling（ITL 与 TPOT 的分母差、goodput 与峰值吞吐、closed/open loop、到达分布、前缀缓存陷阱）。承接 op 系列的工具链与 dist-train / Megatron 的栈知识，回答「这些数字是怎么算出来的、哪些彼此不可比」。
+
   # ---------- layer 1：核心算法 ----------
   - id: posem
     name: 大模型位置编码
@@ -215,12 +225,12 @@ series:
     desc: 纯 Python 重写的 MLIR 精神实现：IRDL、声明式装配格式与 PatternRewriteWalker。
 
   - id: profiling
-    name: NVIDIA 性能剖析工具链
-    short: 性能剖析
+    name: NVIDIA 性能剖析工具链（系列总纲）
+    short: 工具总纲
     category: 性能分析
     node: false
     prefixes: [nv-gpu-profiling]
-    desc: 从 nvidia-smi 到 Nsight Compute 的 profiling 工具全景。
+    desc: 从 nvidia-smi 到 Nsight Compute 的 profiling 工具全景，是性能剖析系列的入口总纲。
 
   - id: diffusion
     name: 扩散模型算法全景
@@ -255,13 +265,16 @@ links:
   - { from: mdp-grpo,  to: wam,        label: WAM 用 RL 训练动作模型 }
   - { from: embodied,  to: wam,        label: 世界模型驱动具身决策 }
   - { from: flow,      to: wam,        label: 生成式世界模型（Cosmos / DreamZero） }
+  - { from: op,        to: perf-analysis, label: op 系列讲 profiling 工具链，本系列讲这些工具报出来的数字怎么算、哪些不可比 }
+  - { from: dist-train,to: perf-analysis, label: 并行训练的度量口径与时间归因 }
+  - { from: megatron,  to: perf-analysis, label: Megatron 原生 OTel 观测栈与内置 Timer 是本系列的源码级素材 }
   - { from: chip,      to: transcendental, label: SFU / MUFU 的吞吐是超越函数的物理上界 }
   - { from: op,        to: transcendental, label: Softmax / RoPE 的指令级实现与数值陷阱 }
 
 paths:
   - name: AI Infra 工程师主线
-    desc: 先懂硬件，再懂编译与算子，最后落到训练系统与量化部署
-    steps: [chip, compiler, op, dist-train, quant]
+    desc: 先懂硬件，再懂编译与算子，接着学会度量与归因，最后落到训练系统与量化部署
+    steps: [chip, compiler, op, dist-train, perf-analysis, quant]
   - name: 大模型算法与后训练
     desc: 位置编码打底 → 策略优化 → 蒸馏与量化，覆盖 post-training 全链路
     steps: [posem, mdp-grpo, distill, quant]
