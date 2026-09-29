@@ -3,10 +3,13 @@ title: "NV 卡性能剖析工具全景：从 nvidia-smi 到 Nsight Compute"
 date: 2026-08-26 16:00:00 +0800
 categories:
   - 性能分析
-tags: [gpu-profiling, nvidia-smi, nsight-systems, nsight-compute, torch-profiler, cupti]
+tags: [gpu-profiling, profiling, nvidia-smi, nsight-systems, nsight-compute, torch-profiler, cupti, methodology, performance]
 layout: post
 mathjax: true
 ---
+
+> **系列导航** ｜ 本篇是**工具总纲**（有哪些工具、各自回答什么问题）。往下走一层是度量与归因三篇：
+> [00 度量口径](/2026/09/29/profiling-00-metrics/) → [01 训练栈 profiling](/2026/09/29/profiling-01-training/) → [02 推理服务 profiling](/2026/09/29/profiling-02-inference/)
 
 > **TL;DR**
 > *   **背景**：大模型训练与推理工程师最常见的困境是——服务在跑、指标在涨，但没人说得清 GPU 的时间到底花在哪。`time.time()` 在 CUDA 异步执行下会系统性地说谎，而 NVIDIA 的剖析栈（nvidia-smi、Nsight Systems、Nsight Compute、torch.profiler）各自只回答一个问题，用错层级就会白忙一场。
