@@ -183,6 +183,10 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 ### 4.1 veRL（HybridFlow）——当前事实标准
 
+*DeepWiki：[verl-project/verl](https://deepwiki.com/verl-project/verl)*
+
+
+
 - **出身与许可**：字节 Seed 团队发起，现归 `verl-project` 组织（2026-01 迁移），Apache-2.0，约 22.9k stars。论文 [HybridFlow, EuroSys 2025](https://arxiv.org/abs/2409.19256)。
 - **四轴定位**：混合控制 / 自动映射 / 进程内 reshard + CUDA IPC + NCCL 三种后端 / v0.9 起同步异步同一套控制流。
 - **v0.9.0（2026-08-14）是一次大改**：统一 V1 PPO 训练器（同步与异步共用控制流）、**Megatron-Bridge 成为默认 Megatron 路径**、vLLM 要求 ≥0.18、新增 `delta_sharded` 异步权重同步（Qwen2.5-72B 提速 3.1×）、引入 `verl.plugin.platform` 硬件抽象层（AMD ROCm、昇腾 NPU、国产芯片）、支持 vLLM prefill-decode 分离 rollout（NIXL / Mooncake 传输层）。
@@ -202,6 +206,10 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 ### 4.2 OpenRLHF —— 中小集群的性价比之选
 
+*DeepWiki：[OpenRLHF/OpenRLHF](https://deepwiki.com/OpenRLHF/OpenRLHF)*
+
+
+
 - **四轴定位**：Ray 单控 / 默认分离、`--colocate_all_models` 可切 colocate / vLLM NCCL 权重同步 / v0.8.0（2025-05）起支持异步。
 - **现状**：v0.10.0（2026-04-12）、v0.11.0（2026-08-13）；vLLM 已升到 0.29.0（2026-09-10）。算法 PPO、REINFORCE++(-baseline)、GRPO、RLOO、DAPO、GSPO、DPO/IPO/cDPO。**2026-09 新增 FlashREINFORCE**：critic-free、single-rollout 异步 RL，用 vLLM logprobs 上的 binary-KL 信任域 + sample-mean 聚合。
 - **新后端 Molt**：官方称其为 Automodel 驱动、比 DeepSpeed 更强、可扩到数百 B 参数，同时保持原有 OpenRLHF 工作流。
@@ -212,6 +220,10 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 **不足**：强绑定 vLLM 版本（v0.9.3 要求 vLLM ≥0.15.1）；DeepSpeed ZeRO 路线在超大规模（>70B 多节点）吞吐弱于 Megatron 系；**LlamaRL 论文实测其 70B 权重同步 111.65s**，是分离部署下的明显短板。
 
 ### 4.3 TRL —— 易用性的极端，以及「敢于删除」
+
+*DeepWiki：[huggingface/trl](https://deepwiki.com/huggingface/trl)*
+
+
 
 - **四轴定位**：单进程 + Accelerate，无 Ray / colocate 原生 / 进程内无同步开销 / 同步为主（异步 GRPO 在路线图上）。
 - **v1.0（2026-03-31）** 确立双轨契约：稳定层（SFTTrainer、DPOTrainer、GRPOTrainer、RLOOTrainer、RewardTrainer）遵循语义化版本；实验层 `trl.experimental` 不承诺稳定。
@@ -224,6 +236,10 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 ### 4.4 NVIDIA NeMo-RL —— 全栈派的主力
 
+*DeepWiki：[NVIDIA-NeMo/RL](https://deepwiki.com/NVIDIA-NeMo/RL)*
+
+
+
 - **四轴定位**：Ray 单控 / 支持 colocate / CUDA IPC refit（MoE 优化 10×）/ 异步 RL + replay buffer。
 - **两套训练后端**：DTensor（PyTorch 原生 FSDP2 + TP/SP/PP/CP）与 **Megatron Core（6D 并行，面向 100B+ 与 MoE）**；三套生成后端：vLLM、SGLang、**Megatron 原生生成**（免权重转换，对新模型 day-0 友好）。
 - **算法**：GRPO、DAPO、CISPO、PPO、GSPO、GDPO、SFT（含 LoRA）、DPO、奖励建模、MOPD（on-policy 蒸馏）、跨 tokenizer 蒸馏。v0.6.0（2026-04-30）加入 SGLang 后端、Muon 优化器、投机解码；**Nemotron-3-Ultra 用它训练**，25+ 篇任务指南（SWE RL、音频后训练、量化感知 RL、YaRN 长上下文）。
@@ -234,6 +250,10 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 **不足**：生态绑定 NVIDIA 硬件；v0.7.0 roadmap（ETA 2026-06-30）里多项仍标记 WIP，包括 Router Replay Rollouts（R3）、PPO with MCore / dTensor、RDMA refit 与 delta refit——说明 **MoE RL 的数值稳定性在 NVIDIA 自己也还没完全收口**；对非 NVIDIA 平台基本不可选。
 
 ### 4.5 Megatron-LM 原生 RL 栈 —— 免 refit 的极端
+
+*DeepWiki：[NVIDIA/Megatron-LM](https://deepwiki.com/NVIDIA/Megatron-LM)*
+
+
 
 - **四轴定位**：无独立 Ray 控制器，RL 内嵌于 `train_rl.py` 主循环 / 天然 colocate / **根本不做权重同步** / RolloutPipeline 异步编排。
 - **核心差异**：`MegatronLocal` 原地推理——**训练进程自身充当推理服务**。训练与推理同进程、同格式、同布局，因此 3D-HybridEngine 那笔搬运账直接归零。
@@ -256,6 +276,10 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 这一族的共同特征是：**先把异步做成一等公民，再谈别的**。
 
 ### 5.1 RLinf（清华 + 无问芯穹 + 中关村学院）
+
+*DeepWiki：[RLinf/RLinf](https://deepwiki.com/RLinf/RLinf)*
+
+
 
 **这是本篇最值得补的一个**——它不在上面任何一个族里，而是横跨两族。
 
@@ -280,6 +304,10 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 ### 5.2 slime（THUDM / 智谱）
 
+*DeepWiki：[THUDM/slime](https://deepwiki.com/THUDM/slime)*
+
+
+
 - **架构**：Megatron-LM（训练）+ SGLang（rollout）经 Data Buffer 桥接，**SGLang-native 单一推理后端、引擎透传**。设计上刻意保持低抽象。
 - **身份**：GLM-4.5 / 4.6 / 4.7 的训练底座。异步有 `examples/fully_async`；MoE 有 GLM-4.5、Qwen3-30B-A3B、DeepSeek-R1 的原生示例，CI 覆盖 dense + MoE。
 - **生态**：阿里的 Dressage（Accio）与 RadixArk 的 Miles 都基于它；Miles 补了 FP8、R3、speculative RL、VLM 多轮；vime 则保留 slime 训练栈、把 rollout 换成 vLLM + vllm-router。
@@ -287,6 +315,10 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 **优势**：Megatron + SGLang 这条组合调得最深，大规模 agentic 与长视野 rollout 是主场；低抽象意味着看得懂、改得动。**不足**：单一推理后端（想用 vLLM 得走 vime 这类 fork）；文档与社区规模不如 veRL。
 
 ### 5.3 AReaL（清华交叉信息院 + 蚂蚁）
+
+*DeepWiki：[inclusionAI/AReaL](https://deepwiki.com/inclusionAI/AReaL)*
+
+
 
 - **全异步是它的定义**：rollout 与 training 彻底解耦，rollout worker 持续生产、learner 独立消费，靠 staleness 上限 $$\eta$$ 控制新鲜度。论文 [arXiv 2505.24298](https://arxiv.org/abs/2505.24298)，实测 **2.77×**。
 - **三个独门机制**：**可中断 rollout**（生成中途换权重、丢弃旧 KV 重算，维持 on-policy 正确性）、**GPU-Direct RDMA 权重同步**（1000 GPU 集群 <3s）、**radix cache 刷新**（SGLang 后端在权重更新后自动刷，保证 on-policy 正确）。
@@ -296,6 +328,10 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 **优势**：异步做得最彻底，公开实测数字最完整；agentic 的接入门槛最低；自带 Archon 引擎（PyTorch 原生 5D 并行）与 FSDP/Megatron 后端可换。**不足**：异步引入的 off-policy 修正（IcePop / KPop）需要调参才稳；v2.0 微服务化后运维复杂度上升。
 
 ### 5.4 ROLL（阿里巴巴）
+
+*DeepWiki：[alibaba/ROLL](https://deepwiki.com/alibaba/ROLL)*
+
+
 
 - **架构**：Ray 多角色 + Megatron-Core（5D：DP/TP/PP/CP/EP）+ SGLang/vLLM 训推分离；Rollout Scheduler + AutoDeviceMapping 做异构调度。
 - **异步**：ROLL Flash（[arXiv 2510.11345](https://arxiv.org/abs/2510.11345)）生产者-消费者解耦，用 **Asynchronous Ratio** 控制 stale，集成 Decoupled PPO / TOPR / TIS / CISPO。
@@ -307,12 +343,20 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 ### 5.5 ChatLearn（阿里云 PAI）
 
+*DeepWiki：[alibaba/ChatLearn](https://deepwiki.com/alibaba/ChatLearn)*
+
+
+
 - **定位**：计算图式编程，封装几个函数即定义算法。**训练** Megatron / FSDP2，**推理** vLLM / SGLang；Sequence Packing、Ulysses SP、Group GEMM 加速；资源独占/共享调度可选。
 - **性能口径**：官方称 70B+70B 相对 DeepSpeed-Chat / OpenRLHF 提速 **137%–208%**（厂商自测值）。GRPO 与 GSPO（Qwen GSPO 的第一时间复现）都支持；配合 SGLang + LangGraph 做多轮工具调用。
 
 **优势**：PAI 平台上开箱即用，与企业调度集成好；GSPO 跟进快。**不足**：开源社区活跃度明显低于 veRL/AReaL；MoE RL 教程仍在 roadmap。
 
 ### 5.6 prime-rl（Prime Intellect）
+
+*DeepWiki：[PrimeIntellect-ai/prime-rl](https://deepwiki.com/PrimeIntellect-ai/prime-rl)*
+
+
 
 - **全异步 + FSDP2 + vLLM**，FP8 推理、PD 分离、EP/CP，目标 1T+ MoE / 1000+ GPU。
 - **两个去中心化组件很有意思**：**SHARDCAST**（权重树状广播）与 **TOPLOC**（可验证推理哈希）——后者用来在不可信的推理 worker 上验证 rollout 真实性，服务于 INTELLECT-2 那种全球分布式异步训练（32B）。
@@ -322,15 +366,15 @@ LlamaRL 论文给出的实测很刺眼：**OpenRLHF 70B 权重同步 111.65s，L
 
 ### 5.7 三个不该漏的：EasyR1、SimpleVLA-RL、MARTI
 
-**EasyR1（hiyouga，LLaMA-Factory 作者）**——多模态 RL 训练的默认答案，5.1k★，Apache-2.0。它是 veRL 的一个干净分叉，但解决了 veRL 没解决的事：**VLM 原生支持**（Qwen2-VL / 2.5-VL / 3-VL、视频输入）、**内置 LoRA**、**padding-free 训练**、**YAML + CLI 点号覆盖**（改配置不用动代码）、**奖励函数就是一个普通 Python 文件里的 `compute_score()`**、预置 Docker 镜像。算法 7 种（GRPO、DAPO、REINFORCE++、ReMax、RLOO、GSPO、CISPO）。MMR1、Vision-R1、Seg-Zero、GUI-R1、Long-RL、MetaSpatial 等 20+ 研究项目用它训练。
+**EasyR1（hiyouga，LLaMA-Factory 作者）**——多模态 RL 训练的默认答案，5.1k★，Apache-2.0。它是 veRL 的一个干净分叉，但解决了 veRL 没解决的事：**VLM 原生支持**（Qwen2-VL / 2.5-VL / 3-VL、视频输入）、**内置 LoRA**、**padding-free 训练**、**YAML + CLI 点号覆盖**（改配置不用动代码）、**奖励函数就是一个普通 Python 文件里的 `compute_score()`**、预置 Docker 镜像。算法 7 种（GRPO、DAPO、REINFORCE++、ReMax、RLOO、GSPO、CISPO）。MMR1、Vision-R1、Seg-Zero、GUI-R1、Long-RL、MetaSpatial 等 20+ 研究项目用它训练。DeepWiki：[hiyouga/EasyR1](https://deepwiki.com/hiyouga/EasyR1)。
 
 > 定位对照：直接用 veRL 做 VLM 要自己适配、自己写 reward 接口、没有 LoRA；EasyR1 把这些补齐了。**做多模态 RL，先看 EasyR1 再看 veRL。**
 
-**SimpleVLA-RL（上海 AI Lab，PRIME-RL 组织，ICLR 2026）**——具身 RL 的另一条路，1.9k★。同样基于 veRL，但扩展方向是 VLA：**并行多环境渲染**加速轨迹采样、**二元 0/1 奖励**（不需要任何 reward shaping）、探索增强的 GRPO。结果很硬：单条轨迹 SFT + RL 就能到 96.9% 成功率、**反而超过全轨迹 SFT**；机器人自主涌现出演示数据里没有的动作（著名的 “pushcut” 现象）；Sim-to-Real 迁移 +21%，长时程灵巧操作相对提升 300%。
+**SimpleVLA-RL（上海 AI Lab，PRIME-RL 组织，ICLR 2026）**——具身 RL 的另一条路，1.9k★。同样基于 veRL，但扩展方向是 VLA：**并行多环境渲染**加速轨迹采样、**二元 0/1 奖励**（不需要任何 reward shaping）、探索增强的 GRPO。结果很硬：单条轨迹 SFT + RL 就能到 96.9% 成功率、**反而超过全轨迹 SFT**；机器人自主涌现出演示数据里没有的动作（著名的 “pushcut” 现象）；Sim-to-Real 迁移 +21%，长时程灵巧操作相对提升 300%。DeepWiki：[PRIME-RL/SimpleVLA-RL](https://deepwiki.com/PRIME-RL/SimpleVLA-RL)。
 
 > 它与 5.1 的 RLinf 是具身 RL 的两个直接竞品，路线差别很清楚：**RLinf 是自建底座（M2Flow + Worker/Scheduler/Channel），SimpleVLA-RL 是站在 veRL 肩上做垂直扩展**。要通用基础设施选前者，要快速在 LIBERO / RoboTwin 上跑出结果选后者。
 
-**MARTI（清华 C3I，ICLR 2026）**——LLM **多智能体** RL 训练框架，基于 OpenRLHF。支持图式工作流与第三方多智能体框架；**MARTI-v2（2026-02）** 加入多智能体树搜索（MARS²，面向代码生成），并集成 GSPO 序列级损失、**TIS 修正**（解决 vLLM 采样不匹配）、动态数据过滤、overlong buffer（超长 token 惩罚），支持到 **32K token** 超长序列与异构多智能体训练。ReviewRL、CoMAS 构建在它之上。
+**MARTI（清华 C3I，ICLR 2026）**——LLM **多智能体** RL 训练框架，基于 OpenRLHF。支持图式工作流与第三方多智能体框架；**MARTI-v2（2026-02）** 加入多智能体树搜索（MARS²，面向代码生成），并集成 GSPO 序列级损失、**TIS 修正**（解决 vLLM 采样不匹配）、动态数据过滤、overlong buffer（超长 token 惩罚），支持到 **32K token** 超长序列与异构多智能体训练。ReviewRL、CoMAS 构建在它之上。DeepWiki：[TsinghuaC3I/MARTI](https://deepwiki.com/TsinghuaC3I/MARTI)。
 
 ### 5.8 其他值得记的
 
@@ -611,17 +655,79 @@ GRPO 用在 MoE 上会崩，原因是**专家激活波动**：一次更新后约
 - AsyncFlow：[arXiv 2507.01663](https://arxiv.org/abs/2507.01663)；StreamRL：[arXiv 2504.15930](https://arxiv.org/abs/2504.15930)
 - ROLL Flash：[arXiv 2510.11345](https://arxiv.org/abs/2510.11345)；ROLL：[arXiv 2506.06122](https://arxiv.org/abs/2506.06122)
 
-**仓库**
-- [verl-project/verl](https://github.com/verl-project/verl) ｜ [OpenRLHF](https://github.com/OpenRLHF/OpenRLHF) ｜ [huggingface/trl](https://github.com/huggingface/trl)
-- [NVIDIA-NeMo/RL](https://github.com/NVIDIA-NeMo/RL) ｜ [NVIDIA/Megatron-LM](https://github.com/NVIDIA/Megatron-LM)
-- [THUDM/slime](https://github.com/THUDM/slime) ｜ [inclusionAI/AReaL](https://github.com/inclusionAI/AReaL) ｜ [alibaba/ROLL](https://github.com/alibaba/ROLL) ｜ [alibaba/ChatLearn](https://github.com/alibaba/ChatLearn)
-- [RLinf/RLinf](https://github.com/RLinf/RLinf)（清华 + 无问芯穹，具身 RL 与 LLM 后训练合流；文档 [rlinf.readthedocs.io](https://rlinf.readthedocs.io/)）
-- [hiyouga/EasyR1](https://github.com/hiyouga/EasyR1)（多模态 VLM RL，veRL 分叉）｜ [PRIME-RL/SimpleVLA-RL](https://github.com/PRIME-RL/SimpleVLA-RL)（VLA RL，ICLR 2026）｜ [TsinghuaC3I/MARTI](https://github.com/TsinghuaC3I/MARTI)（LLM 多智能体 RL，ICLR 2026）
-- 国产经典 RL：[opendilab/DI-engine](https://github.com/opendilab/DI-engine) ｜ [PaddlePaddle/PARL](https://github.com/PaddlePaddle/PARL) ｜ [OpenRL-Lab/openrl](https://github.com/OpenRL-Lab/openrl) ｜ [agi-brain/xuance](https://github.com/agi-brain/xuance)（玄策，[arXiv 2312.16248](https://arxiv.org/abs/2312.16248)）
-- [PrimeIntellect-ai/prime-rl](https://github.com/PrimeIntellect-ai/prime-rl) ｜ [NovaSky-AI/SkyRL](https://github.com/NovaSky-AI/SkyRL) ｜ [agentica-project/rllm](https://github.com/agentica-project/rllm)
-- [huggingface/OpenEnv](https://github.com/huggingface/OpenEnv) ｜ [google/tunix](https://github.com/google/tunix)
+**仓库与 DeepWiki**
 
-**本文的自算脚本**：`tools/rl_framework_budget.py`（A 槽位木桶 / B 预算截断 / C refit 带宽 / D 显存账 / E Amdahl 上界）。所有自算数字均为量级模型，已明确标注，请勿当作任何框架的实测吞吐。
+[DeepWiki](https://deepwiki.com/) 会对 GitHub 仓库自动生成带行号引用的架构文档——读源码之前先过一遍它的 Overview 与组件图，比直接 clone 快得多。下表已逐个验证过页面可用性（唯一没有页面的是 Stoix，其余都实测可达）。
+
+*主力与厂商*
+
+| 项目 | GitHub | DeepWiki |
+|---|---|---|
+| veRL | [verl-project/verl](https://github.com/verl-project/verl) | [deepwiki](https://deepwiki.com/verl-project/verl) |
+| OpenRLHF | [OpenRLHF/OpenRLHF](https://github.com/OpenRLHF/OpenRLHF) | [deepwiki](https://deepwiki.com/OpenRLHF/OpenRLHF) |
+| TRL | [huggingface/trl](https://github.com/huggingface/trl) | [deepwiki](https://deepwiki.com/huggingface/trl) |
+| NeMo-RL | [NVIDIA-NeMo/RL](https://github.com/NVIDIA-NeMo/RL) | [deepwiki](https://deepwiki.com/NVIDIA-NeMo/RL) |
+| NeMo-Aligner（前代） | [NVIDIA/NeMo-Aligner](https://github.com/NVIDIA/NeMo-Aligner) | [deepwiki](https://deepwiki.com/NVIDIA/NeMo-Aligner) |
+| Megatron-LM | [NVIDIA/Megatron-LM](https://github.com/NVIDIA/Megatron-LM) | [deepwiki](https://deepwiki.com/NVIDIA/Megatron-LM) |
+| DeepSpeedExamples（含 DeepSpeed-Chat） | [deepspeedai/DeepSpeedExamples](https://github.com/deepspeedai/DeepSpeedExamples) | [deepwiki](https://deepwiki.com/deepspeedai/DeepSpeedExamples) |
+
+*学术界与中国厂商*
+
+| 项目 | GitHub | DeepWiki |
+|---|---|---|
+| RLinf | [RLinf/RLinf](https://github.com/RLinf/RLinf) | [deepwiki](https://deepwiki.com/RLinf/RLinf) |
+| slime | [THUDM/slime](https://github.com/THUDM/slime) | [deepwiki](https://deepwiki.com/THUDM/slime) |
+| AReaL | [inclusionAI/AReaL](https://github.com/inclusionAI/AReaL) | [deepwiki](https://deepwiki.com/inclusionAI/AReaL) |
+| ROLL | [alibaba/ROLL](https://github.com/alibaba/ROLL) | [deepwiki](https://deepwiki.com/alibaba/ROLL) |
+| ChatLearn | [alibaba/ChatLearn](https://github.com/alibaba/ChatLearn) | [deepwiki](https://deepwiki.com/alibaba/ChatLearn) |
+| prime-rl | [PrimeIntellect-ai/prime-rl](https://github.com/PrimeIntellect-ai/prime-rl) | [deepwiki](https://deepwiki.com/PrimeIntellect-ai/prime-rl) |
+| SkyRL | [NovaSky-AI/SkyRL](https://github.com/NovaSky-AI/SkyRL) | [deepwiki](https://deepwiki.com/NovaSky-AI/SkyRL) |
+| rLLM | [agentica-project/rllm](https://github.com/agentica-project/rllm) | [deepwiki](https://deepwiki.com/agentica-project/rllm) |
+| verl-agent | [langfengQ/verl-agent](https://github.com/langfengQ/verl-agent) | [deepwiki](https://deepwiki.com/langfengQ/verl-agent) |
+| RL-Factory | [Simple-Efficient/RL-Factory](https://github.com/Simple-Efficient/RL-Factory) | [deepwiki](https://deepwiki.com/Simple-Efficient/RL-Factory) |
+| EasyR1 | [hiyouga/EasyR1](https://github.com/hiyouga/EasyR1) | [deepwiki](https://deepwiki.com/hiyouga/EasyR1) |
+| SimpleVLA-RL | [PRIME-RL/SimpleVLA-RL](https://github.com/PRIME-RL/SimpleVLA-RL) | [deepwiki](https://deepwiki.com/PRIME-RL/SimpleVLA-RL) |
+| MARTI | [TsinghuaC3I/MARTI](https://github.com/TsinghuaC3I/MARTI) | [deepwiki](https://deepwiki.com/TsinghuaC3I/MARTI) |
+| ms-swift | [modelscope/ms-swift](https://github.com/modelscope/ms-swift) | [deepwiki](https://deepwiki.com/modelscope/ms-swift) |
+| LLaMA-Factory | [hiyouga/LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) | [deepwiki](https://deepwiki.com/hiyouga/LLaMA-Factory) |
+| Unsloth | [unslothai/unsloth](https://github.com/unslothai/unsloth) | [deepwiki](https://deepwiki.com/unslothai/unsloth) |
+| Tunix | [google/tunix](https://github.com/google/tunix) | [deepwiki](https://deepwiki.com/google/tunix) |
+
+*经典 RL 与国产库*
+
+| 项目 | GitHub | DeepWiki |
+|---|---|---|
+| Stable-Baselines3 | [DLR-RM/stable-baselines3](https://github.com/DLR-RM/stable-baselines3) | [deepwiki](https://deepwiki.com/DLR-RM/stable-baselines3) |
+| CleanRL | [vwxyzjn/cleanrl](https://github.com/vwxyzjn/cleanrl) | [deepwiki](https://deepwiki.com/vwxyzjn/cleanrl) |
+| Ray（含 RLlib） | [ray-project/ray](https://github.com/ray-project/ray) | [deepwiki](https://deepwiki.com/ray-project/ray) |
+| Acme | [google-deepmind/acme](https://github.com/google-deepmind/acme) | [deepwiki](https://deepwiki.com/google-deepmind/acme) |
+| Sample Factory | [alex-petrenko/sample-factory](https://github.com/alex-petrenko/sample-factory) | [deepwiki](https://deepwiki.com/alex-petrenko/sample-factory) |
+| TorchRL | [pytorch/rl](https://github.com/pytorch/rl) | [deepwiki](https://deepwiki.com/pytorch/rl) |
+| Tianshou | [thu-ml/tianshou](https://github.com/thu-ml/tianshou) | [deepwiki](https://deepwiki.com/thu-ml/tianshou) |
+| Dopamine | [google/dopamine](https://github.com/google/dopamine) | [deepwiki](https://deepwiki.com/google/dopamine) |
+| JaxMARL | [FLAIROx/JaxMARL](https://github.com/FLAIROx/JaxMARL) | [deepwiki](https://deepwiki.com/FLAIROx/JaxMARL) |
+| Brax | [google/brax](https://github.com/google/brax) | [deepwiki](https://deepwiki.com/google/brax) |
+| PufferLib | [PufferAI/PufferLib](https://github.com/PufferAI/PufferLib) | [deepwiki](https://deepwiki.com/PufferAI/PufferLib) |
+| Gymnasium | [Farama-Foundation/Gymnasium](https://github.com/Farama-Foundation/Gymnasium) | [deepwiki](https://deepwiki.com/Farama-Foundation/Gymnasium) |
+| Stoix | [EdanToledo/Stoix](https://github.com/EdanToledo/Stoix) | 暂无页面 |
+| DI-engine | [opendilab/DI-engine](https://github.com/opendilab/DI-engine) | [deepwiki](https://deepwiki.com/opendilab/DI-engine) |
+| PARL | [PaddlePaddle/PARL](https://github.com/PaddlePaddle/PARL) | [deepwiki](https://deepwiki.com/PaddlePaddle/PARL) |
+| OpenRL | [OpenRL-Lab/openrl](https://github.com/OpenRL-Lab/openrl) | [deepwiki](https://deepwiki.com/OpenRL-Lab/openrl) |
+| XuanCe 玄策 | [agi-brain/xuance](https://github.com/agi-brain/xuance) | [deepwiki](https://deepwiki.com/agi-brain/xuance) |
+
+*推理引擎与环境协议*
+
+| 项目 | GitHub | DeepWiki |
+|---|---|---|
+| vLLM | [vllm-project/vllm](https://github.com/vllm-project/vllm) | [deepwiki](https://deepwiki.com/vllm-project/vllm) |
+| SGLang | [sgl-project/sglang](https://github.com/sgl-project/sglang) | [deepwiki](https://deepwiki.com/sgl-project/sglang) |
+| OpenEnv | [huggingface/OpenEnv](https://github.com/huggingface/OpenEnv) | [deepwiki](https://deepwiki.com/huggingface/OpenEnv) |
+
+**本文的自算脚本**
+- `tools/rl_framework_budget.py`：槽位木桶 / 预算截断 / refit 量级 / 显存账 / Amdahl 上界（选型量化，见第 2、3 章）
+- `tools/rl_obj_numeric_lab.py`：GRPO 零梯度组 / 四种裁剪的梯度权重 / 训推不一致与三种修法（见 7.4 节）
+
+两个脚本都是纯 numpy，CPU 可跑。文中所有自算数字均为量级模型，已明确标注，请勿当作任何框架的实测吞吐。
 
 ---
 
