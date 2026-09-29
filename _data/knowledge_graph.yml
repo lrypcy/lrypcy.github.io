@@ -103,6 +103,15 @@ series:
     prefixes: [dist-train-]
     desc: 9 讲。DP → ZeRO/FSDP → TP → PP → SP → EP，加上集合通信数学与 2D/3D 并行组合实战。
 
+  - id: megatron
+    name: Megatron-LM 深度剖析
+    short: Megatron 源码
+    category: 分布式训练
+    layer: 0
+    order: 4
+    prefixes: [megatron-]
+    desc: 5 篇。源码层走读：00 代码地图与配置系统 → 01 并行体系源码 → 02 优化工具箱 → 03 实测调优 → 04 RL/refit 桥接。承接 dist-train 系列的并行原理，补上源码、实测与 2026 新特性（GTP、MLA/DSA、MFSDP v2、Dynamic CP、full CUDA graph、原生 RL 栈）。
+
   # ---------- layer 1：核心算法 ----------
   - id: posem
     name: 大模型位置编码
@@ -175,8 +184,8 @@ series:
     category: 强化学习
     layer: 2
     order: 0
-    prefixes: [irl-, toolrl, search-rl, distill-rl-unified, self-improving-reward, rl-credit-assignment, rl-notation]
-    desc: 8 篇。逆强化学习两讲、ToolRL 奖励设计、Search RL、蒸馏与 RL 的统一损失光谱、自我改进奖励、信用分配与符号体系。
+    prefixes: [irl-, toolrl, search-rl, distill-rl-unified, self-improving-reward, rl-credit-assignment, rl-notation, rl-training-frameworks]
+    desc: 9 篇。逆强化学习两讲、ToolRL 奖励设计、Search RL、蒸馏与 RL 的统一损失光谱、自我改进奖励、信用分配与符号体系，以及 RL 训练框架全景横评（系统侧）。
 
   - id: wam
     name: 世界模型与世界动作模型
@@ -232,6 +241,8 @@ links:
   - { from: op,        to: quant,      label: 低比特 Kernel 是量化落地前提 }
   - { from: dist-train,to: quant,      label: QAT 要在训练栈里插伪量化 }
   - { from: dist-train,to: mdp-grpo,   label: RLHF/GRPO 训练依赖分布式栈 }
+  - { from: dist-train,to: megatron,   label: 并行原理已在分布式训练系列讲透，Megatron 系列只做源码层与实测 }
+  - { from: megatron,  to: rl-topics,  label: Megatron 原生 RL 栈与 RL 训练框架在 refit / 权重同步处交汇 }
   - { from: distill,   to: quant,      label: 蒸馏 + QAT 联合压缩 }
   - { from: distill,   to: mdp-grpo,   label: 蒸馏与 RL 的统一损失光谱 }
   - { from: posem,     to: quant,      label: KV Cache 量化与长上下文 }
