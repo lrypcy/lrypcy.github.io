@@ -194,8 +194,8 @@ series:
     category: 强化学习
     layer: 2
     order: 0
-    prefixes: [irl-, toolrl, search-rl, distill-rl-unified, self-improving-reward, rl-credit-assignment, rl-notation, rl-training-frameworks]
-    desc: 9 篇。逆强化学习两讲、ToolRL 奖励设计、Search RL、蒸馏与 RL 的统一损失光谱、自我改进奖励、信用分配与符号体系，以及 RL 训练框架全景横评（系统侧）。
+    prefixes: [irl-, toolrl, search-rl, distill-rl-unified, self-improving-reward, rl-credit-assignment, rl-notation, rl-training-frameworks, rl-variables]
+    desc: 10 篇。逆强化学习两讲、ToolRL 奖励设计、Search RL、蒸馏与 RL 的统一损失光谱、自我改进奖励、信用分配与符号体系、RL 训练框架全景横评（系统侧），以及优势/概率比/KL 的源码级对照（变量侧）。
 
   - id: wam
     name: 世界模型与世界动作模型

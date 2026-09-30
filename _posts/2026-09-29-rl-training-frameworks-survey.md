@@ -8,7 +8,7 @@ layout: post
 mathjax: true
 ---
 
-> **系列导航** ｜ 算法侧：[从 MDP 到 GRPO（五）：GRPO 组相对优势](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/) ｜ [RL 信用分配与奖励系数](/2026/09/19/rl-credit-assignment-settlement/) ｜ 系统侧：[Megatron-LM 深度剖析（00）](/2026/09/28/megatron-00-foundation/) ｜ [分布式训练（08）：组合实战](/2026/08/31/dist-train-08-combined-practice/)
+> **系列导航** ｜ 算法侧：[从 MDP 到 GRPO（五）：GRPO 组相对优势](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/) ｜ [RL 信用分配与奖励系数](/2026/09/19/rl-credit-assignment-settlement/) ｜ 变量侧：[RL 框架里的那些变量到底怎么算](/2026/09/30/rl-variables-in-frameworks/) ｜ 系统侧：[Megatron-LM 深度剖析（00）](/2026/09/28/megatron-00-foundation/) ｜ [分布式训练（08）：组合实战](/2026/08/31/dist-train-08-combined-practice/)
 >
 > 本篇讲的是**承载这些算法的工程系统**，与前面几篇的算法视角互补。
 
