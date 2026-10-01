@@ -71,7 +71,8 @@ title: 首页
       </div>
     </div>
     <div class="kg-scroll">
-      <svg id="kg-svg" viewBox="0 0 900 566" role="img" aria-label="站点知识图谱"></svg>
+      <!-- viewBox 只是无 JS 时的兜底；实际高度由 assets/js/kg-layout.js 按节点行数算出来 -->
+      <svg id="kg-svg" viewBox="0 0 900 650" role="img" aria-label="站点知识图谱"></svg>
     </div>
     <div class="kg-tip" id="kg-tip" hidden></div>
     <p class="kg-hint">提示：图谱按「硬件与系统底座 → 核心算法 → 前沿专题」三层排布，纵向即学习顺序。</p>

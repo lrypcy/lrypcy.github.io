@@ -15,17 +15,10 @@
   var cats = data.cats || [];
   if (!nodes.length) { return; }
 
-  var W = 900, H = 566;
-  var MARGIN_L = 124, MARGIN_R = 36;
-  var USABLE = W - MARGIN_L - MARGIN_R;
-  var SLOT = USABLE / 4;
-
-  var BANDS = [
-    { layer: 0, label: "① 硬件与系统底座", ys: [110] },
-    { layer: 1, label: "② 核心算法", ys: [248, 372] },
-    { layer: 2, label: "③ 前沿专题", ys: [500] }
-  ];
-  var ROW_CAP = [4, 4, 4]; // 每层每行的最大节点数
+  /* ---------- 1. 布局（纯计算，见 kg-layout.js） ---------- */
+  if (!window.KGLayout) { return; }
+  var geo = window.KGLayout.compute(nodes);
+  var W = geo.W, H = geo.H, bands = geo.bands;
 
   var SVGNS = "http://www.w3.org/2000/svg";
   function el(name, attrs) {
@@ -34,61 +27,7 @@
     return e;
   }
 
-  /* ---------- 1. 半径 ---------- */
-  nodes.forEach(function (n) {
-    n.r = Math.min(38, 19 + Math.sqrt(Math.max(n.count, 1)) * 3.4);
-  });
-
-  /* ---------- 2. 分层网格锚点 ---------- */
-  BANDS.forEach(function (band) {
-    var list = nodes.filter(function (n) { return n.layer === band.layer; })
-      .sort(function (a, b) { return a.order - b.order; });
-    var cap = ROW_CAP[band.layer] || 4;
-    var rows = [];
-    for (var i = 0; i < list.length; i += cap) { rows.push(list.slice(i, i + cap)); }
-    rows.forEach(function (row, ri) {
-      var y = band.ys[ri] !== undefined ? band.ys[ri] : band.ys[band.ys.length - 1];
-      var totalW = row.length * SLOT;
-      var xStart = MARGIN_L + (USABLE - totalW) / 2;
-      row.forEach(function (n, ci) {
-        n.ax = xStart + SLOT * (ci + 0.5);
-        n.ay = y;
-      });
-    });
-  });
-
-  nodes.forEach(function (n) { n.x = n.ax; n.y = n.ay; });
-
-  /* ---------- 3. 轻度松弛（保证不重叠又不失层感） ---------- */
-  (function relax() {
-    for (var it = 0; it < 40; it++) {
-      for (var i = 0; i < nodes.length; i++) {
-        for (var j = i + 1; j < nodes.length; j++) {
-          var a = nodes[i], b = nodes[j];
-          var dx = b.x - a.x, dy = b.y - a.y;
-          var d = Math.sqrt(dx * dx + dy * dy) || 0.01;
-          var minD = a.r + b.r + 16;
-          if (d < minD && Math.abs(dy) < 70) { // 同一行：只横向推开
-            var push = (minD - d) * 0.25;
-            var ux = dx / d;
-            a.x -= ux * push; b.x += ux * push;
-          } else if (d < minD) {
-            var push2 = (minD - d) * 0.25;
-            a.x -= (dx / d) * push2; a.y -= (dy / d) * push2;
-            b.x += (dx / d) * push2; b.y += (dy / d) * push2;
-          }
-        }
-      }
-      nodes.forEach(function (n) {
-        n.x += (n.ax - n.x) * 0.14;
-        n.y += (n.ay - n.y) * 0.30;
-        n.x = Math.max(MARGIN_L - 60, Math.min(W - n.r - 8, n.x));
-        n.y = Math.max(n.r + 30, Math.min(H - n.r - 26, n.y));
-      });
-    }
-  })();
-
-  /* ---------- 4. 绘制 ---------- */
+  /* ---------- 2. 绘制 ---------- */
   svg.setAttribute("viewBox", "0 0 " + W + " " + H);
 
   var gBands = el("g", { class: "kg-bands" });
@@ -97,13 +36,13 @@
   var gNodes = el("g", { class: "kg-nodes" });
   svg.appendChild(gBands); svg.appendChild(gEdges); svg.appendChild(gELab); svg.appendChild(gNodes);
 
-  // 层标签
-  BANDS.forEach(function (band) {
-    var t = el("text", { x: 12, y: band.ys[0] - 34, class: "kg-band-label" });
+  // 层标签：每个层的标题与虚线都由该层的行数算出来（行多则整体下移）
+  bands.forEach(function (band) {
+    var t = el("text", { x: 12, y: band.labelY, class: "kg-band-label" });
     t.textContent = band.label;
     gBands.appendChild(t);
     var line = el("line", {
-      x1: 12, y1: band.ys[0] - 26, x2: W - 20, y2: band.ys[0] - 26,
+      x1: 12, y1: band.lineY, x2: W - 20, y2: band.lineY,
       class: "kg-band-line"
     });
     gBands.appendChild(line);
@@ -295,7 +234,7 @@
     });
   }
 
-  /* ---------- 7. 悬停 / 点击 / 拖拽 ---------- */
+  /* ---------- 5. 悬停 / 点击 / 拖拽 ---------- */
   var tip = document.getElementById("kg-tip");
   var card = svg.parentNode ? svg.parentNode.parentNode : null;
 

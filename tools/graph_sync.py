@@ -175,14 +175,18 @@ def main():
             print()
             print("   当前 yml 里 %d 条边；未被任何边连接的系列：%s"
                   % (len(links), ", ".join(isolated) or "无"))
-        for (a, b), n in pair.most_common(30):
+        # 候选边按「归一化方向」累加：A→B 与 B→A 的互引是同一件事，
+        # 分开算会给出两条一模一样的建议（曾因此重复提示 perf-analysis -> profiling）
+        merged = collections.Counter()
+        for (a, b), n in pair.items():
             if (a, b) in known or (b, a) in known:
                 continue
             # 方向统一为「层号小的 -> 层号大的」，同层则按引用方向
             la = next((s.get("layer", 9) for s in series if s["id"] == a), 9)
             lb = next((s.get("layer", 9) for s in series if s["id"] == b), 9)
             src, tgt = (a, b) if la <= lb else (b, a)
-            new_edges.append((src, tgt, n))
+            merged[(src, tgt)] += n
+        new_edges = [(src, tgt, n) for (src, tgt), n in merged.most_common()]
         for sid in isolated:
             blockers.append("系列孤立在图谱里没有任何连线：%s" % sid)
         for src, tgt, n in new_edges:
