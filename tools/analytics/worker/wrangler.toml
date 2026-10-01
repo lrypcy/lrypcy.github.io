@@ -1,0 +1,23 @@
+name = "pcy-analytics"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# 部署前先执行 `wrangler d1 create pcy-analytics`，把输出的 database_id 填到下面。
+[[d1_databases]]
+binding = "DB"
+database_name = "pcy-analytics"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[vars]
+# 允许的站点来源，逗号分隔。用于 CORS 响应头与 Referer 校验。
+ALLOWED_ORIGIN = "https://lrypcy.github.io"
+# 站点时区偏移（小时）。中国固定 +8，无夏令时。
+SITE_TZ_OFFSET = "8"
+# 同一访客在该秒数内的重复上报只记一次（防连点/刷新刷量），0 表示关闭。
+DEDUPE_SECONDS = "30"
+# 是否丢弃「带 Referer 但不属于 ALLOWED_ORIGIN」的请求。Referer 为空的请求仍然统计。
+STRICT_REFERER = "true"
+
+# 需要在部署后单独写入的两个密钥（不要写进本文件、不要提交仓库）：
+#   wrangler secret put SALT_SECRET     # 访客标识的哈希盐，随便一串长随机字符
+#   wrangler secret put DASH_TOKEN      # 看板访问口令

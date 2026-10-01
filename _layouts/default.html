@@ -119,7 +119,7 @@
   </main>
 
   <footer class="footer">
-    <p>&copy; {{ site.time | date: "%Y" }} 裴从渊</p>
+    <p>&copy; {{ site.time | date: "%Y" }} 裴从渊<span class="footer-visits" id="pcy-visit-total" hidden></span></p>
   </footer>
 
   <!-- Search overlay -->
@@ -144,5 +144,6 @@
   {% if page.url == '/' or page.url == '/index.html' %}
   <script src="/assets/js/knowledge-graph.js" defer></script>
   {% endif %}
+  {% include analytics.html %}
 </body>
 </html>

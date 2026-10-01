@@ -12,3 +12,7 @@ Clippings/
 # macOS 与其他无关文件
 .DS_Store
 *.base
+
+# 访问统计本地预览数据库（tools/analytics/dev-server.mjs --db=...）
+*.sqlite
+*.sqlite-journal

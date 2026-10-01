@@ -2164,3 +2164,12 @@ html.hide-sidebar .sidebar { display: none; }
   .header .brand { font-size: 21px; letter-spacing: 2px; }
   .blog-hero-title { font-size: 34px; letter-spacing: 3px; }
 }
+
+/* ========== 页脚访问量（由 _includes/analytics.html 填充）========== */
+.footer-visits {
+  margin-left: 10px;
+  color: var(--text-light);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.footer-visits[hidden] { display: none; }

@@ -1,0 +1,61 @@
+{%- comment -%}
+  访问统计埋点 + 页脚总访问量。
+  后端是自建的 Cloudflare Worker，部署方法与表结构见 tools/analytics/README.md。
+
+  设计约束：
+    * 只在生产域名下上报 —— 本地 jekyll serve、预览环境不会污染数据。
+    * 不写 cookie、不写 localStorage、不用 gif 像素 —— 所以不需要 cookie 同意横幅。
+    * 用 sendBeacon 异步上报，不阻塞页面加载；任何异常都被吞掉，绝不影响访客。
+    * 支持 ?notrack 逃生口（自己调试时用），也尊重 respect_dnt 配置。
+
+  _config.yml 里只有 endpoint 非空且 enabled 为 true 时才会输出任何内容。
+{%- endcomment -%}
+{%- assign ana = site.analytics -%}
+{%- if ana and ana.enabled and ana.endpoint and ana.endpoint != "" -%}
+<script>
+(function () {
+  'use strict';
+  var ENDPOINT = String({{ ana.endpoint | jsonify }}).replace(/\/+$/, '');
+  var PROD_HOST = {{ ana.production_host | default: 'lrypcy.github.io' | jsonify }};
+  var RESPECT_DNT = {{ ana.respect_dnt | default: false }};
+  var FOOTER_LABEL = {{ ana.footer_label | default: '总访问' | jsonify }};
+  var FOOTER_UNIT = {{ ana.footer_unit | default: '次' | jsonify }};
+  if (!ENDPOINT) return;
+
+  /* ---------- 1. 上报一次页面访问 ---------- */
+  var isProd = location.hostname === PROD_HOST;
+  var optedOut = /(^|[?&])notrack(=|&|$)/.test(location.search);
+  var dntOn = RESPECT_DNT && (navigator.doNotTrack === '1' || window.doNotTrack === '1' || navigator.msDoNotTrack === '1');
+
+  if (isProd && !optedOut && !dntOn) {
+    try {
+      var collectUrl = ENDPOINT + '/c';
+      if (navigator.sendBeacon) {
+        /* 传字符串时 Content-Type 是 text/plain，属于 CORS 简单请求，不会触发预检 */
+        navigator.sendBeacon(collectUrl, '1');
+      } else {
+        fetch(collectUrl, { method: 'POST', body: '1', mode: 'cors', credentials: 'omit', keepalive: true })
+          .catch(function () {});
+      }
+    } catch (e) { /* 统计失败与访客无关 */ }
+  }
+
+  /* ---------- 2. 页脚总访问量 ---------- */
+  var el = document.getElementById('pcy-visit-total');
+  if (!el) return;
+
+  fetch(ENDPOINT + '/total', { credentials: 'omit' })
+    .then(function (res) { return res.ok ? res.json() : null; })
+    .then(function (data) {
+      if (!data || !(data.total > 0)) return;
+      var n = Number(data.total).toLocaleString('en-US');
+      el.textContent = '· ' + FOOTER_LABEL + ' ' + n + ' ' + FOOTER_UNIT;
+      el.hidden = false;
+      el.title = '今日 ' + Number(data.today || 0).toLocaleString('en-US') +
+        ' · 本月 ' + Number(data.month || 0).toLocaleString('en-US') +
+        ' · 本年 ' + Number(data.year || 0).toLocaleString('en-US');
+    })
+    .catch(function () { /* 拿不到就不显示，不打断页面 */ });
+})();
+</script>
+{%- endif -%}
