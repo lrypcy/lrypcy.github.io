@@ -44,8 +44,8 @@ giscus:
 # 访问统计（自建 Cloudflare Worker + D1，后端代码与部署步骤见 tools/analytics/README.md）
 # 部署完成后：enabled 改 true，endpoint 填 Worker 地址，页脚即出现总访问量。
 analytics:
-  enabled: false
-  endpoint: ""                          # 例：https://pcy-analytics.你的子域.workers.dev
+  enabled: true
+  endpoint: "https://pcy-analytics.lrypcy.workers.dev"
   production_host: lrypcy.github.io     # 只有该域名下的访问才上报，本地预览不统计
   footer_label: "总访问"                 # 页脚渲染成：· 总访问 1,234 次
   footer_unit: "次"

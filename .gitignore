@@ -16,3 +16,7 @@ Clippings/
 # 访问统计本地预览数据库（tools/analytics/dev-server.mjs --db=...）
 *.sqlite
 *.sqlite-journal
+
+# 访问统计部署时生成的口令备忘与凭据（tools/analytics/deploy.sh）
+tools/analytics/.secrets.local
+tools/analytics/.env.local
