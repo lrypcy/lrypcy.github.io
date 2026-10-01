@@ -44,7 +44,7 @@ permalink: /about/
   下面是实时看板，也可以<a href="{{ ana.endpoint }}/stats" target="_blank" rel="noopener">单独打开</a>。
 </p>
 <div class="about-stats-embed">
-<iframe id="pcy-stats-frame" src="{{ ana.endpoint }}/stats?embed=1" title="本站访问统计看板" loading="lazy" referrerpolicy="no-referrer" height="1500"></iframe>
+<iframe id="pcy-stats-frame" src="{{ ana.endpoint }}/stats?embed=1" title="本站访问统计看板" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" height="1500"></iframe>
 </div>
 <script>
 /* 看板高度随「近 30 天柱数 / 地区明细行数」变化，写死会出现大片空白或内部滚动条。

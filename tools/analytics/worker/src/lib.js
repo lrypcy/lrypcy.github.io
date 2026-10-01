@@ -177,7 +177,7 @@ export const HEATMAP_WEEKS = 53;
  *
  * 不用分位数：低流量站早期只有一两个非零日，分位数会退化成全部同档；
  * 只有一个非零值时直接给最高档，避免 max 退化成 1 时唯一的访问日只剩最浅色。
- * 活动热力图与省级方块地图共用这一套色阶 —— 同一页里「深浅」的含义必须一致。
+ * 活动热力图与访问地图共用这一套色阶 —— 同一页里「深浅」的含义必须一致。
  */
 export function levelByRatio(value, max, levels = HEATMAP_LEVELS) {
   const v = Number(value) || 0;

@@ -32,6 +32,7 @@ function setup() {
     SITE_TZ_OFFSET: '8',
     DEDUPE_SECONDS: '30',
     STRICT_REFERER: 'true',
+    TMAP_KEY: 'unit-test-tmap-key',
   };
   const ctx = { waitUntil: (p) => pending.push(p) };
   const collect = (opts = {}) =>
@@ -235,13 +236,33 @@ test('看板渲染出总览、年月曲线与中文地区名', async () => {
   assert.ok(html.includes('中国 · 北京'));
   assert.match(html, /noindex/, '看板不应被搜索引擎收录');
 
-  // 省级方块地图：广东 / 北京落格，美国那一行不该出现在图里
-  assert.match(html, /访问地图/);
-  assert.match(html, /mp-tile l[1-4][^>]*title="广东 · \d+ 次访问"/);
-  assert.match(html, /mp-tile l[1-4][^>]*title="北京 · \d+ 次访问"/);
-  assert.equal((html.match(/class="mp-tile/g) || []).length, 34, '地图恒定输出 34 个方块');
-  assert.ok(!/mp-tile[^>]*title="美国/.test(html), '海外国家不进省级方块图');
-  assert.match(html, /不描绘任何边界/, '口径说明里要讲清方块图的含义');
+  // 访问地图（腾讯地图 GL JS）：广东 / 北京落点，美国那一行不该进图
+  assert.match(html, /id="pcy-map-canvas"/);
+  assert.match(html, /map\.qq\.com\/api\/gljs\?v=1\.exp&key=/);
+  assert.ok(html.includes('"unit-test-tmap-key"'), 'TMAP_KEY 应注入到地图脚本');
+  assert.match(html, /"n":"广东","v":\d+/);
+  assert.match(html, /"n":"北京","v":\d+/);
+  assert.ok(!/"n":"美国"/.test(html), '海外国家不进省级地图');
+  assert.match(html, /GCJ-02/, '口径要讲明落点坐标系');
+  assert.equal(
+    res.headers.get('referrer-policy'),
+    'strict-origin-when-cross-origin',
+    '地图 key 的域名校验需要 Referer，看板必须放行来源'
+  );
+});
+
+test('未配置 TMAP_KEY 时，访问地图卡片整块不渲染，其余卡片不受影响', async () => {
+  await h.collect();
+  const env = { ...h.env, TMAP_KEY: '' };
+  const res = await worker.fetch(
+    fakeRequest({ url: `${ENDPOINT}/dash?token=unit-test-token`, method: 'GET' }),
+    env,
+    h.ctx
+  );
+  const html = await res.text();
+  assert.ok(!html.includes('pcy-map-canvas'), '没配 key 不应渲染地图容器');
+  assert.ok(!html.includes('map.qq.com/api/gljs'), '没配 key 不应请求腾讯地图 SDK');
+  assert.match(html, /国家 \/ 地区排行/, '其它卡片不受影响');
 });
 
 test('看板 range 参数非法时回落到全部时间，不报错', async () => {

@@ -139,6 +139,17 @@ else
   echo "DASH_TOKEN 已写入"
 fi
 
+# 访问地图的腾讯地图 key（可选）。不配就不渲染「访问地图」卡片，其余看板照常。
+# 首次配置：TMAP_KEY=你的key ./deploy.sh；已存在时不会覆盖。
+if [ -n "${TMAP_KEY:-}" ]; then
+  (cd worker && printf '%s' "$TMAP_KEY" | "${WRANGLER[@]}" secret put TMAP_KEY)
+  echo "TMAP_KEY 已写入（访问地图会显示）"
+elif has_secret TMAP_KEY; then
+  echo "TMAP_KEY 已存在，保持不动"
+else
+  echo "未配置 TMAP_KEY —— 「访问地图」卡片不会渲染（怎么申请见 README 3.3）"
+fi
+
 # ---------- 6. 保存口令到本地（已 gitignore） ----------
 if [ -n "$TOKEN" ] || [ -n "$SALT" ]; then
   {

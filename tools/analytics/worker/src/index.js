@@ -70,10 +70,20 @@ function tzOffset(env) {
   return Number.isFinite(n) ? n : DEFAULT_TZ_OFFSET_HOURS;
 }
 
+/**
+ * 看板 HTML 统一带上 `Referrer-Policy: strict-origin-when-cross-origin`：
+ * 访问地图的底图由浏览器直接向腾讯地图请求，key 的「授权域名」校验看的是 Referer；
+ * 不带 Referer 会被判为未授权（地图空白）。这个策略只发送站点来源、不发送完整路径。
+ */
 function htmlResponse(body, status = 200, extraHeaders = {}) {
   return new Response(body, {
     status,
-    headers: { 'content-type': HTML_CT, 'cache-control': 'no-store', ...extraHeaders },
+    headers: {
+      'content-type': HTML_CT,
+      'cache-control': 'no-store',
+      'referrer-policy': 'strict-origin-when-cross-origin',
+      ...extraHeaders,
+    },
   });
 }
 
@@ -227,7 +237,7 @@ async function handleDash(request, env, url) {
   const range = normalizeRange(url.searchParams.get('range'));
   const data = await loadDashboardData(env, day, range);
   const embed = url.searchParams.get('embed') === '1';
-  return htmlResponse(renderDashboard({ ...data, token, embed }));
+  return htmlResponse(renderDashboard({ ...data, token, embed, tmapKey: env.TMAP_KEY || '' }));
 }
 
 /**
@@ -247,6 +257,8 @@ async function handleStats(request, env, ctx, url) {
     'content-type': HTML_CT,
     'cache-control': `public, max-age=${STATS_CACHE_SECONDS}`,
     'x-robots-tag': 'noindex',
+    // 地图 key 的域名校验看 Referer，必须放行 —— 只发来源、不发路径。
+    'referrer-policy': 'strict-origin-when-cross-origin',
   };
 
   const cached = await caches.default.match(cacheKey);
@@ -255,7 +267,7 @@ async function handleStats(request, env, ctx, url) {
   }
 
   const data = await loadDashboardData(env, day, range);
-  const html = renderDashboard({ ...data, token: '', embed });
+  const html = renderDashboard({ ...data, token: '', embed, tmapKey: env.TMAP_KEY || '' });
 
   ctx.waitUntil(
     caches.default.put(cacheKey, new Response(html, { headers: { 'content-type': HTML_CT } }))

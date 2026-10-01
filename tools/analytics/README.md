@@ -31,8 +31,8 @@ tools/analytics/
 │   └── src/
 │       ├── index.js       路由：/c 采集、/total 计数、/stats 公开看板、/dash 口令看板
 │       ├── lib.js         纯逻辑（时间换算、访客哈希、热力图网格、共用色阶、SQL 常量）
-│       ├── dashboard.js   看板页 HTML 渲染（含热力图、省级方块地图、内嵌模式）
-│       ├── province-map.js 省级方块地图的布局与聚合（纯函数，不画任何边界）
+│       ├── dashboard.js   看板页 HTML 渲染（含热力图、腾讯地图访问地图、内嵌模式）
+│       ├── province-map.js 省级访问分布的聚合与落点（纯函数；边界交给腾讯地图底图）
 │       └── names.js       国家 / 省份代码 → 中文名
 ├── d1-shim.mjs            D1 / Cache API 的本地替身（测试与预览共用）
 ├── dev-server.mjs         本地预览服务器（带演示数据）
@@ -41,7 +41,7 @@ tools/analytics/
     ├── lib.test.mjs       纯函数单测
     ├── aggregate.test.mjs 聚合口径校验（内存 SQLite）
     ├── heatmap.test.mjs   活动热力图网格构造（边界、色阶、月份标签）
-    ├── province-map.test.mjs 方块地图：布局完备性、港澳台归位、未定位流量不丢失
+    ├── province-map.test.mjs 省级落点：完备性、坐标合法性、港澳台归位、未定位流量不丢失
     └── worker.test.mjs    路由 / CORS / 去重 / 看板渲染 / 公开路由缓存
 ```
 
@@ -51,7 +51,7 @@ tools/analytics/
 |---|---|
 | `_includes/analytics.html` | 新增。埋点上报 + 页脚计数，配置为空时不输出任何内容 |
 | `_layouts/default.html` | 页脚加计数元素，`</body>` 前引入上面的 include |
-| `about.md` | 新增「访问统计」区块：iframe 内嵌 `/stats?embed=1` + 高度回填脚本 |
+| `about.md` | 新增「访问统计」区块：iframe 内嵌 `/stats?embed=1`（`referrerpolicy=strict-origin-when-cross-origin`，供地图 key 的域名校验）+ 高度回填脚本 |
 | `_config.yml` | 新增 `analytics:` 配置段 |
 | `assets/css/custom.css` | 新增 `.footer-visits` 与 `.about-stats-embed` 样式 |
 
@@ -79,15 +79,33 @@ npx wrangler d1 create pcy-analytics
 npx wrangler d1 execute pcy-analytics --remote --file=./schema.sql
 ```
 
-### 3.3 设置两个密钥
+### 3.3 设置密钥
 
 ```bash
 openssl rand -hex 32 | npx wrangler secret put SALT_SECRET   # 访客哈希盐，随便一串随机字符
 npx wrangler secret put DASH_TOKEN                            # 看板口令，自己定
+npx wrangler secret put TMAP_KEY                              # 可选：腾讯地图 key，配了才显示访问地图
 ```
 
 `SALT_SECRET` **不要换**：换了之后同一个人会被算成新访客，当天的 UV 会虚高一次。
 `DASH_TOKEN` 是看板的唯一保护，别用短口令。
+
+#### 访问地图的 key（可选；不配就不显示这张卡片）
+
+地图底图由**腾讯地图 GL JS** 提供（合规白名单内的来源），需要**你自己的 key**。
+WorkBuddy 的免 key 代理靠 `_TMapSecurityConfig` + `__WB_HTTP_PORT__` / `__WB_TMAP_SECRET__` 占位符，
+只在它的预览环境里被替换，**部署到 Cloudflare Worker 后代理地址不存在**，所以线上必须自备 key。
+
+不配 `TMAP_KEY`（Worker 变量为空或仍是源码里的占位符）时，「访问地图」卡片**整块不渲染** ——
+页面不会留一个空白地图，也不会把开发说明泄露给访客。
+
+1. 到 [腾讯位置服务控制台](https://lbs.qq.com/dev/console/key/manage) 新建 key，勾选 **JavaScript API GL**；
+2. 在该 key 的「授权域名」里加上看板域名 —— 通常是 `<你的子域>.workers.dev`。
+   站点侧是 iframe 嵌入，iframe 自己发出的 Referer 是看板的域名，**只白名单 workers.dev 就够，不用加 github.io**；
+3. `npx wrangler secret put TMAP_KEY` 写入 key，再 `npx wrangler deploy`。
+
+看板响应头带 `Referrer-Policy: strict-origin-when-cross-origin`（`about.md` 里 iframe 的 `referrerpolicy`
+也是同一个值），保证 key 的域名校验能拿到 Referer。**改成 `no-referrer` 会让校验失败、底图空白。**
 
 ### 3.4 部署
 
@@ -139,7 +157,7 @@ analytics:
   子页在 `load` / `resize` / `ResizeObserver` 时把 `{type:'pcy-analytics:height', height}` 发给父页，父页只接受 600–6000px 的值。
 - **`/stats` 有 5 分钟边缘缓存**（`caches.default`，按 `日期 + range + embed` 分开存）。
   关于页比文章页更容易被反复打开，不缓存的话每个访客都要打 8 次 D1 查询。
-- **嵌入版不做横向滚动**：格子尺寸比完整版小一档（10px，窄屏 9px）；方块地图在嵌入版收到 520px 宽，窄屏放开占满。
+- **嵌入版不做横向滚动**：热力图格子比完整版小一档（10px，窄屏 9px）；访问地图在嵌入版矮一档（320px，窄屏 260px），免得在 iframe 里占掉整屏。
 - 关于页整块由 `{% if site.analytics.enabled %}` 包着，关掉统计后不留空壳。
 
 ---
@@ -176,7 +194,7 @@ node tools/analytics/dev-server.mjs
 ## 6. 验证
 
 ```bash
-# 全部单测与口径校验（66 项）
+# 全部单测与口径校验（68 项）
 node --test --no-warnings tools/analytics/test/*.test.mjs
 
 # Liquid 语法与多配置渲染（改了 include / about.md 之后必跑，写错会挂掉整站构建）
@@ -187,7 +205,7 @@ ruby tools/analytics/check_liquid.rb
 
 `heatmap.test.mjs` 只盯热力图的边界：最后一列必须含 `endDay` 且之后的格子是 `null`（「还没到」不能画成「零访问」）、窗口起点不会被补格子、色阶在「只有一个非零日」这类退化输入下不能全变最浅、月份标签必须落在真实的月初列上、跨年时用年份把同名月份区分开。
 
-`province-map.test.mjs` 盯三条会静默出错的规则：方块布局必须**恰好**覆盖 34 个省级行政区且没有两格落在同一位置（坐标越界 / 重格用断言钉住）、**港澳台整块归位**（Cloudflare 给它们的 `country` 是 `HK`/`MO`/`TW`、不带 `province`，漏了就会凭空丢掉港澳台流量）、**定位不到的流量必须被汇总报出来**（英文省名如 `Guangdong`、空省名、`XX` 未定位都不能无声吞掉，海外流量则明确不进这张图、由排行卡片负责）。
+`province-map.test.mjs` 盯几条会静默出错的规则：落点表必须**恰好**覆盖 34 个省级行政区、与 `names.js` 的 `CN_PROVINCES` 同集合，且坐标都是中国范围内的合法经纬度、互不重合；**港澳台整块归位**（Cloudflare 给它们的 `country` 是 `HK`/`MO`/`TW`、不带 `province`，漏了就会凭空丢掉港澳台流量）；**定位不到的流量必须被汇总报出来**（英文省名如 `Guangdong`、空省名、`XX` 未定位都不能无声吞掉，海外流量则明确不进这张图、由排行卡片负责）；**只有有访问的省份才落点**，避免地图上飘满空心圆。
 
 `check_liquid.rb` 现在除了渲染 `_includes/analytics.html` 的五套配置，还会**语法检查站点所有含 Liquid 的源文件**（`*.md` / `*.html` / `_layouts` / `_includes`），并单独渲染 `about.md` 的访问统计区块，确认开关生效、endpoint 被替换、没有口令泄漏。
 
@@ -220,28 +238,29 @@ ruby tools/analytics/check_liquid.rb
 - 月份标签打在该月 1 号所在的那一列；**年份只标在 1 月**，用来区分跨年的同名月份 ——
   不要加到首列上，首列离第二个标签只有 4 列间距，「2025年10月」会正好压住「11月」。
 
-### 访问地图（省级方块）
-每格一个省级行政区，位置是按近似相对位置排的**等大方块**，港澳台各占一格、与大陆省份同图。
+### 访问地图（腾讯地图 GL JS）
 
-**为什么不是一张真地图 —— 这一段别删，改这块之前先读：**
+底图由腾讯地图 GL JS 渲染，本仓库只在上面打点：每个有访问的省级行政区一个气泡，
+**气泡大小与颜色按访问量分 4 档**（与热力图共用 `lib.js` 的 `levelByRatio()`），旁边一个 `省份 次数` 标签。
 
-1. **合规**：地图渲染只能用腾讯 / 高德 / 百度 / 天地图这类合规来源（Google / Apple / OSM 系一律不行）；
-   而本站流量是全球的，**渲染海外地理区域属于「需要自备 key」的场景**。看板又是 Cloudflare Worker
-   直接吐 HTML、以 iframe 嵌在 GitHub Pages 上，WorkBuddy 的 key 代理在这里不生效，
-   等于要博客作者自己去申请 key 并维护 Referer 白名单。
-2. **依赖**：地图 SDK 要在国内可用就得从对方 CDN 拉几百 KB，会破掉看板「零外部资源」这条底线。
-3. **数据**：落库的只有 `country / province / city`（见 `UPSERT_DAILY_SQL`），**没有经纬度**，
-   真地图上落点要么额外采集、要么维护一张坐标表。
+**为什么是腾讯地图、为什么必须自备 key —— 这一段别删，改这块之前先读：**
 
-方块地图只表达「相对位置 + 量级」，**不描绘任何边界线**，因此这一页不涉及任何边界画法；
-卡片里也明写了「不代表实际范围与界线」。真要换成真地图，先解决上面第 1 条的资质与 key，再动这块。
+1. **合规**：地图渲染只能用腾讯 / 高德 / 百度 / 天地图这类合规来源（Google / Apple / OSM / Mapbox 一律不行）。
+   疆界、南海诸岛与九段线由**底图按国家标准绘制** —— 这正是「不自己画边界」的理由，自绘边界才是合规风险源。
+2. **key**：这四家都要 key。WorkBuddy 的免 key 代理只在它的预览环境生效（见 3.3），线上拿不到；
+   所以 key 走 Worker 变量 `TMAP_KEY`，**不配就不渲染这张卡片**。
+3. **不上边界数据**：`province-map.js` 里只有 34 个省级行政区的中心点（GCJ-02，来自
+   阿里云 DataV.GeoAtlas 的 `center` 字段），没有几百 KB 的边界多边形 —— 省界交给底图。
 
-- 落格依据是 Cloudflare 的 `regionCode`。它并不总是 ISO 短码：`normalizeGeo()` 取的是
-  `regionCode || region`，只给了英文省名（`Guangdong`）时大写后匹配不上任何方块 ——
+落点是**省级行政区中心**，不是几何重心精算：气泡只表达「哪个省、量级多大」，不追求毫米级位置。
+
+- 落点依据是 Cloudflare 的 `regionCode`。它并不总是 ISO 短码：`normalizeGeo()` 取的是
+  `regionCode || region`，只给了英文省名（`Guangdong`）时大写后匹配不上任何省 ——
   这类流量与空省名一起汇总成「未定位到省份」，**不会无声消失**，汇总行里会写出来。
 - **海外与 XX 不进这张图**，它们由「国家 / 地区排行」负责。两个卡片的适用范围是刻意分开的。
-- 网格恒输出 34 格（值为 0 的也在），这样位置固定、不会因为某天缺某个省就整体位移。
-- 色阶与热力图**共用** `lib.js` 的 `levelByRatio()`，同一页里「深浅」含义一致。
+- **只有有访问的省份才打点**，避免地图上飘满空心圆（`buildProvinceStats()` 只返回 `v > 0` 的省）。
+- 港澳台与大陆同图（Cloudflare 给它们的 `country` 是 HK / MO / TW，不带 `province`，整块归一个落点）。
+- 这张卡片是整个看板**唯一的外部依赖**：浏览器直接向 `map.qq.com` 请求 SDK 与底图，并带上本站域名作为 Referer。
 
 ### 存了什么
 只存两类数据：
@@ -275,11 +294,12 @@ ruby tools/analytics/check_liquid.rb
 3. **走代理 / VPN 的访客地区会落到代理节点。**
 4. **不做文章级统计**（按需要可以后加：在 `daily_stats` 里加一列 `path`，主键扩成五列即可，埋点侧把 `location.pathname` 放进请求体）。
 5. **`/total` 与 `/stats` 都是公开只读端点**，任何人都能拿到总访问数字和地区分布 —— 页脚与关于页都要公开展示，这一点无法避免。`/total` 只返回 4 个整数；`/stats` 返回的是看板 HTML，不含原始 IP / UA（这些本来就没存）。两者都带 `x-robots-tag: noindex`，不会被搜索引擎单独收录。
-6. **地图粒度只到省级 / 国家级。** 方块图上只有省级行政区，市一级请看「地区明细表」；
-   海外流量不进方块图（只到国家），因为这张图是为中国大陆省份设计的。
-7. **方块地图的位置是示意排布**，不追求几何精确（这是方块地图这种体裁的通病）：例如甘肃、宁夏
-   挨在一起只是表达「西北相邻」，不代表实际形状。
-6. **热力图色阶是「相对当日最高值」的**，不是绝对值。所以只有几十次访问的月份里，一次访问也可能显示成中等深浅；要看具体数字请悬停格子或看下面的地区明细。
+6. **访问地图需要自备腾讯地图 key**（`TMAP_KEY`），不配就不显示这张卡片。地图底图是**外部依赖**，
+   完全离线 / 内网打不开；这是全看板唯一会往外请求资源的地方。
+7. **地图粒度只到省级 / 国家级。** 图上只有省级行政区的落点，市一级请看「地区明细表」；
+   海外流量不进这张图（只到国家），因为它是为大陆省份 + 港澳台设计的。
+8. **落点是省级行政区中心点**，不是几何重心精算；气泡只表达「哪个省、量级多大」，不追求毫米级准确。
+9. **热力图色阶是「相对当日最高值」的**，不是绝对值。所以只有几十次访问的月份里，一次访问也可能显示成中等深浅；要看具体数字请悬停格子或看下面的地区明细。
 
 ---
 

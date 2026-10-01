@@ -23,7 +23,17 @@ import { createD1, createSqlite, installCacheMock } from './d1-shim.mjs';
 const TZ_OFFSET = 8;
 
 function parseArgs(argv) {
-  const args = { port: 8788, db: ':memory:', seed: true, days: 420, token: 'dev', dedupe: 10, strictReferer: false };
+  const args = {
+    port: 8788,
+    db: ':memory:',
+    seed: true,
+    days: 420,
+    token: 'dev',
+    dedupe: 10,
+    strictReferer: false,
+    // 访问地图的腾讯地图 key：命令行 --tmap-key=xxx 或环境变量 TMAP_KEY，留空则不渲染地图卡片
+    tmapKey: process.env.TMAP_KEY || '',
+  };
   for (const raw of argv) {
     const [key, value] = raw.replace(/^--/, '').split('=');
     if (key === 'port') args.port = Number(value);
@@ -33,6 +43,7 @@ function parseArgs(argv) {
     else if (key === 'dedupe') args.dedupe = Number(value);
     else if (key === 'strict-referer') args.strictReferer = true;
     else if (key === 'token') args.token = value || 'dev';
+    else if (key === 'tmap-key') args.tmapKey = value || '';
   }
   return args;
 }
@@ -158,6 +169,7 @@ async function main() {
     DEDUPE_SECONDS: String(args.dedupe),
     // 本地用 curl 自测时通常没有 Referer，默认放宽；加 --strict-referer 可复现线上拦截行为
     STRICT_REFERER: args.strictReferer ? 'true' : 'false',
+    TMAP_KEY: args.tmapKey,
   };
 
   const server = createServer(async (req, res) => {
