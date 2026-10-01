@@ -10,6 +10,6 @@
     "db:init": "wrangler d1 execute pcy-analytics --remote --file=./schema.sql",
     "db:init:local": "wrangler d1 execute pcy-analytics --local --file=./schema.sql",
     "db:shell": "wrangler d1 execute pcy-analytics --remote --command",
-    "test": "node --test ../test/"
+    "test": "node --test ../test/*.test.mjs"
   }
 }

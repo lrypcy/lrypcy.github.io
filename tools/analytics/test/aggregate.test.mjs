@@ -7,7 +7,7 @@
  *   - 跨月范围过滤不会串月；
  *   - 访客去重（UV）在「天」这一层生效。
  *
- * 运行：node --test tools/analytics/test/
+ * 运行：node --test tools/analytics/test/*.test.mjs
  */
 
 import { test, before } from 'node:test';

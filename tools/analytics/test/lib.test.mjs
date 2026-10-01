@@ -1,6 +1,6 @@
 /**
  * 纯逻辑单测：不依赖 Cloudflare、不依赖网络。
- * 运行：node --test tools/analytics/test/
+ * 运行：node --test tools/analytics/test/*.test.mjs
  */
 
 import { test } from 'node:test';

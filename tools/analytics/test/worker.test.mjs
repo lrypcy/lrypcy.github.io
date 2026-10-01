@@ -2,7 +2,7 @@
  * Worker 处理器测试：用内存 SQLite 冒充 D1、用 Map 冒充 Cache API，
  * 直接在 node 里跑 fetch，覆盖路由、CORS、去重、爬虫过滤与看板渲染。
  *
- * 运行：node --test tools/analytics/test/
+ * 运行：node --test tools/analytics/test/*.test.mjs
  */
 
 import { test, beforeEach } from 'node:test';
