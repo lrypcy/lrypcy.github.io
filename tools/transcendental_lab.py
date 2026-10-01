@@ -4,7 +4,7 @@ Companion lab for the blog post:
   "超越函数在 GPU 上到底怎么算：从 MUFU.EX2 到 FlashAttention-3 的 softmax 之战"
 
 Reproduces every number quoted in the article. Run with:
-    /Users/congyuan/Software/miniconda3/bin/python3 tools/transcendental_lab.py
+    ~/miniconda3/bin/python3 tools/transcendental_lab.py
 
 Labs
   1  throughput cliff: 989 TFLOPS vs 3.9 T/s  (why softmax hurts)

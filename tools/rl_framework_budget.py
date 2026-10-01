@@ -8,7 +8,7 @@ RL 训练框架选型：把「为什么必须异步/partial rollout/高效 refit
   D. colocate vs disaggregated 的显存账
 
 运行：
-  /Users/congyuan/Software/miniconda3/bin/python3 tools/rl_framework_budget.py
+  ~/miniconda3/bin/python3 tools/rl_framework_budget.py
 """
 
 import numpy as np

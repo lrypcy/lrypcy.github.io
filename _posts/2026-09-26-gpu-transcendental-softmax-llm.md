@@ -497,7 +497,7 @@ sm__pipe_sfu_cycles_active.avg.pct_of_peak_sustained_active
 配套脚本在 [`tools/transcendental_lab.py`](https://github.com/lrypcy/lrypcy.github.io/blob/main/tools/transcendental_lab.py)，运行：
 
 ```bash
-/Users/congyuan/Software/miniconda3/bin/python3 tools/transcendental_lab.py
+~/miniconda3/bin/python3 tools/transcendental_lab.py
 ```
 
 **Exercise 1 — 复算吞吐悬崖。** 改 `lab1()` 里的 `d`（64/128/256）和精度，观察 exp 占比如何随 head dim 下降、随精度下降而上升。思考：为什么 $$d$$ 越大 softmax 越便宜？

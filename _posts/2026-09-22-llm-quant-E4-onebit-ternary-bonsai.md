@@ -419,7 +419,7 @@ graph LR
 
 ```bash
 git clone https://github.com/lrypcy/ipynbs.git && cd ipynbs/experiments/quantization/onebit_ternary_bonsai
-/Users/congyuan/Software/miniconda3/bin/python run.py        # 控制台版，输出进 results/
+~/miniconda3/bin/python run.py        # 控制台版，输出进 results/
 jupyter nbconvert --to notebook --execute --inplace onebit_ternary_bonsai_demo.ipynb   # 讲解版
 ```
 

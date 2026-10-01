@@ -769,7 +769,7 @@ Sora 级别的视频生成，日算力成本以千万美元计。这一条对学
 | L3 | §4.3 | “世界模型当裁判”的可靠性：Pearson 相关 + 选优效率 | 否 |
 | L4 | §5.1 | 模型误差在想象中的累积（谱半径 0.90 / 1.00 / 1.05） | 否 |
 
-L1–L4 全部用 numpy 实跑并回填真实输出（环境：`/Users/congyuan/Software/miniconda3/bin/python3`，numpy 2.1.1）。需要 GPU 的实验（真实 LIBERO / RoboCasa 跑分、跨本体视频迁移）本文未做，指向 §6.3 的最小可行路线。
+L1–L4 全部用 numpy 实跑并回填真实输出（环境：`~/miniconda3/bin/python3`，numpy 2.1.1）。需要 GPU 的实验（真实 LIBERO / RoboCasa 跑分、跨本体视频迁移）本文未做，指向 §6.3 的最小可行路线。
 
 ---
 

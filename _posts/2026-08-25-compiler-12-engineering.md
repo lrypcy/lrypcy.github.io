@@ -306,4 +306,4 @@ graph LR
 
 ---
 
-> **系列完**。感谢一路读到这里的你——返回 [第 0 篇 全景](/2026/08/25/compiler-00-overview/) 可查看完整导航；本地配套文章（TVM 深度、MoE 编译优化、量化×编译器融合）见 `congyuan_blogs` 的 ai_compiler 目录。
+> **系列完**。感谢一路读到这里的你——返回 [第 0 篇 全景](/2026/08/25/compiler-00-overview/) 可查看完整导航；本地配套文章（TVM 深度、MoE 编译优化、量化×编译器融合）见 `lrypcy_blogs` 的 ai_compiler 目录。

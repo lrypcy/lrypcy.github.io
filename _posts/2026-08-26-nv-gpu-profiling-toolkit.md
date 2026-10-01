@@ -453,8 +453,8 @@ INT8/FP8/W4A16 的量化 GEMM 在剖析时有专属关注点：
 
 **系列互引**
 
-- 同目录姊妹篇：《算子融合：从计算图到高效 Kernel 的编译优化理论与实战》（`congyuan_blogs/technology/ai_compiler/performance/operator_fusion_deep_dive.md`）—— 本文 roofline「访存受限」分支的系统解法
-- 同目录姊妹篇：《动态 Shape 编译：从重编译噩梦到符号维度追踪的编译器优化之路》（`congyuan_blogs/technology/ai_compiler/performance/dynamic_shape_compilation.md`）—— 本文 §4.4 与 §5.1 中 shape 相关干扰的控制方法
+- 同目录姊妹篇：《算子融合：从计算图到高效 Kernel 的编译优化理论与实战》（`lrypcy_blogs/technology/ai_compiler/performance/operator_fusion_deep_dive.md`）—— 本文 roofline「访存受限」分支的系统解法
+- 同目录姊妹篇：《动态 Shape 编译：从重编译噩梦到符号维度追踪的编译器优化之路》（`lrypcy_blogs/technology/ai_compiler/performance/dynamic_shape_compilation.md`）—— 本文 §4.4 与 §5.1 中 shape 相关干扰的控制方法
 - 量化系列：《伪量化算子插入——QAT 的地基》（`lrypcy.github.io/_posts/2026-08-26-llm-quant-11-fake-quant-insertion.md`）—— §5.2 量化 kernel 的上游原理
 
 **中文社区**：知乎上关于 nsys/ncu 使用技巧、「GPU 利用率为什么总是 100%」类话题有大量一线讨论，掘金上亦有 PyTorch profiler 实战教程；但多数为经验帖、直链稳定性差，本篇未能核验到可长期引用的具体条目——诚实标注：本节为占位，非完整来源。

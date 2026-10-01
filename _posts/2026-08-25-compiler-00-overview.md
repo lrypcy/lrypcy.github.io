@@ -203,7 +203,7 @@ Python 3.9+（Part A/C 实验），可选 clang/llvmlite（第 10 篇提供纯�
 
 [1] CPython 3.13 release notes（experimental JIT）：https://docs.python.org/3/whatsnew/3.13.html
 [2] GCC 官网（当前版本线）：https://gcc.gnu.org/
-[3] 本地文章《TVM/MLIR 3 个月学习路线图》（见 congyuan_blogs 仓库 technology/ai_compiler/ 目录）
+[3] 本地文章《TVM/MLIR 3 个月学习路线图》（见 lrypcy_blogs 仓库 technology/ai_compiler/ 目录）
 [4] 本地 wiki《AI Compiler 主题页》（见同仓库 llm-wiki/topics/）
 [5] 本地文章《编译器集成：手写 Kernel 如何与 torch.compile 协同》（见同仓库 technology/operator/ 目录）
 [6] Crafting Interpreters（免费在线）：https://craftinginterpreters.com/

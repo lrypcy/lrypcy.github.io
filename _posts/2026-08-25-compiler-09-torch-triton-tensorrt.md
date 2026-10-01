@@ -274,8 +274,8 @@ graph LR
 
 [1] PyTorch 官方教程 Introduction to torch.compile（含 Dynamo/graph break 讨论，写作时对应 2.13 文档）: https://docs.pytorch.org/tutorials/intermediate/torch_compile_tutorial.html
 [2] Triton 官方文档站: https://triton-lang.org/main/index.html
-[3] 本地文章《AI 编译器与模型量化的深度融合》（见 congyuan_blogs 仓库 technology/quantization/ 目录）
-[4] 本地文章《编译器集成：手写 Kernel 如何与 torch.compile 协同》（见 congyuan_blogs 仓库 operator/ 目录）
+[3] 本地文章《AI 编译器与模型量化的深度融合》（见 lrypcy_blogs 仓库 technology/quantization/ 目录）
+[4] 本地文章《编译器集成：手写 Kernel 如何与 torch.compile 协同》（见 lrypcy_blogs 仓库 operator/ 目录）
 [5] NVIDIA TensorRT 官方文档主页: https://docs.nvidia.com/deeplearning/tensorrt/
 
 ---

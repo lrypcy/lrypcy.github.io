@@ -162,7 +162,7 @@ Relax。Relay 已处于维护模式，官方文档的 deep dive 系列全部围�
 
 ## 参考资料
 
-[1] 本地文章《TVM/MLIR 3 个月学习路线图》（含 TensorIR/Schedule/MetaSchedule 实操，见 congyuan_blogs 仓库 technology/ai_compiler/ 目录）
+[1] 本地文章《TVM/MLIR 3 个月学习路线图》（含 TensorIR/Schedule/MetaSchedule 实操，见 lrypcy_blogs 仓库 technology/ai_compiler/ 目录）
 [2] 本地 wiki《AI Compiler 主题页》及其收录的 TVM 系列文章索引（见同仓库 llm-wiki/topics/）
 [3] Chen et al., TVM: An Automated End-to-End Optimizing Compiler for Deep Learning, OSDI'18: https://arxiv.org/abs/1810.00852
 [4] Zheng et al., Ansor: Generating High-Performance Tensor Programs for Deep Learning, OSDI'20: https://arxiv.org/abs/2004.00287

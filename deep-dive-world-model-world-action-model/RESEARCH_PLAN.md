@@ -294,7 +294,7 @@ deep-dive-world-model-world-action-model/
 2. **公式 → 代码 → shape** 三者必须对齐，每个关键代码块前面配变量映射表；
 3. **Mermaid** 只用 `<br>` 换行，节点文本带特殊符号时加引号；
 4. 每条重要论断末尾带链接（arXiv / 项目页 / 官方 cookbook 优先）；
-5. 示例代码**必须实跑**并回填输出；数值代码用 `/Users/congyuan/Software/miniconda3/bin/python3`（managed python 无 numpy）；
+5. 示例代码**必须实跑**并回填输出；数值代码用 `~/miniconda3/bin/python3`（managed python 无 numpy）；
 6. 长文档写完后**扫一遍乱码词**（伪 Unicode + 低频英文词）；
 7. 无法核验的数字一律标“待验证”，并在 §附录 集中列出。
 

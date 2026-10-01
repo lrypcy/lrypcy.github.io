@@ -13,7 +13,7 @@ stop-gradient / clamp 到底造成了什么差别。
 实验 D：agg_loss 四种聚合口径的差异
 
 运行：
-  /Users/congyuan/Software/miniconda3/bin/python3 tools/rl_var_grad_lab.py
+  ~/miniconda3/bin/python3 tools/rl_var_grad_lab.py
 """
 
 import numpy as np

@@ -10,7 +10,7 @@ RL 框架在算什么：三组纯 numpy 数值实验（无 GPU、无框架依赖
         以及 TIS / IcePop / CISPO 三种修法各自丢掉多少梯度
 
 运行：
-  /Users/congyuan/Software/miniconda3/bin/python3 tools/rl_obj_numeric_lab.py
+  ~/miniconda3/bin/python3 tools/rl_obj_numeric_lab.py
 """
 
 import numpy as np
