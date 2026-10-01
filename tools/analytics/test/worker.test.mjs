@@ -341,7 +341,7 @@ test('GET /stats?embed=1 走嵌入版：有高度上报脚本、没有完整口�
   assert.match(html, /class="footnote"/);
 });
 
-test('GET /stats 走 5 分钟边缘缓存，命中时不再打 D1', async () => {
+test('GET /stats 只缓存取数结果：命中时不再打 D1，HTML 仍每次现渲染', async () => {
   await h.collect();
   const first = await worker.fetch(fakeRequest({ url: `${ENDPOINT}/stats`, method: 'GET' }), h.env, h.ctx);
   assert.equal(first.headers.get('x-pcy-cache'), 'miss');
@@ -349,29 +349,45 @@ test('GET /stats 走 5 分钟边缘缓存，命中时不再打 D1', async () => 
 
   await Promise.all(h.pending); // 让 waitUntil 里的 cache.put 落地
 
-  // 换一个 D1 替身：缓存真命中就不会再碰数据库，内容仍应与首次一致。
+  // 换一个 D1 替身：数据缓存真命中就不会再碰数据库，内容仍应与首次一致。
   const envWithoutDb = { ...h.env, DB: { prepare: () => ({ bind: () => ({ all: async () => { throw new Error('缓存命中却打了 D1'); } }) }), batch: async () => { throw new Error('缓存命中却打了 D1'); } } };
   const second = await worker.fetch(fakeRequest({ url: `${ENDPOINT}/stats`, method: 'GET' }), envWithoutDb, h.ctx);
 
   assert.equal(second.headers.get('x-pcy-cache'), 'hit');
-  assert.equal(await second.text(), firstHtml);
+  assert.equal(await second.text(), firstHtml, '同一份数据应当渲染出同一份 HTML');
 });
 
-test('GET /stats 的 range 与 embed 各自独立缓存，不会互相串味', async () => {
+/*
+ * 回归用例：这里曾经缓存「渲染好的 HTML」，缓存键又不含版本标识，
+ * 于是把自绘方块图换成腾讯地图之后，线上一直吐旧方块图。改成缓存数据后，
+ * HTML 必须 no-store —— 谁都不许把它留住。
+ */
+test('GET /stats 的 HTML 必须 no-store，且带 Referrer 策略', async () => {
+  await h.collect();
+  const res = await worker.fetch(fakeRequest({ url: `${ENDPOINT}/stats?embed=1`, method: 'GET' }), h.env, h.ctx);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.equal(res.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
+});
+
+test('GET /stats 的数据缓存只按 day / range 分：embed 与完整版共用一份', async () => {
   await h.collect();
   const embed = await worker.fetch(fakeRequest({ url: `${ENDPOINT}/stats?embed=1`, method: 'GET' }), h.env, h.ctx);
+  assert.equal(embed.headers.get('x-pcy-cache'), 'miss');
   await Promise.all(h.pending);
 
+  // 同一 day + range：完整版直接吃上刚才 embed 那次留下的数据缓存，但走的模板不同。
   const full = await worker.fetch(fakeRequest({ url: `${ENDPOINT}/stats`, method: 'GET' }), h.env, h.ctx);
-  assert.equal(full.headers.get('x-pcy-cache'), 'miss', 'embed 与完整版必须是两份缓存');
-  assert.match(await full.text(), /<h2>口径说明<\/h2>/);
+  assert.equal(full.headers.get('x-pcy-cache'), 'hit', 'embed 与完整版共用同一份数据缓存');
+  const fullHtml = await full.text();
+  assert.match(fullHtml, /<h2>口径说明<\/h2>/, '共用数据也必须渲染成完整版');
+  assert.ok(!fullHtml.includes('<body class="embed">'), '完整版不能渲染成嵌入版');
 
   const month = await worker.fetch(
     fakeRequest({ url: `${ENDPOINT}/stats?range=month&embed=1`, method: 'GET' }),
     h.env,
     h.ctx
   );
-  assert.equal(month.headers.get('x-pcy-cache'), 'miss', '换 range 也要另算一份');
+  assert.equal(month.headers.get('x-pcy-cache'), 'miss', '换 range 要另取一份数据');
 });
 
 /* ---------- 其他路由 ---------- */

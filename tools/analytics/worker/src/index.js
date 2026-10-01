@@ -4,7 +4,8 @@
  * 路由：
  *   POST /c            采集端点，前端用 sendBeacon 打这个地址
  *   GET  /total        公开只读，返回总/年/月/今日访问次数，给页脚计数用
- *   GET  /stats        公开只读看板，供「关于」页 iframe 内嵌；不校验口令，带 5 分钟边缘缓存
+ *   GET  /stats        公开只读看板，供「关于」页 iframe 内嵌；不校验口令。
+ *                      缓存的只是「取数结果」（5 分钟），HTML 每次现渲染且 no-store。
  *   GET  /dash?token=  看板，需要 DASH_TOKEN（口令只用于「自己单独打开」这条路径）
  *   GET  /             健康检查
  *
@@ -226,6 +227,40 @@ async function loadDashboardData(env, day, range) {
   };
 }
 
+/**
+ * `/stats` 缓存的是「取数结果」而不是「渲染好的 HTML」。
+ *
+ * 早先缓存 HTML 的写法有个没法绕开的副作用：缓存键只含 `日期 / range / embed`，不含任何
+ * 版本标识，于是部署了新看板之后边缘仍在吐旧页面 —— 把「自绘方块图」换成「腾讯地图」那次，
+ * 线上看到的一直是旧方块图，就是在这一步被旧缓存按住的。
+ *
+ * 改成只缓存数据后：HTML 每次现渲染，部署即生效；真正贵的 8 次 D1 查询依旧被缓存挡住。
+ * 缓存键只按 `日期 / range` 区分 —— `embed` 只影响渲染模板，数据是同一份，不必各存一份。
+ */
+async function loadCachedDashboardData(env, ctx, day, range) {
+  const cacheKey = new Request(`https://stats-data.pcy-analytics.internal/${day}/${range}`);
+
+  const cached = await caches.default.match(cacheKey);
+  if (cached) {
+    try {
+      return { data: await cached.json(), hit: true };
+    } catch {
+      // 缓存块坏了就当未命中重新取数，别让整个看板跟着挂掉。
+    }
+  }
+
+  const data = await loadDashboardData(env, day, range);
+  ctx.waitUntil(
+    caches.default.put(
+      cacheKey,
+      new Response(JSON.stringify(data), {
+        headers: { 'content-type': JSON_CT, 'cache-control': `public, max-age=${STATS_CACHE_SECONDS}` },
+      })
+    )
+  );
+  return { data, hit: false };
+}
+
 /** GET /dash —— 需口令的看板，用于自己单独打开。 */
 async function handleDash(request, env, url) {
   const token = url.searchParams.get('token') || request.headers.get('x-dash-token') || '';
@@ -244,35 +279,30 @@ async function handleDash(request, env, url) {
  * GET /stats —— 公开只读看板，供「关于」页 iframe 内嵌。
  *
  * 这条路故意不要口令：页面本身就是公开给访客看的，把口令写进可被查看的 iframe src
- * 等于把口令也公开了，不如直接做一个公开视图。边缘缓存 5 分钟，
- * 否则每个打开关于页的人都会打 8 次 D1 查询，白吃免费额度。
+ * 等于把口令也公开了，不如直接做一个公开视图。
+ *
+ * HTML 必须 `no-store`：一是看板里嵌着「访问地图」，二是这块改版频繁，
+ * 一旦让浏览器或边缘留住旧 HTML，就会出现「代码明明换了、线上还是老样子」。
+ * 取数结果另有 5 分钟边缘缓存（见 loadCachedDashboardData），D1 查询照样被挡住。
  */
 async function handleStats(request, env, ctx, url) {
   const day = localDay(Date.now(), tzOffset(env));
   const range = normalizeRange(url.searchParams.get('range'));
   const embed = url.searchParams.get('embed') === '1';
 
-  const cacheKey = new Request(`https://stats.pcy-analytics.internal/${day}/${range}/${embed ? 'embed' : 'full'}`);
-  const headers = {
-    'content-type': HTML_CT,
-    'cache-control': `public, max-age=${STATS_CACHE_SECONDS}`,
-    'x-robots-tag': 'noindex',
-    // 地图 key 的域名校验看 Referer，必须放行 —— 只发来源、不发路径。
-    'referrer-policy': 'strict-origin-when-cross-origin',
-  };
-
-  const cached = await caches.default.match(cacheKey);
-  if (cached) {
-    return new Response(await cached.text(), { headers: { ...headers, 'x-pcy-cache': 'hit' } });
-  }
-
-  const data = await loadDashboardData(env, day, range);
+  const { data, hit } = await loadCachedDashboardData(env, ctx, day, range);
   const html = renderDashboard({ ...data, token: '', embed, tmapKey: env.TMAP_KEY || '' });
 
-  ctx.waitUntil(
-    caches.default.put(cacheKey, new Response(html, { headers: { 'content-type': HTML_CT } }))
-  );
-  return new Response(html, { headers: { ...headers, 'x-pcy-cache': 'miss' } });
+  return new Response(html, {
+    headers: {
+      'content-type': HTML_CT,
+      'cache-control': 'no-store',
+      'x-robots-tag': 'noindex',
+      // 地图 key 的域名校验看 Referer，必须放行 —— 只发来源、不发路径。
+      'referrer-policy': 'strict-origin-when-cross-origin',
+      'x-pcy-cache': hit ? 'hit' : 'miss',
+    },
+  });
 }
 
 export default {

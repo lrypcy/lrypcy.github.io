@@ -25,12 +25,18 @@ test('落点表恰好覆盖 34 个省级行政区，与 names.js 的表同集合
   assert.deepEqual(codes, Object.keys(CN_PROVINCES).sort(), 'PROVINCE_CENTER 与 CN_PROVINCES 必须同集合（含港澳台）');
 });
 
-test('每个省级行政区都有短名，短名不重复且不超过 3 字', () => {
+test('每个省级行政区都有短名、不重复；港澳台必须带「中国」前缀', () => {
   const shorts = Object.keys(PROVINCE_CENTER).map((code) => PROVINCE_SHORT[code]);
   assert.equal(shorts.filter(Boolean).length, 34, '不许有省份缺短名');
   assert.equal(new Set(shorts).size, 34, '短名不能重复');
   for (const [code, name] of Object.entries(PROVINCE_SHORT)) {
-    assert.ok(name.length <= 3, `${code} 的短名「${name}」超过 3 个字`);
+    if (['TW', 'HK', 'MO'].includes(code)) {
+      // 标签要短，但港澳台必须写明属于中国；裸「台湾 / 香港 / 澳门」一律不接受。
+      assert.ok(name.startsWith('中国'), `${code} 的标签「${name}」必须带「中国」前缀`);
+      assert.ok(name.length <= 4, `${code} 的标签「${name}」超过 4 个字`);
+    } else {
+      assert.ok(name.length <= 3, `${code} 的短名「${name}」超过 3 个字`);
+    }
   }
 });
 

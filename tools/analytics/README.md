@@ -42,7 +42,7 @@ tools/analytics/
     ├── aggregate.test.mjs 聚合口径校验（内存 SQLite）
     ├── heatmap.test.mjs   活动热力图网格构造（边界、色阶、月份标签）
     ├── province-map.test.mjs 省级落点：完备性、坐标合法性、港澳台归位、未定位流量不丢失
-    └── worker.test.mjs    路由 / CORS / 去重 / 看板渲染 / 公开路由缓存
+    └── worker.test.mjs    路由 / CORS / 去重 / 看板渲染 / 公开路由的取数缓存
 ```
 
 站点侧新增或改动：
@@ -155,8 +155,12 @@ analytics:
   既然看板本来就是要给访客看的，不如直接把 `/stats` 做成公开视图，口令只用来保护 `/dash`。
 - **高度靠 `postMessage` 回填**，不写死。看板高度会随「近 30 天柱数 / 地区明细行数」变化，写死要么留白要么出内部滚动条。
   子页在 `load` / `resize` / `ResizeObserver` 时把 `{type:'pcy-analytics:height', height}` 发给父页，父页只接受 600–6000px 的值。
-- **`/stats` 有 5 分钟边缘缓存**（`caches.default`，按 `日期 + range + embed` 分开存）。
+- **`/stats` 只缓存「取数结果」，不缓存 HTML**（`caches.default`，键为 `日期 + range`，TTL 5 分钟）。
   关于页比文章页更容易被反复打开，不缓存的话每个访客都要打 8 次 D1 查询。
+  **HTML 一律当场现渲染，并带 `cache-control: no-store`。**
+  这里踩过一次坑：早先缓存的是**渲染好的 HTML**，而缓存键里不含任何版本标识，
+  于是把「自绘方块图」换成「腾讯地图」那次部署之后，边缘仍在按旧键吐旧方块图 ——
+  代码明明换了、线上还是老样子。规律：改版频繁的东西别缓存成品，缓存它的输入。
 - **嵌入版不做横向滚动**：热力图格子比完整版小一档（10px，窄屏 9px）；访问地图在嵌入版矮一档（320px，窄屏 260px），免得在 iframe 里占掉整屏。
 - 关于页整块由 `{% if site.analytics.enabled %}` 包着，关掉统计后不留空壳。
 
@@ -194,7 +198,7 @@ node tools/analytics/dev-server.mjs
 ## 6. 验证
 
 ```bash
-# 全部单测与口径校验（68 项）
+# 全部单测与口径校验（69 项）
 node --test --no-warnings tools/analytics/test/*.test.mjs
 
 # Liquid 语法与多配置渲染（改了 include / about.md 之后必跑，写错会挂掉整站构建）
