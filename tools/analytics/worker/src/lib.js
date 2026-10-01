@@ -173,6 +173,24 @@ export const HEATMAP_LEVELS = 5;
 export const HEATMAP_WEEKS = 53;
 
 /**
+ * 按「占最大值的比例」分档，返回 0..levels-1；0 档固定表示「没有数据」。
+ *
+ * 不用分位数：低流量站早期只有一两个非零日，分位数会退化成全部同档；
+ * 只有一个非零值时直接给最高档，避免 max 退化成 1 时唯一的访问日只剩最浅色。
+ * 活动热力图与省级方块地图共用这一套色阶 —— 同一页里「深浅」的含义必须一致。
+ */
+export function levelByRatio(value, max, levels = HEATMAP_LEVELS) {
+  const v = Number(value) || 0;
+  if (v <= 0) return 0;
+  if (max <= 1) return levels - 1;
+  const ratio = v / max;
+  if (ratio <= 0.25) return 1;
+  if (ratio <= 0.5) return 2;
+  if (ratio <= 0.75) return 3;
+  return levels - 1;
+}
+
+/**
  * 把「按天 PV」铺成 GitHub 贡献图式的网格。
  *
  * 口径（和看板其它图表一样，越界的地方宁可留空也不要猜）：
@@ -196,18 +214,9 @@ export function buildCalendar(rows, { endDay, weeks = HEATMAP_WEEKS } = {}) {
   const lastColStart = addDays(endDay, -weekdayOf(endDay));
   const firstColStart = addDays(lastColStart, -(weeks - 1) * 7);
 
-  let max = 0;
-  for (const v of byDay.values()) if (v > max) max = v;
+  const max = Math.max(0, ...byDay.values());
 
-  const levelOf = (pv) => {
-    if (pv <= 0) return 0;
-    if (max <= 1) return HEATMAP_LEVELS - 1;
-    const ratio = pv / max;
-    if (ratio <= 0.25) return 1;
-    if (ratio <= 0.5) return 2;
-    if (ratio <= 0.75) return 3;
-    return HEATMAP_LEVELS - 1;
-  };
+  const levelOf = (pv) => levelByRatio(pv, max);
 
   const grid = [];
   const monthLabels = [];

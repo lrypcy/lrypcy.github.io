@@ -229,11 +229,19 @@ test('看板渲染出总览、年月曲线与中文地区名', async () => {
   assert.match(html, /总访问次数/);
   assert.match(html, /年度访问次数/);
   assert.match(html, /月度访问次数/);
-  assert.match(html, /访问来源地区/);
+  assert.match(html, /国家 \/ 地区排行/);
   assert.ok(html.includes('中国 · 广东 · Shenzhen'), '地区明细里应出现中文地区名');
   assert.ok(html.includes('美国 · California · San Francisco'));
   assert.ok(html.includes('中国 · 北京'));
   assert.match(html, /noindex/, '看板不应被搜索引擎收录');
+
+  // 省级方块地图：广东 / 北京落格，美国那一行不该出现在图里
+  assert.match(html, /访问地图/);
+  assert.match(html, /mp-tile l[1-4][^>]*title="广东 · \d+ 次访问"/);
+  assert.match(html, /mp-tile l[1-4][^>]*title="北京 · \d+ 次访问"/);
+  assert.equal((html.match(/class="mp-tile/g) || []).length, 34, '地图恒定输出 34 个方块');
+  assert.ok(!/mp-tile[^>]*title="美国/.test(html), '海外国家不进省级方块图');
+  assert.match(html, /不描绘任何边界/, '口径说明里要讲清方块图的含义');
 });
 
 test('看板 range 参数非法时回落到全部时间，不报错', async () => {

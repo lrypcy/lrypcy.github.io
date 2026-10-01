@@ -5,6 +5,7 @@
 
 import { percentOf } from './lib.js';
 import { countryLabel, geoLabel, provinceLabel } from './names.js';
+import { buildProvinceTiles, TILE_SHORT, TILE_COLS } from './province-map.js';
 
 const esc = (s) =>
   String(s == null ? '' : s).replace(
@@ -159,6 +160,36 @@ function heatmap(cal) {
 </div>`;
 }
 
+/**
+ * 省级方块地图。每个省级行政区一个等大方块，按近似相对位置用 CSS grid 定位。
+ *
+ * 用 `grid-column` / `grid-row` 显式定位而不是补空格子：省份在网格里的位置是稀疏的
+ * （第 0 行只有黑龙江一格），补空占位既啰嗦又容易和行数耦合。
+ */
+function provinceMap(grid) {
+  if (!grid || !grid.tiles.length) return '<p class="empty">暂无数据</p>';
+
+  const cells = grid.tiles
+    .map((t) => {
+      const short = TILE_SHORT[t.code] || t.code;
+      const full = provinceLabel('CN', t.code);
+      const text = t.v > 0 ? `${full} · ${fmt(t.v)} 次访问` : `${full} · 暂无访问`;
+      const value = t.v > 0 ? `<span class="mp-value">${fmt(t.v)}</span>` : '';
+      return (
+        `<div class="mp-tile l${t.level}" style="grid-column:${t.col + 1};grid-row:${t.row + 1}"` +
+        ` title="${esc(text)}"><span class="mp-name">${esc(short)}</span>${value}</div>`
+      );
+    })
+    .join('');
+
+  const parts = [`${grid.totalTiles} 个省级行政区中 ${grid.activeTiles} 个有访问，共 ${fmt(grid.mapped)} 次`];
+  if (grid.unmapped > 0) parts.push(`另有 ${fmt(grid.unmapped)} 次只定位到国家、未定位到省份`);
+
+  return `<div class="mp" style="grid-template-columns:repeat(${TILE_COLS},minmax(0,1fr))">${cells}</div>
+  <div class="mp-legend"><span>少</span>${Array.from({ length: 5 }, (_, l) => `<span class="mp-swatch l${l}"></span>`).join('')}<span>多</span></div>
+  <p class="mp-summary">${esc(parts.join('；'))}</p>`;
+}
+
 export function renderDashboard({
   token = '',
   embed = false,
@@ -188,6 +219,11 @@ export function renderDashboard({
     .slice(0, 15);
 
   const rangeTotal = geos.reduce((sum, r) => sum + (Number(r.v) || 0), 0);
+
+  // 省级方块地图直接吃 geos，不需要额外的 SQL —— 落库维度里已经有 country / province。
+  const provinceGrid = buildProvinceTiles(geos);
+  const mapTotal = provinceGrid.mapped + provinceGrid.unmapped;
+
   const detailRows = geos.slice(0, 80).map(
     (row) =>
       `<tr><td>${esc(geoLabel(row))}</td><td class="num">${fmt(row.v)}</td><td class="num">${percentOf(
@@ -202,7 +238,8 @@ export function renderDashboard({
   // 内嵌到关于页时口径说明会把 iframe 撑得很高，压缩成一行脚注；
   // 单独打开看板时保留完整说明 —— 公开页上「统计了什么」本身就该讲清楚。
   const notes = embed
-    ? `<p class="footnote">每格一天，颜色按当日访问次数分档；空格子表示那天还没到。
+    ? `<p class="footnote">热力图每格一天，颜色按当日访问次数分档，空格子表示那天还没到；
+       地图为省级行政区的等大方块示意排布，只表达相对位置与量级，不代表实际范围与界线。
        只记录「日期 × 地区」的计数，不保存 IP、User-Agent 与 Cookie。</p>`
     : `<section class="card">
     <h2>口径说明</h2>
@@ -211,6 +248,7 @@ export function renderDashboard({
       <p><b>独立访客</b>：标识为 <code>SHA-256(盐 | 月份 | IP | UA)</code> 的截断值，<b>盐按月轮换</b>。因此「本月独立访客」准确，跨月的「年度独立访客」会把同一个人重复计入 —— 这是不长期跟踪个人的必然代价，本页因此不展示年度独立访客。</p>
       <p><b>地区</b>：来自 Cloudflare 对客户端 IP 的解析（<code>request.cf</code>），国家准确度高，中国的省级行政区基本可用，城市级在中国大陆质量一般、可能为空。<code>未知地区</code> 表示 Cloudflare 无法定位该 IP。</p>
       <p><b>热力图</b>：每格一天，颜色深浅按当日访问次数占「近 ${weekCount} 周内单日最高值」的比例分 4 档；空格子表示那一天还没到，不是零访问。</p>
+      <p><b>地图</b>：省级方块地图，每格一个省级行政区，位置是按近似相对位置排的等大方块，<b>不描绘任何边界</b>，只表达位置关系与访问量级。落格依据是 Cloudflare 返回的 <code>regionCode</code>；若只返回英文省名（如 <code>Guangdong</code>）或没有省级信息，这部分流量会汇总进「未定位到省份」，不会落到具体格子上。港澳台各占一格，与大陆省份同图。</p>
       <p><b>存储</b>：不保存 IP、User-Agent、Cookie 与 localStorage，只保存「日期 × 地区」的计数行，以及当天的访客哈希。</p>
     </footer>
   </section>`;
@@ -302,11 +340,32 @@ export function renderDashboard({
   .hm-legend > span{margin-right:2px}
   .hm-summary{margin-left:8px;padding-left:10px;border-left:1px solid var(--border)}
 
+  /* ---- 省级方块地图 ---- */
+  .mp{--mp-gap:5px;display:grid;gap:var(--mp-gap);max-width:560px;margin-top:2px}
+  .mp-tile{border-radius:7px;padding:7px 3px;text-align:center;font-size:11.5px;line-height:1.3;
+    background:#f1f5fa;color:#9fb0c2;overflow:hidden;transition:.2s;cursor:default}
+  .mp-tile .mp-name{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mp-tile .mp-value{display:block;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}
+  .mp-tile.l1{background:#dceafa;color:#2c4f75}
+  .mp-tile.l2{background:#b3d6f8;color:#1d3f66}
+  .mp-tile.l3{background:#6dabf2;color:#0f2b48}
+  .mp-tile.l4{background:#2f7ce0;color:#fff}
+  .mp-tile:hover{outline:2px solid var(--primary);outline-offset:-2px}
+  .mp-legend{display:flex;align-items:center;gap:4px;margin-top:12px;font-size:12px;color:var(--muted)}
+  .mp-swatch{display:inline-block;width:13px;height:13px;border-radius:3px;background:#f1f5fa}
+  .mp-swatch.l1{background:#dceafa} .mp-swatch.l2{background:#b3d6f8}
+  .mp-swatch.l3{background:#6dabf2} .mp-swatch.l4{background:#2f7ce0}
+  .mp-summary{color:var(--muted);font-size:12.5px;margin:8px 0 0}
+  .mp-note{color:var(--muted);font-size:12px;line-height:1.75;margin:10px 0 0}
+
   @media (max-width:600px){
     .rank-name{flex:0 0 110px}
     .rank-value{flex:0 0 76px;font-size:12.5px}
     .stat-value{font-size:22px}
     .hm{--hm-cell:9px;--hm-gap:2.5px}
+    .mp{--mp-gap:3px;max-width:none}
+    .mp-tile{padding:5px 2px;font-size:10px;border-radius:5px}
+    .mp-tile .mp-value{font-size:9.5px}
   }
 
   /* ---- 内嵌模式（关于页 iframe） ---- */
@@ -315,8 +374,11 @@ export function renderDashboard({
   body.embed h1{font-size:17px}
   /* 关于页正文列比看板窄，格子缩小一档，免得在 iframe 里还要横向滚动 */
   body.embed .hm{--hm-cell:10px;--hm-gap:2.5px;--hm-label-w:20px}
+  /* 关于页正文列更窄，方块图收一档宽度，免得贴满整行显得比正文还重 */
+  body.embed .mp{max-width:520px}
   @media (max-width:600px){
     body.embed .hm{--hm-cell:9px;--hm-gap:2px;--hm-label-w:18px}
+    body.embed .mp{max-width:none}
   }
   body.embed .stats{grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin-bottom:14px}
   body.embed .stat{padding:11px 13px;border-radius:10px}
@@ -348,6 +410,12 @@ export function renderDashboard({
   </section>
 
   <section class="card">
+    <h2>访问地图 <small>省级方块 · 范围「${esc(rangeText)}」共 ${fmt(mapTotal)} 次</small></h2>
+    ${provinceMap(provinceGrid)}
+    <p class="mp-note">方块为等大的示意排布，只表达省级行政区的相对位置与访问量级，不代表实际范围与界线；颜色深浅与上方热力图同一套色阶。</p>
+  </section>
+
+  <section class="card">
     <h2>年度访问次数 <small>共 ${yearly.length} 年</small></h2>
     ${bars(yearly, { height: 130, labelEvery: yearLabelEvery })}
   </section>
@@ -363,8 +431,9 @@ export function renderDashboard({
   </section>
 
   <section class="card">
-    <h2>访问来源地区 <small>范围「${esc(rangeText)}」，共 ${fmt(rangeTotal)} 次</small></h2>
+    <h2>国家 / 地区排行 <small>范围「${esc(rangeText)}」，共 ${fmt(rangeTotal)} 次</small></h2>
     ${rankList(countryRows, (row) => row.title, rangeTotal)}
+    <p class="mp-note">这里按国家 / 地区汇总，中国大陆各省的分布见上方地图。</p>
   </section>
 
   <section class="card">
