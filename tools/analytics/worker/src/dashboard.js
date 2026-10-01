@@ -14,6 +14,29 @@ const esc = (s) =>
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-US');
 
+/**
+ * 内嵌模式的高度上报：把自身文档高度 postMessage 给父页面，由父页调整 iframe 高度。
+ *
+ * 不写死像素高度 —— 内容高度会随「近 30 天柱状图」和「地区明细行数」变化，
+ * 写死要么留一大片空白，要么在 iframe 内部出现滚动条（移动端尤其难看）。
+ * 消息体只有一个数字，不含任何统计数据，用 '*' 作为 targetOrigin 是安全的。
+ */
+const EMBED_HEIGHT_SCRIPT = `<script>
+(function () {
+  var last = 0;
+  function report() {
+    var h = Math.ceil(document.documentElement.getBoundingClientRect().height);
+    if (!h || h === last) return;
+    last = h;
+    try { parent.postMessage({ type: 'pcy-analytics:height', height: h }, '*'); } catch (e) {}
+  }
+  window.addEventListener('load', report);
+  window.addEventListener('resize', report);
+  if (window.ResizeObserver) new ResizeObserver(report).observe(document.body);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(report).catch(function () {});
+})();
+</script>`;
+
 function shortLabel(key) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(key)) return key.slice(5);
   if (/^\d{4}-\d{2}$/.test(key)) return key.slice(2);
@@ -69,22 +92,85 @@ function statCard(label, value, extra = '') {
   );
 }
 
-function rangeTabs(token, range) {
+function rangeTabs({ token, range, embed }) {
   const tabs = [
     ['all', '全部时间'],
     ['year', '本年度'],
     ['month', '本月'],
     ['day', '今天'],
   ];
+  // 公开内嵌模式下不能把口令带进链接，否则会随页面源码一起漏出去。
+  const hrefFor = (key) => {
+    const query = [];
+    if (token) query.push(`token=${encodeURIComponent(token)}`);
+    if (embed) query.push('embed=1');
+    query.push(`range=${key}`);
+    return `?${query.join('&')}`;
+  };
   return `<nav class="tabs">${tabs
-    .map(
-      ([key, text]) =>
-        `<a class="${key === range ? 'active' : ''}" href="?token=${encodeURIComponent(token)}&range=${key}">${text}</a>`
-    )
+    .map(([key, text]) => `<a class="${key === range ? 'active' : ''}" href="${hrefFor(key)}">${text}</a>`)
     .join('')}</nav>`;
 }
 
-export function renderDashboard({ token, range, day, stats, yearly, monthly, recent, geos }) {
+/**
+ * GitHub 贡献图式的活动日历。
+ *
+ * 用 CSS grid 的 `grid-auto-flow: column` 铺格子：列 = 周、行 = 周内第几天，
+ * 这样只需给每列 7 个格子按顺序输出，浏览器自动按列排布，不必手算绝对坐标。
+ * 空档（还没到的日子）给透明格子，与「当天 0 次访问」的浅色格子区分开。
+ */
+function heatmap(cal) {
+  if (!cal || !cal.weeks.length) return '<p class="empty">暂无数据</p>';
+
+  const labelByCol = new Map(cal.monthLabels.map((m) => [m.col, m.label]));
+  const monthCells = cal.weeks
+    .map((_, col) => `<span class="hm-month">${esc(labelByCol.get(col) || '')}</span>`)
+    .join('');
+
+  const cells = cal.weeks
+    .map((week) =>
+      week
+        .map((cell) => {
+          if (!cell) return '<span class="hm-cell hm-void"></span>';
+          const text = cell.pv > 0 ? `${cell.day} · ${fmt(cell.pv)} 次访问` : `${cell.day} · 无访问`;
+          return `<span class="hm-cell l${cell.level}" title="${esc(text)}"></span>`;
+        })
+        .join('')
+    )
+    .join('');
+
+  const legend = Array.from({ length: 5 }, (_, l) => `<span class="hm-cell l${l}"></span>`).join('');
+  const summary =
+    cal.activeDays > 0
+      ? `近 ${cal.weeks.length} 周有 ${fmt(cal.activeDays)} 天有访问，单日最高 ${fmt(cal.max)} 次`
+      : `近 ${cal.weeks.length} 周暂无访问`;
+
+  return `<div class="hm">
+  <div class="hm-scroll">
+    <div class="hm-inner">
+      <div class="hm-months">${monthCells}</div>
+      <div class="hm-body">
+        <div class="hm-days"><span></span><span>一</span><span></span><span>三</span><span></span><span>五</span><span></span></div>
+        <div class="hm-grid">${cells}</div>
+      </div>
+    </div>
+  </div>
+  <div class="hm-legend"><span>少</span>${legend}<span>多</span><span class="hm-summary">${esc(summary)}</span></div>
+</div>`;
+}
+
+export function renderDashboard({
+  token = '',
+  embed = false,
+  range,
+  day,
+  stats,
+  yearly,
+  monthly,
+  recent,
+  geos,
+  calendar,
+}) {
   const monthSlice = monthly.slice(-24);
   const monthLabelEvery = Math.ceil(monthSlice.length / 12) || 1;
   const recentLabelEvery = Math.ceil(recent.length / 10) || 1;
@@ -111,6 +197,23 @@ export function renderDashboard({ token, range, day, stats, yearly, monthly, rec
   );
 
   const rangeText = { all: '全部时间', year: '本年度', month: '本月', day: '今天' }[range] || range;
+  const weekCount = calendar ? calendar.weeks.length : 0;
+
+  // 内嵌到关于页时口径说明会把 iframe 撑得很高，压缩成一行脚注；
+  // 单独打开看板时保留完整说明 —— 公开页上「统计了什么」本身就该讲清楚。
+  const notes = embed
+    ? `<p class="footnote">每格一天，颜色按当日访问次数分档；空格子表示那天还没到。
+       只记录「日期 × 地区」的计数，不保存 IP、User-Agent 与 Cookie。</p>`
+    : `<section class="card">
+    <h2>口径说明</h2>
+    <footer class="note">
+      <p><b>访问次数</b>：每次成功的页面上报记 1 次（PV）。同一访客 <code>DEDUPE_SECONDS</code> 秒内的重复上报会被丢弃；已知爬虫、监控与预览流量在服务端按 UA 直接过滤，空 UA 也丢弃。</p>
+      <p><b>独立访客</b>：标识为 <code>SHA-256(盐 | 月份 | IP | UA)</code> 的截断值，<b>盐按月轮换</b>。因此「本月独立访客」准确，跨月的「年度独立访客」会把同一个人重复计入 —— 这是不长期跟踪个人的必然代价，本页因此不展示年度独立访客。</p>
+      <p><b>地区</b>：来自 Cloudflare 对客户端 IP 的解析（<code>request.cf</code>），国家准确度高，中国的省级行政区基本可用，城市级在中国大陆质量一般、可能为空。<code>未知地区</code> 表示 Cloudflare 无法定位该 IP。</p>
+      <p><b>热力图</b>：每格一天，颜色深浅按当日访问次数占「近 ${weekCount} 周内单日最高值」的比例分 4 档；空格子表示那一天还没到，不是零访问。</p>
+      <p><b>存储</b>：不保存 IP、User-Agent、Cookie 与 localStorage，只保存「日期 × 地区」的计数行，以及当天的访客哈希。</p>
+    </footer>
+  </section>`;
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -171,20 +274,65 @@ export function renderDashboard({ token, range, day, stats, yearly, monthly, rec
   details summary{cursor:pointer;color:var(--primary);font-size:13.5px;outline:none}
   footer.note{color:var(--muted);font-size:12.5px;line-height:1.9;margin-top:26px}
   footer.note code{background:#eef4fb;padding:1px 5px;border-radius:4px;font-size:12px}
+
+  /* ---- 活动热力图（GitHub 贡献图式） ---- */
+  .hm{--hm-cell:11px;--hm-gap:3px;--hm-label-w:22px;margin-top:4px}
+  .hm-scroll{overflow-x:auto;padding-bottom:6px}
+  .hm-inner{display:inline-block;min-width:100%}
+  .hm-months{display:grid;grid-auto-flow:column;grid-auto-columns:var(--hm-cell);
+    gap:var(--hm-gap);margin:0 0 5px var(--hm-label-w);
+    font-size:9.5px;line-height:13px;color:var(--muted)}
+  .hm-month{white-space:nowrap;overflow:visible}
+  .hm-body{display:flex;gap:6px;align-items:flex-start}
+  .hm-days{display:grid;grid-template-rows:repeat(7,var(--hm-cell));gap:var(--hm-gap);
+    width:calc(var(--hm-label-w) - 6px);font-size:9.5px;line-height:var(--hm-cell);
+    color:var(--muted);text-align:right}
+  .hm-grid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,var(--hm-cell));
+    grid-auto-columns:var(--hm-cell);gap:var(--hm-gap)}
+  .hm-cell{display:block;width:var(--hm-cell);height:var(--hm-cell);border-radius:2.5px;
+    background:#eef2f7;outline:1px solid rgba(27,49,80,.05);outline-offset:-1px}
+  .hm-cell.l1{background:#c6e0fb}
+  .hm-cell.l2{background:#8cc0f7}
+  .hm-cell.l3{background:#4f9bef}
+  .hm-cell.l4{background:#1f6fe0}
+  .hm-cell.hm-void{background:transparent;outline:none}
+  .hm-legend{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:12px;
+    font-size:12px;color:var(--muted)}
+  .hm-legend .hm-cell{display:inline-block}
+  .hm-legend > span{margin-right:2px}
+  .hm-summary{margin-left:8px;padding-left:10px;border-left:1px solid var(--border)}
+
   @media (max-width:600px){
     .rank-name{flex:0 0 110px}
     .rank-value{flex:0 0 76px;font-size:12.5px}
     .stat-value{font-size:22px}
+    .hm{--hm-cell:9px;--hm-gap:2.5px}
   }
+
+  /* ---- 内嵌模式（关于页 iframe） ---- */
+  body.embed{background:transparent}
+  body.embed .wrap{max-width:none;padding:0}
+  body.embed h1{font-size:17px}
+  /* 关于页正文列比看板窄，格子缩小一档，免得在 iframe 里还要横向滚动 */
+  body.embed .hm{--hm-cell:10px;--hm-gap:2.5px;--hm-label-w:20px}
+  @media (max-width:600px){
+    body.embed .hm{--hm-cell:9px;--hm-gap:2px;--hm-label-w:18px}
+  }
+  body.embed .stats{grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px;margin-bottom:14px}
+  body.embed .stat{padding:11px 13px;border-radius:10px}
+  body.embed .stat-value{font-size:21px}
+  body.embed section.card{padding:14px 16px;margin-bottom:12px;border-radius:10px}
+  body.embed section.card > h2{font-size:14.5px;margin-bottom:10px}
+  .footnote{color:var(--muted);font-size:12.5px;line-height:1.8;margin:14px 2px 2px}
 </style>
 </head>
-<body>
+<body${embed ? ' class="embed"' : ''}>
 <div class="wrap">
   <header class="top">
-    <h1>访问统计</h1>
+    ${embed ? '' : '<h1>访问统计</h1>'}
     <div class="meta">数据时区 UTC+8 · 统计日 ${esc(day)} · 范围「${esc(rangeText)}」</div>
   </header>
-  ${rangeTabs(token, range)}
+  ${rangeTabs({ token, range, embed })}
 
   <div class="stats">
     ${statCard('总访问次数', stats.total)}
@@ -193,6 +341,11 @@ export function renderDashboard({ token, range, day, stats, yearly, monthly, rec
     ${statCard('今天', stats.today, `独立访客 ${fmt(stats.todayUv)}`)}
     ${statCard('本月独立访客', stats.monthUv, '按设备去重')}
   </div>
+
+  <section class="card">
+    <h2>活动热力图 <small>最近 ${weekCount} 周，每格一天</small></h2>
+    ${heatmap(calendar)}
+  </section>
 
   <section class="card">
     <h2>年度访问次数 <small>共 ${yearly.length} 年</small></h2>
@@ -222,16 +375,9 @@ export function renderDashboard({ token, range, day, stats, yearly, monthly, rec
     </table>
   </section>
 
-  <section class="card">
-    <h2>口径说明</h2>
-    <footer class="note">
-      <p><b>访问次数</b>：每次成功的页面上报记 1 次（PV）。同一访客 <code>DEDUPE_SECONDS</code> 秒内的重复上报会被丢弃；已知爬虫、监控与预览流量在服务端按 UA 直接过滤，空 UA 也丢弃。</p>
-      <p><b>独立访客</b>：标识为 <code>SHA-256(盐 | 月份 | IP | UA)</code> 的截断值，<b>盐按月轮换</b>。因此「本月独立访客」准确，跨月的「年度独立访客」会把同一个人重复计入 —— 这是不长期跟踪个人的必然代价，本页因此不展示年度独立访客。</p>
-      <p><b>地区</b>：来自 Cloudflare 对客户端 IP 的解析（<code>request.cf</code>），国家准确度高，中国的省级行政区基本可用，城市级在中国大陆质量一般、可能为空。<code>未知地区</code> 表示 Cloudflare 无法定位该 IP。</p>
-      <p><b>存储</b>：不保存 IP、User-Agent、Cookie 与 localStorage，只保存「日期 × 地区」的计数行，以及当天的访客哈希。</p>
-    </footer>
-  </section>
+  ${notes}
 </div>
+${embed ? EMBED_HEIGHT_SCRIPT : ''}
 </body>
 </html>`;
 }

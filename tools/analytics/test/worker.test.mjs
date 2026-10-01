@@ -260,6 +260,91 @@ test('range=month 的地理合计与月度总数一致', async () => {
   assert.match(html, /范围「本月」，共 2 次/);
 });
 
+/* ---------- 活动热力图 ---------- */
+
+test('看板渲染出活动热力图，且「还没到的日子」与「零访问」是不同 class', async () => {
+  await h.collect(); // 今天 · 中国 · 广东 · Shenzhen
+
+  const html = await (
+    await worker.fetch(
+      fakeRequest({ url: `${ENDPOINT}/dash?token=unit-test-token`, method: 'GET' }),
+      h.env,
+      h.ctx
+    )
+  ).text();
+
+  assert.match(html, /活动热力图/);
+  assert.match(html, /class="hm-grid"/);
+  assert.match(html, /class="hm-month"/);
+
+  // 53 周 × 7 天 = 371 个格子
+  const cells = html.match(/class="hm-cell[^"]*"/g) || [];
+  assert.equal(cells.length, 371 + 5, '热力图格子 371 个 + 图例 5 个');
+  assert.ok(html.includes('hm-void'), '末尾未到的格子必须是空格子而不是 l0');
+  assert.match(html, /class="hm-cell l4" title="\d{4}-\d{2}-\d{2} · 1 次访问"/, '唯一一次访问应是最高档');
+  assert.match(html, /近 53 周有 1 天有访问，单日最高 1 次/);
+});
+
+/* ---------- 公开看板（关于页内嵌） ---------- */
+
+test('GET /stats 不需要口令就是 200，且不会把口令带进页面里的链接', async () => {
+  await h.collect();
+  const res = await worker.fetch(fakeRequest({ url: `${ENDPOINT}/stats`, method: 'GET' }), h.env, h.ctx);
+
+  assert.equal(res.status, 200, '公开路由不能要口令');
+  assert.equal(res.headers.get('x-pcy-cache'), 'miss');
+  assert.equal(res.headers.get('x-robots-tag'), 'noindex');
+
+  const html = await res.text();
+  assert.match(html, /活动热力图/);
+  assert.ok(!html.includes('token='), '公开页面的链接不能带 token，否则等于把口令公开');
+});
+
+test('GET /stats?embed=1 走嵌入版：有高度上报脚本、没有完整口径说明', async () => {
+  await h.collect();
+  const html = await (
+    await worker.fetch(fakeRequest({ url: `${ENDPOINT}/stats?embed=1`, method: 'GET' }), h.env, h.ctx)
+  ).text();
+
+  assert.match(html, /<body class="embed">/);
+  assert.match(html, /pcy-analytics:height/, '需要把高度 postMessage 给父页，否则 iframe 高度写死');
+  assert.ok(!html.includes('<h2>口径说明</h2>'), '嵌入版不该塞整段口径说明');
+  assert.match(html, /class="footnote"/);
+});
+
+test('GET /stats 走 5 分钟边缘缓存，命中时不再打 D1', async () => {
+  await h.collect();
+  const first = await worker.fetch(fakeRequest({ url: `${ENDPOINT}/stats`, method: 'GET' }), h.env, h.ctx);
+  assert.equal(first.headers.get('x-pcy-cache'), 'miss');
+  const firstHtml = await first.text();
+
+  await Promise.all(h.pending); // 让 waitUntil 里的 cache.put 落地
+
+  // 换一个 D1 替身：缓存真命中就不会再碰数据库，内容仍应与首次一致。
+  const envWithoutDb = { ...h.env, DB: { prepare: () => ({ bind: () => ({ all: async () => { throw new Error('缓存命中却打了 D1'); } }) }), batch: async () => { throw new Error('缓存命中却打了 D1'); } } };
+  const second = await worker.fetch(fakeRequest({ url: `${ENDPOINT}/stats`, method: 'GET' }), envWithoutDb, h.ctx);
+
+  assert.equal(second.headers.get('x-pcy-cache'), 'hit');
+  assert.equal(await second.text(), firstHtml);
+});
+
+test('GET /stats 的 range 与 embed 各自独立缓存，不会互相串味', async () => {
+  await h.collect();
+  const embed = await worker.fetch(fakeRequest({ url: `${ENDPOINT}/stats?embed=1`, method: 'GET' }), h.env, h.ctx);
+  await Promise.all(h.pending);
+
+  const full = await worker.fetch(fakeRequest({ url: `${ENDPOINT}/stats`, method: 'GET' }), h.env, h.ctx);
+  assert.equal(full.headers.get('x-pcy-cache'), 'miss', 'embed 与完整版必须是两份缓存');
+  assert.match(await full.text(), /<h2>口径说明<\/h2>/);
+
+  const month = await worker.fetch(
+    fakeRequest({ url: `${ENDPOINT}/stats?range=month&embed=1`, method: 'GET' }),
+    h.env,
+    h.ctx
+  );
+  assert.equal(month.headers.get('x-pcy-cache'), 'miss', '换 range 也要另算一份');
+});
+
 /* ---------- 其他路由 ---------- */
 
 test('健康检查与 404', async () => {
@@ -269,4 +354,14 @@ test('健康检查与 404', async () => {
 
   const missing = await worker.fetch(fakeRequest({ url: `${ENDPOINT}/nope`, method: 'GET' }), h.env, h.ctx);
   assert.equal(missing.status, 404);
+});
+
+test('路径里的重复斜杠被折叠：endpoint 配成带尾斜杠也不会 404', async () => {
+  await h.collect();
+  const res = await worker.fetch(fakeRequest({ url: `${ENDPOINT}//stats`, method: 'GET' }), h.env, h.ctx);
+  assert.equal(res.status, 200, '//stats 应等同于 /stats');
+  assert.match(await res.text(), /活动热力图/);
+
+  const total = await worker.fetch(fakeRequest({ url: `${ENDPOINT}//total`, method: 'GET' }), h.env, h.ctx);
+  assert.equal(total.status, 200);
 });

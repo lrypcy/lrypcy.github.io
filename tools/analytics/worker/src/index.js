@@ -4,7 +4,8 @@
  * 路由：
  *   POST /c            采集端点，前端用 sendBeacon 打这个地址
  *   GET  /total        公开只读，返回总/年/月/今日访问次数，给页脚计数用
- *   GET  /dash?token=  看板，需要 DASH_TOKEN
+ *   GET  /stats        公开只读看板，供「关于」页 iframe 内嵌；不校验口令，带 5 分钟边缘缓存
+ *   GET  /dash?token=  看板，需要 DASH_TOKEN（口令只用于「自己单独打开」这条路径）
  *   GET  /             健康检查
  *
  * 隐私设计：不存 IP、UA、Cookie；访客标识是「盐 + 月份 + IP + UA」的 SHA-256 截断值，
@@ -14,6 +15,7 @@
 import {
   DAILY_SQL,
   DEFAULT_TZ_OFFSET_HOURS,
+  HEATMAP_WEEKS,
   INSERT_VISITOR_SQL,
   MONTHLY_SQL,
   RANGE_UV_SQL,
@@ -21,6 +23,8 @@ import {
   TOTALS_SQL,
   UPSERT_DAILY_SQL,
   YEARLY_SQL,
+  addDays,
+  buildCalendar,
   geoRankSql,
   isBot,
   localDay,
@@ -38,6 +42,8 @@ import {
 import { renderDashboard, renderUnauthorized } from './dashboard.js';
 
 const JSON_CT = 'application/json; charset=utf-8';
+const HTML_CT = 'text/html; charset=utf-8';
+const STATS_CACHE_SECONDS = 300;
 
 function corsHeaders(env, request) {
   const origin = request.headers.get('Origin') || '';
@@ -64,9 +70,11 @@ function tzOffset(env) {
   return Number.isFinite(n) ? n : DEFAULT_TZ_OFFSET_HOURS;
 }
 
-function addDays(day, delta) {
-  const base = Date.parse(`${day}T00:00:00Z`);
-  return new Date(base + delta * 86400000).toISOString().slice(0, 10);
+function htmlResponse(body, status = 200, extraHeaders = {}) {
+  return new Response(body, {
+    status,
+    headers: { 'content-type': HTML_CT, 'cache-control': 'no-store', ...extraHeaders },
+  });
 }
 
 /** POST /c —— 记录一次页面访问。 */
@@ -154,30 +162,26 @@ async function handleTotal(request, env, ctx) {
   return new Response(body, { headers: { ...headers, ...cors, 'x-pcy-cache': 'miss' } });
 }
 
-/** GET /dash —— 看板。 */
-async function handleDash(request, env, url) {
-  const token = url.searchParams.get('token') || request.headers.get('x-dash-token') || '';
-  if (!env.DASH_TOKEN || !safeEqual(token, env.DASH_TOKEN)) {
-    return new Response(renderUnauthorized(), {
-      status: 401,
-      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
-    });
-  }
-
-  const day = localDay(Date.now(), tzOffset(env));
-  const range = normalizeRange(url.searchParams.get('range'));
+/**
+ * 把看板需要的数据一次批量取齐。
+ * `/dash` 与 `/stats` 共用这一份，避免两条路由的取数口径漂移。
+ */
+async function loadDashboardData(env, day, range) {
   const monthStart = `${monthKeyOf(day)}-01`;
   const yearStart = `${yearKeyOf(day)}-01-01`;
   const recentStart = addDays(day, -29);
+  // 多取一周，保证热力图最左一列要么整列有数据、要么整列是空档，不会半列缺数。
+  const heatStart = addDays(day, -(HEATMAP_WEEKS * 7 + 7));
   const geoRange = rangeOf(range, day);
 
-  const [statsRes, todayUvRes, monthUvRes, yearlyRes, monthlyRes, recentRes, geoRes] = await env.DB.batch([
+  const [statsRes, todayUvRes, monthUvRes, yearlyRes, monthlyRes, recentRes, heatRes, geoRes] = await env.DB.batch([
     env.DB.prepare(TOTALS_SQL).bind(day, monthStart, yearStart),
     env.DB.prepare(TODAY_UV_SQL).bind(day),
     env.DB.prepare(RANGE_UV_SQL).bind(monthStart),
     env.DB.prepare(YEARLY_SQL),
     env.DB.prepare(MONTHLY_SQL),
     env.DB.prepare(DAILY_SQL).bind(recentStart),
+    env.DB.prepare(DAILY_SQL).bind(heatStart),
     env.DB.prepare(geoRankSql(geoRange.clause)).bind(...geoRange.params),
   ]);
 
@@ -185,6 +189,7 @@ async function handleDash(request, env, url) {
   const yearly = (yearlyRes.results || []).map((r) => ({ k: String(r.k), v: Number(r.v) || 0 }));
   const monthly = (monthlyRes.results || []).map((r) => ({ k: String(r.k), v: Number(r.v) || 0 }));
   const recent = (recentRes.results || []).map((r) => ({ k: String(r.k), v: Number(r.v) || 0 }));
+  const heatRows = (heatRes.results || []).map((r) => ({ k: String(r.k), v: Number(r.v) || 0 }));
   const geos = (geoRes.results || []).map((r) => ({
     country: String(r.country || 'XX'),
     province: String(r.province || ''),
@@ -192,14 +197,11 @@ async function handleDash(request, env, url) {
     v: Number(r.v) || 0,
   }));
 
-  const total = Number(statsRow.total) || 0;
-
-  const html = renderDashboard({
-    token,
-    range,
+  return {
     day,
+    range,
     stats: {
-      total,
+      total: Number(statsRow.total) || 0,
       today: Number(statsRow.today) || 0,
       month: Number(statsRow.month) || 0,
       year: Number(statsRow.year) || 0,
@@ -210,27 +212,76 @@ async function handleDash(request, env, url) {
     monthly,
     recent,
     geos,
-  });
+    calendar: buildCalendar(heatRows, { endDay: day, weeks: HEATMAP_WEEKS }),
+  };
+}
 
-  return new Response(html, {
-    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
-  });
+/** GET /dash —— 需口令的看板，用于自己单独打开。 */
+async function handleDash(request, env, url) {
+  const token = url.searchParams.get('token') || request.headers.get('x-dash-token') || '';
+  if (!env.DASH_TOKEN || !safeEqual(token, env.DASH_TOKEN)) {
+    return htmlResponse(renderUnauthorized(), 401);
+  }
+
+  const day = localDay(Date.now(), tzOffset(env));
+  const range = normalizeRange(url.searchParams.get('range'));
+  const data = await loadDashboardData(env, day, range);
+  const embed = url.searchParams.get('embed') === '1';
+  return htmlResponse(renderDashboard({ ...data, token, embed }));
+}
+
+/**
+ * GET /stats —— 公开只读看板，供「关于」页 iframe 内嵌。
+ *
+ * 这条路故意不要口令：页面本身就是公开给访客看的，把口令写进可被查看的 iframe src
+ * 等于把口令也公开了，不如直接做一个公开视图。边缘缓存 5 分钟，
+ * 否则每个打开关于页的人都会打 8 次 D1 查询，白吃免费额度。
+ */
+async function handleStats(request, env, ctx, url) {
+  const day = localDay(Date.now(), tzOffset(env));
+  const range = normalizeRange(url.searchParams.get('range'));
+  const embed = url.searchParams.get('embed') === '1';
+
+  const cacheKey = new Request(`https://stats.pcy-analytics.internal/${day}/${range}/${embed ? 'embed' : 'full'}`);
+  const headers = {
+    'content-type': HTML_CT,
+    'cache-control': `public, max-age=${STATS_CACHE_SECONDS}`,
+    'x-robots-tag': 'noindex',
+  };
+
+  const cached = await caches.default.match(cacheKey);
+  if (cached) {
+    return new Response(await cached.text(), { headers: { ...headers, 'x-pcy-cache': 'hit' } });
+  }
+
+  const data = await loadDashboardData(env, day, range);
+  const html = renderDashboard({ ...data, token: '', embed });
+
+  ctx.waitUntil(
+    caches.default.put(cacheKey, new Response(html, { headers: { 'content-type': HTML_CT } }))
+  );
+  return new Response(html, { headers: { ...headers, 'x-pcy-cache': 'miss' } });
 }
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const cors = corsHeaders(env, request);
+    // endpoint 配成带尾斜杠时，站点侧会拼出 `//stats`。折叠重复斜杠，
+    // 免得一个配置笔误在页面上表现成「看板 404」这种难查的现象。
+    const pathname = url.pathname.replace(/\/{2,}/g, '/');
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    switch (url.pathname) {
+    switch (pathname) {
       case '/c':
         return handleCollect(request, env, ctx);
       case '/total':
         return handleTotal(request, env, ctx);
+      case '/stats':
+        return handleStats(request, env, ctx, url);
       case '/dash':
         return handleDash(request, env, url);
       case '/':

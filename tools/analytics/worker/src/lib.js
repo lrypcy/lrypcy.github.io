@@ -21,6 +21,17 @@ export function yearKeyOf(day) {
   return day.slice(0, 4);
 }
 
+/** 在 YYYY-MM-DD 上加减天数，返回 YYYY-MM-DD。全程走 UTC，不碰本地时区。 */
+export function addDays(day, delta) {
+  const base = Date.parse(`${day}T00:00:00Z`);
+  return new Date(base + delta * 86400000).toISOString().slice(0, 10);
+}
+
+/** 星期几，0 = 周日 … 6 = 周六。 */
+export function weekdayOf(day) {
+  return new Date(`${day}T00:00:00Z`).getUTCDay();
+}
+
 /**
  * 把 day / month / year / all 翻译成 SQL 的 day 过滤片段。
  * day 是零填充日期串，字典序等于时间序，所以可以用字符串比较并走索引。
@@ -149,6 +160,96 @@ export function normalizeRange(value) {
 export function percentOf(value, total) {
   if (!total || total <= 0) return 0;
   return Math.round((Number(value) / Number(total)) * 1000) / 10;
+}
+
+/* ------------------------------------------------------------------ *
+ * 活动热力图（GitHub 贡献图式）
+ * ------------------------------------------------------------------ */
+
+/** 格子色阶数，0 档是「没有访问」。 */
+export const HEATMAP_LEVELS = 5;
+
+/** 热力图横向铺多少周。53 列正好覆盖 370 天，跨完整一年还留出对齐余量。 */
+export const HEATMAP_WEEKS = 53;
+
+/**
+ * 把「按天 PV」铺成 GitHub 贡献图式的网格。
+ *
+ * 口径（和看板其它图表一样，越界的地方宁可留空也不要猜）：
+ *  - 列 = 周、行 = 周内第几天，一周从**周日**起算（与 GitHub 一致）；
+ *    最后一列是包含 endDay 的那一周，整体向左回溯 weeks 周；
+ *  - **endDay 之后的格子留 null**，渲染成空格子而不是 0 ——
+ *    「还没到的那几天」和「到了但没人来」在图上必须能区分，否则月初看图会误以为流量塌了；
+ *  - 同理，窗口起点之前的格子也是 null；
+ *  - 色阶按「占窗口内单日最高 PV 的比例」分档（≤25% / ≤50% / ≤75% / 其余）。
+ *    不用分位数是因为低流量站早期只有一两个非零日，分位数会退化成全部同档；
+ *    只有一个非零日时直接给最高档，避免 max 退化成 1 时唯一的访问日只剩最浅色。
+ */
+export function buildCalendar(rows, { endDay, weeks = HEATMAP_WEEKS } = {}) {
+  const byDay = new Map();
+  for (const row of rows || []) {
+    const key = String(row && row.k ? row.k : '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(key)) byDay.set(key, Number(row.v) || 0);
+  }
+
+  // 最后一列的起点：把 endDay 回退到它所在那一周的周日。
+  const lastColStart = addDays(endDay, -weekdayOf(endDay));
+  const firstColStart = addDays(lastColStart, -(weeks - 1) * 7);
+
+  let max = 0;
+  for (const v of byDay.values()) if (v > max) max = v;
+
+  const levelOf = (pv) => {
+    if (pv <= 0) return 0;
+    if (max <= 1) return HEATMAP_LEVELS - 1;
+    const ratio = pv / max;
+    if (ratio <= 0.25) return 1;
+    if (ratio <= 0.5) return 2;
+    if (ratio <= 0.75) return 3;
+    return HEATMAP_LEVELS - 1;
+  };
+
+  const grid = [];
+  const monthLabels = [];
+  const levelCounts = new Array(HEATMAP_LEVELS).fill(0);
+  let total = 0;
+  let activeDays = 0;
+
+  for (let col = 0; col < weeks; col += 1) {
+    const week = [];
+    let monthStart = '';
+    let firstDay = '';
+    for (let row = 0; row < 7; row += 1) {
+      const day = addDays(firstColStart, col * 7 + row);
+      if (day > endDay) {
+        week.push(null);
+        continue;
+      }
+      if (!firstDay) firstDay = day;
+      // 月份标签打在这一列（GitHub 口径：标签跟着「该月第一天」所在的那一列）。
+      if (day.slice(8, 10) === '01' && !monthStart) monthStart = day;
+      const pv = byDay.get(day) || 0;
+      const level = levelOf(pv);
+      levelCounts[level] += 1;
+      total += pv;
+      if (pv > 0) activeDays += 1;
+      week.push({ day, pv, level });
+    }
+    // 首列若不含月初，也要标出它属于哪个月，否则最左边一个标签会缺。
+    const labelDay = monthStart || (col === 0 ? firstDay : '');
+    if (labelDay) {
+      const month = Number(labelDay.slice(5, 7));
+      // 53 周横跨两个年份，窗口两端又很可能落在同一个月份 —— 只写「10月」会出现两个
+      // 一模一样的标签。学 GitHub：只在 1 月这一格带上年份，用年份分界线区分前后。
+      // 注意不要把年份加在**首列**上：首列离第二个标签只有 4 列（28 天）的间距，
+      // 「2025年10月」会正好压住「11月」。
+      const label = month === 1 ? `${labelDay.slice(0, 4)}年1月` : `${month}月`;
+      monthLabels.push({ col, label });
+    }
+    grid.push(week);
+  }
+
+  return { weeks: grid, monthLabels, max, total, activeDays, levelCounts, startDay: firstColStart, endDay };
 }
 
 /* ------------------------------------------------------------------ *

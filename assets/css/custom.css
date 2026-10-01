@@ -2173,3 +2173,27 @@ html.hide-sidebar .sidebar { display: none; }
   font-variant-numeric: tabular-nums;
 }
 .footer-visits[hidden] { display: none; }
+
+/* ========== 关于页内嵌的访问统计看板（about.md + Worker /stats?embed=1）==========
+   看板由自建 Worker 渲染成 HTML，这里只负责外壳：卡片、圆角、以及加载时的占位高度。
+   真实高度由子页 postMessage 回来覆盖（见 about.md 底部的监听脚本）。 */
+.about-stats-embed {
+  margin: 18px 0 8px;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.about-stats-embed iframe {
+  display: block;
+  width: 100%;
+  height: 1500px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+}
+@media (max-width: 640px) {
+  .about-stats-embed { padding: 6px; border-radius: 10px; }
+  .about-stats-embed iframe { height: 1700px; }
+}

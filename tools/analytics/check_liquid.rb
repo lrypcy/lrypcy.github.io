@@ -97,6 +97,73 @@ end
 rendered = Liquid::Template.parse(source).render('site' => CONFIGS['已部署：字段完整'])
 failures << 'endpoint 尾部斜杠未被处理' if rendered.include?("workers.dev/'") || rendered.include?('workers.dev//')
 
+# ---------------------------------------------------------------------------
+# 站点其它含 Liquid 的源文件也要做语法检查。
+# 本地 Jekyll 跑不起来，一个没闭合的 {% if %} 会直接把整站构建打挂，
+# 而这类错误在浏览器里只表现为「站点没更新」，很难定位。
+# ---------------------------------------------------------------------------
+ROOT = File.expand_path('../..', __dir__)
+
+liquid_sources = Dir[
+  File.join(ROOT, '*.md'),
+  File.join(ROOT, '*.html'),
+  File.join(ROOT, '_layouts', '*.html'),
+  File.join(ROOT, '_includes', '*.html')
+].sort
+
+unclosed = []
+liquid_sources.each do |path|
+  text = File.read(path, encoding: 'UTF-8')
+  next unless text.include?('{%') || text.include?('{{')
+
+  begin
+    Liquid::Template.parse(text)
+  rescue Liquid::SyntaxError => e
+    unclosed << "#{path.delete_prefix("#{ROOT}/")}：#{e.message}"
+  end
+end
+
+if unclosed.empty?
+  puts "\nLiquid 语法检查：#{liquid_sources.size} 个站点源文件全部通过"
+else
+  failures.concat(unclosed.map { |u| "Liquid 语法错误 → #{u}" })
+end
+
+# ---------------------------------------------------------------------------
+# 关于页内嵌看板：单独渲染那一段，确认开关真的生效、endpoint 真的被替换进去。
+# 整页渲染需要 Jekyll 的 date / plus / divided_by 等过滤器，所以只截取这一段。
+# ---------------------------------------------------------------------------
+about = File.read(File.join(ROOT, 'about.md'), encoding: 'UTF-8')
+block = about[/\{%\s*assign ana = site\.analytics\s*%\}.*?\{%\s*endif\s*%\}/m]
+if block.nil?
+  failures << 'about.md：找不到访问统计区块（改过标记就用这个脚本重新对齐）'
+else
+  # 用与 _config.yml 同形的 endpoint（不带尾斜杠）。带尾斜杠的写法由 Worker 侧的
+  # 路径归一化兜底，另有单测覆盖，这里不重复。
+  about_config = Marshal.load(Marshal.dump(CONFIGS['已部署：字段完整']))
+  about_config['analytics']['endpoint'] = about_config['analytics']['endpoint'].sub(%r{/+\z}, '')
+
+  enabled = Liquid::Template.parse(block).render('site' => about_config)
+  disabled = Liquid::Template
+             .parse(block)
+             .render('site' => CONFIGS['配置缺失：site.analytics 不存在'])
+
+  about_checks = {
+    '开启了才输出 iframe' => enabled.include?('<iframe id="pcy-stats-frame"'),
+    'iframe 指向 /stats?embed=1' => enabled.include?('workers.dev/stats?embed=1'),
+    'endpoint 已被替换（不留 Liquid 痕迹）' => !enabled.include?('{{') && !enabled.include?('{%'),
+    '带高度回填脚本' => enabled.include?('pcy-analytics:height'),
+    '不暴露口令' => !enabled.include?('token='),
+    '关掉统计就不输出' => disabled.strip.empty?
+  }
+  bad = about_checks.reject { |_, ok| ok }.keys
+  if bad.empty?
+    puts "PASS  about.md 访问统计区块 → #{about_checks.size} 项检查通过"
+  else
+    failures << "about.md 访问统计区块：未通过 #{bad.join('、')}"
+  end
+end
+
 if failures.empty?
   puts "\n全部通过。"
   exit 0

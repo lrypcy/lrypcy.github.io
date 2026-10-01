@@ -65,6 +65,39 @@ permalink: /about/
   <li><b>成体系而非碎片化</b>：宁可一个系列写透一个主题，不写零散的随笔。</li>
 </ul>
 
+{% assign ana = site.analytics %}
+{% if ana and ana.enabled and ana.endpoint and ana.endpoint != "" %}
+
+<h2 class="about-section-title">访问统计</h2>
+<p class="about-desc">
+  本站不接第三方统计：GA4 在国内基本加载不出来，Umami 免费版只保留 6 个月数据，GoatCounter 拿不到城市级别。
+  所以这套统计跑在自己搭的 Cloudflare Worker + D1 上——只记录「日期 × 地区」的访问次数，不保存 IP、User-Agent 和 Cookie。
+  下面是实时看板，也可以<a href="{{ ana.endpoint }}/stats" target="_blank" rel="noopener">单独打开</a>。
+</p>
+<div class="about-stats-embed">
+<iframe id="pcy-stats-frame" src="{{ ana.endpoint }}/stats?embed=1" title="本站访问统计看板" loading="lazy" referrerpolicy="no-referrer" height="1500"></iframe>
+</div>
+<script>
+/* 看板高度随「近 30 天柱数 / 地区明细行数」变化，写死会出现大片空白或内部滚动条。
+   子页在 load / resize / ResizeObserver 时把自身高度 postMessage 过来，这里照着调 iframe。 */
+(function () {
+  var FRAME_ID = 'pcy-stats-frame';
+  var MIN = 600, MAX = 6000;
+  window.addEventListener('message', function (event) {
+    var data = event.data;
+    if (!data || data.type !== 'pcy-analytics:height') return;
+    var frame = document.getElementById(FRAME_ID);
+    if (!frame) return;
+    var height = Number(data.height);
+    if (!isFinite(height) || height < MIN || height > MAX) return;
+    frame.style.height = height + 'px';
+    frame.removeAttribute('height');
+  });
+})();
+</script>
+
+{% endif %}
+
 <h2 class="about-section-title">联系我</h2>
 <p class="about-note">
   文章有误、想讨论技术、或者单纯打个招呼，欢迎在任意文章底部留言（GitHub 账号登录即可评论），也可以到 <a href="https://github.com/lrypcy" target="_blank" rel="noopener">GitHub</a> 提 Issue。

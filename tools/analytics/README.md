@@ -29,17 +29,18 @@ tools/analytics/
 │   ├── package.json
 │   ├── schema.sql         D1 表结构
 │   └── src/
-│       ├── index.js       路由：/c 采集、/total 计数、/dash 看板
-│       ├── lib.js         纯逻辑（时间换算、访客哈希、SQL 常量）
-│       ├── dashboard.js   看板页 HTML 渲染
+│       ├── index.js       路由：/c 采集、/total 计数、/stats 公开看板、/dash 口令看板
+│       ├── lib.js         纯逻辑（时间换算、访客哈希、热力图网格、SQL 常量）
+│       ├── dashboard.js   看板页 HTML 渲染（含热力图、内嵌模式）
 │       └── names.js       国家 / 省份代码 → 中文名
 ├── d1-shim.mjs            D1 / Cache API 的本地替身（测试与预览共用）
 ├── dev-server.mjs         本地预览服务器（带演示数据）
-├── check_liquid.rb        _includes/analytics.html 的 Liquid 语法校验
+├── check_liquid.rb        Liquid 语法校验（含站点其它源文件 + about.md 内嵌区块）
 └── test/
     ├── lib.test.mjs       纯函数单测
     ├── aggregate.test.mjs 聚合口径校验（内存 SQLite）
-    └── worker.test.mjs    路由 / CORS / 去重 / 看板渲染
+    ├── heatmap.test.mjs   活动热力图网格构造（边界、色阶、月份标签）
+    └── worker.test.mjs    路由 / CORS / 去重 / 看板渲染 / 公开路由缓存
 ```
 
 站点侧新增或改动：
@@ -48,8 +49,9 @@ tools/analytics/
 |---|---|
 | `_includes/analytics.html` | 新增。埋点上报 + 页脚计数，配置为空时不输出任何内容 |
 | `_layouts/default.html` | 页脚加计数元素，`</body>` 前引入上面的 include |
+| `about.md` | 新增「访问统计」区块：iframe 内嵌 `/stats?embed=1` + 高度回填脚本 |
 | `_config.yml` | 新增 `analytics:` 配置段 |
-| `assets/css/custom.css` | 新增 `.footer-visits` 样式 |
+| `assets/css/custom.css` | 新增 `.footer-visits` 与 `.about-stats-embed` 样式 |
 
 `tools/` 已经在 `_config.yml` 的 `exclude` 里，不会被发布到站点。
 
@@ -108,22 +110,46 @@ analytics:
   endpoint: "https://pcy-analytics.<你的子域>.workers.dev"        # 填上面那个地址
 ```
 
-提交推送后，GitHub Pages 重新构建，页脚就会出现「· 总访问 N 次」。
+提交推送后，GitHub Pages 重新构建，页脚就会出现「· 总访问 N 次」，「关于」页也会出现内嵌看板。
 
-看板地址：`https://pcy-analytics.<你的子域>.workers.dev/dash?token=<DASH_TOKEN>`，建议存成书签。
+两个地址：
+
+| 地址 | 用途 |
+|---|---|
+| `/dash?token=<DASH_TOKEN>` | 完整看板，带口令，建议存成书签 |
+| `/stats` | **公开只读看板**，不要口令，关于页内嵌用的就是它（加 `?embed=1` 走嵌入版布局） |
 
 ---
 
-## 4. 本地预览（不部署也能看）
+## 4. 关于页内嵌看板
+
+`about.md` 里用 iframe 内嵌 `/stats?embed=1`，见该文件末尾的 `.about-stats-embed` 区块。
+
+几个刻意的决定：
+
+- **内嵌走公开路由，不把 `DASH_TOKEN` 写进页面。** iframe 的 `src` 在页面上是明文，带口令等于公开口令 ——
+  既然看板本来就是要给访客看的，不如直接把 `/stats` 做成公开视图，口令只用来保护 `/dash`。
+- **高度靠 `postMessage` 回填**，不写死。看板高度会随「近 30 天柱数 / 地区明细行数」变化，写死要么留白要么出内部滚动条。
+  子页在 `load` / `resize` / `ResizeObserver` 时把 `{type:'pcy-analytics:height', height}` 发给父页，父页只接受 600–6000px 的值。
+- **`/stats` 有 5 分钟边缘缓存**（`caches.default`，按 `日期 + range + embed` 分开存）。
+  关于页比文章页更容易被反复打开，不缓存的话每个访客都要打 8 次 D1 查询。
+- **嵌入版不做横向滚动**：格子尺寸比完整版小一档（10px，窄屏 9px）。
+- 关于页整块由 `{% if site.analytics.enabled %}` 包着，关掉统计后不留空壳。
+
+---
+
+## 5. 本地预览（不部署也能看）
 
 ```bash
 node tools/analytics/dev-server.mjs
 # 看板      http://localhost:8788/dash?token=dev
+# 公开看板  http://localhost:8788/stats
+# 内嵌预览  http://localhost:8788/stats?embed=1
 # 总计数    http://localhost:8788/total
 # 采集      POST http://localhost:8788/c
 ```
 
-默认灌 420 天确定性演示数据，便于确认「年度 / 月度 / 最近 30 天 / 地区分布」四张图都符合预期。
+默认灌 420 天确定性演示数据，便于确认「活动热力图 / 年度 / 月度 / 最近 30 天 / 地区分布」几张图都符合预期。
 
 常用参数：
 
@@ -141,21 +167,25 @@ node tools/analytics/dev-server.mjs
 
 ---
 
-## 5. 验证
+## 6. 验证
 
 ```bash
-# 全部单测与口径校验（40 项）
+# 全部单测与口径校验（56 项）
 node --test --no-warnings tools/analytics/test/*.test.mjs
 
-# Liquid 语法与多配置渲染（改了 include 之后必跑，写错会挂掉整站构建）
+# Liquid 语法与多配置渲染（改了 include / about.md 之后必跑，写错会挂掉整站构建）
 ruby tools/analytics/check_liquid.rb
 ```
 
 `aggregate.test.mjs` 用真实的 `schema.sql` 和 Worker 里同一份 SQL 常量，在内存 SQLite 上先手工算出期望值（总 17 / 本年 17 / 本月 11 / 今日 4 / 地区排行 上海 6 · 北京 5 · 广东 4 · 美国 2），再由 SQL 反算校对，确保「同一地区同一天重复访问是累加而不是新增行」「跨月范围过滤不串月」这些容易写错的地方是对的。
 
+`heatmap.test.mjs` 只盯热力图的边界：最后一列必须含 `endDay` 且之后的格子是 `null`（「还没到」不能画成「零访问」）、窗口起点不会被补格子、色阶在「只有一个非零日」这类退化输入下不能全变最浅、月份标签必须落在真实的月初列上、跨年时用年份把同名月份区分开。
+
+`check_liquid.rb` 现在除了渲染 `_includes/analytics.html` 的五套配置，还会**语法检查站点所有含 Liquid 的源文件**（`*.md` / `*.html` / `_layouts` / `_includes`），并单独渲染 `about.md` 的访问统计区块，确认开关生效、endpoint 被替换、没有口令泄漏。
+
 ---
 
-## 6. 口径与隐私
+## 7. 口径与隐私
 
 ### 访问次数（PV）
 每次成功的页面上报记 1 次。以下流量不计入：
@@ -173,6 +203,15 @@ ruby tools/analytics/check_liquid.rb
 ### 地区
 来自 Cloudflare 对客户端 IP 的解析（`request.cf`）。国家准确度高；中国的省级行政区基本可用；**城市级在中国大陆质量一般、经常为空**，看到部分记录只到省市不必意外。`未知地区` 表示 Cloudflare 无法定位该 IP。
 
+### 活动热力图
+53 列 × 7 行，一列一周、一格一天，一周从**周日**起算（与 GitHub 一致）。
+
+- **`endDay` 之后的格子留空**（透明），不是填 0 —— 「还没到」和「到了但没人来」必须能分开看，否则月初看图会误以为流量塌了；
+- 色阶按「占窗口内单日最高 PV 的比例」分 4 档（≤25% / ≤50% / ≤75% / 其余），不用分位数是因为低流量站早期只有一两个非零日，分位数会退化成全部同档；
+- **只有一天有数据时直接给最高档**，避免 `max` 退化成 1 时唯一的访问日只剩最浅色；
+- 月份标签打在该月 1 号所在的那一列；**年份只标在 1 月**，用来区分跨年的同名月份 ——
+  不要加到首列上，首列离第二个标签只有 4 列间距，「2025年10月」会正好压住「11月」。
+
 ### 存了什么
 只存两类数据：
 
@@ -183,7 +222,7 @@ ruby tools/analytics/check_liquid.rb
 
 ---
 
-## 7. 成本与配额
+## 8. 成本与配额
 
 都在 Cloudflare 免费额度之内，个人博客用不到 1%：
 
@@ -191,24 +230,25 @@ ruby tools/analytics/check_liquid.rb
 |---|---|---|
 | Workers 请求 | 10 万 / 天 | 每个页面浏览 2 次（采集 + 页脚计数） |
 | D1 行写入 | 10 万 / 天 | ≈ 每次访问 2 行（聚合行 + 访客行） |
-| D1 行读取 | 500 万 / 天 | `/total` 有 5 分钟边缘缓存，命中不读库；看板一次 7 条查询、扫表几千行 |
+| D1 行读取 | 500 万 / 天 | `/total` 与 `/stats` 都有 5 分钟边缘缓存，命中不读库；看板一次 8 条查询、扫表几千行 |
 | D1 存储 | 5 GB | 一天几百次访问，一年几百 KB 量级 |
 
 免费的 Workers 只有 10ms CPU / 请求，本项目单次请求只做一次 SHA-256 加两条 SQL，余量充足。
 
 ---
 
-## 8. 已知限制
+## 9. 已知限制
 
 1. **`*.workers.dev` 在中国大陆的可达性不稳定。** 统计量偏低时先查这一点：浏览器开发者工具看 `/c` 请求是否成功。如果长期不可靠，可以绑一个自有域名（Cloudflare 免费支持自定义域 + 自动 SSL），代价是要有一个域名。
 2. **禁用 JavaScript 的访客统计不到。** 上报依赖 `sendBeacon` / `fetch`。这是纯静态站的固有限制，用图片像素可以绕，但会牺牲去重和 Referer 校验。
 3. **走代理 / VPN 的访客地区会落到代理节点。**
 4. **不做文章级统计**（按需要可以后加：在 `daily_stats` 里加一列 `path`，主键扩成五列即可，埋点侧把 `location.pathname` 放进请求体）。
-5. **`/total` 是公开只读端点**，任何人都能拿到总访问数字 —— 页脚要公开展示，这一点无法避免。它只返回 4 个整数，不暴露地区明细；明细只有带 `DASH_TOKEN` 才能看。
+5. **`/total` 与 `/stats` 都是公开只读端点**，任何人都能拿到总访问数字和地区分布 —— 页脚与关于页都要公开展示，这一点无法避免。`/total` 只返回 4 个整数；`/stats` 返回的是看板 HTML，不含原始 IP / UA（这些本来就没存）。两者都带 `x-robots-tag: noindex`，不会被搜索引擎单独收录。
+6. **热力图色阶是「相对当日最高值」的**，不是绝对值。所以只有几十次访问的月份里，一次访问也可能显示成中等深浅；要看具体数字请悬停格子或看下面的地区明细。
 
 ---
 
-## 9. 日常运维
+## 10. 日常运维
 
 ```bash
 cd tools/analytics/worker

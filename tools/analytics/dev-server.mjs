@@ -188,6 +188,8 @@ async function main() {
     if (seeded) console.log(`已灌入演示数据：${seeded.days} 天，合计 ${seeded.totalPv} 次访问`);
     console.log('');
     console.log(`  看板      ${base}/dash?token=${args.token}`);
+    console.log(`  公开看板  ${base}/stats        （关于页内嵌用的那条路由，不要口令）`);
+    console.log(`  内嵌预览  ${base}/stats?embed=1`);
     console.log(`  总计数    ${base}/total`);
     console.log(`  采集      POST ${base}/c   （可加 ?cf=CN:GD:Shenzhen 模拟地区）`);
   });
