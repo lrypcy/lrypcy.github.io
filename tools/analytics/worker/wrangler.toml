@@ -6,7 +6,7 @@ compatibility_date = "2026-09-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "pcy-analytics"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "7fb3c736-ca30-4dcf-86c8-cbb8db95d926"
 
 [vars]
 # 允许的站点来源，逗号分隔。用于 CORS 响应头与 Referer 校验。

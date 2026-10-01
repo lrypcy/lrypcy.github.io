@@ -20,3 +20,7 @@ Clippings/
 # 访问统计部署时生成的口令备忘与凭据（tools/analytics/deploy.sh）
 tools/analytics/.secrets.local
 tools/analytics/.env.local
+
+# wrangler 本地缓存
+tools/analytics/.wrangler/
+tools/analytics/**/.wrangler/
