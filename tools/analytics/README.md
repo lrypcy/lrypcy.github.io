@@ -193,6 +193,18 @@ node tools/analytics/dev-server.mjs
 
 用 `X-Mock-IP` / `X-Mock-Country` / `X-Mock-Region-Code` / `X-Mock-City` 头，或 `?cf=US:California:SanFrancisco`，可以在本地模拟任意来源地区。
 
+### 5.1 只想看「访问地图」长什么样（不需要 key）
+
+```bash
+node tools/analytics/make-map-preview.mjs
+# → tools/analytics/map-preview.html（已 gitignore，不进仓库）
+```
+
+它复用 `renderDashboard()` 的真实渲染，所以版式、气泡、标签、图例与线上逐像素同源；
+只做两处替换：把 SDK 上的 `&key=` 摘掉，再注入 WorkBuddy 的免 key 代理 `_TMapSecurityConfig`。
+**底图因此只在 WorkBuddy 预览里显示** —— 用系统浏览器直接打开会是灰底，这是预期行为，不是 bug。
+页内数据是示例值，真实数据只有 `/stats` 或 `/dash` 才有。线上地图仍必须自备 key，见 §3.3。
+
 ---
 
 ## 6. 验证

@@ -24,3 +24,6 @@ tools/analytics/.env.local
 # wrangler 本地缓存
 tools/analytics/.wrangler/
 tools/analytics/**/.wrangler/
+
+# 访问地图设计预览产物（tools/analytics/make-map-preview.mjs 生成，占位符由运行时替换）
+tools/analytics/map-preview.html
