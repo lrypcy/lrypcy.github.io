@@ -29,7 +29,7 @@ mathjax: true
 > * **KV 池满了之后，抢占本身是负收益。** 对照实验（唯一变量是抢占开关）：并发 256 时 `preempt=off` 吞吐 **8.79 req/s**、TTFT 中位数 2228.4 ms；`preempt=on` 吞吐掉到 **5.13 req/s**（**−41.6%**），TTFT 反而更差（25231.2 ms，**11.3 倍**）。容量以内两列逐位相等，基线有效。**注意模型只实现 recompute 型抢占**，vLLM 的 swap 型代价低得多，这个跌幅不能直接外推。
 > * **换工具就不能比数，2026 年这条有了明确答案。** vLLM 自带 bench 是单进程 asyncio；**AIPerf**（`ai-dynamo/aiperf`，GenAI-Perf 的指定继承者，多进程 + ZMQ 协调）让客户端不再成为瓶颈；**GenAI-Perf 已在 `perf_analyzer` 仓库里挂出弃用声明并指向 AIPerf**；**LLMPerf 已于 2025-12-17 归档**（只读、最后一次发版是 2023-12）。跨工具比较的前提是同一工具内的基线可复现，两个工具之间**不产出逐位相同的结果**。
 > * **最大的坑是量了缓存、没量模型。** 前缀缓存命中把 prefill 的 token 数从 $$S$$ 降到 $$S(1-f)$$，TTFT 因此按 $$\max(F,\ aS(1-f))$$ 变化：本模型 $$a = 0.080$$ ms/tok、$$F = 3.0$$ ms 时，prompt 1024 token 的 TTFT 从 **81.9 ms**（命中 0%）降到 **20.5 ms**（命中 75%）、**3.0 ms**（命中 99%，此时固定下限主导、收益饱和）。**同一批 prompt 复测两遍，第二遍的 TTFT 不是同一个量。** 复测前必须在“换种子 / 重启服务 / 用 `vllm bench sweep serve` 自动清缓存”里选一条——后者在每轮之间显式调用 `/reset_prefix_cache` 与 `/reset_multimodal_cache`。
-> * **本篇两个脚本都是纯 CPU 可跑、且必须通过纸面推导对账**：`tools/profiling_bench/serving_model.py`（roofline 步长队列模型 → TTFT / TPOT 分位、goodput、拐点、覆盖/到达分布/抢占三组对照实验，8 项自校验全部精确通过）、`tools/profiling_bench/serving_schema.py`（字段对齐到 vLLM `--save-result`，并把“模型给不出的量”逐条列出来）。**代价常数是示意值，绝对数值不代表任何具体硬件或模型，本文只主张结构。**
+> * **本篇两个 notebook 都是纯 CPU 可跑、且必须通过纸面推导对账**：[服务队列模型](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-02-serving-model/profiling-02-serving-model.ipynb)（roofline 步长队列模型 → TTFT / TPOT 分位、goodput、拐点、覆盖/到达分布/抢占三组对照实验，8 项自校验全部精确通过）、[字段口径对齐](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-02-serving-schema/profiling-02-serving-schema.ipynb)（字段对齐到 vLLM `--save-result`，并把“模型给不出的量”逐条列出来）。**代价常数是示意值，绝对数值不代表任何具体硬件或模型，本文只主张结构。**
 
 ---
 
@@ -71,7 +71,7 @@ vLLM 文档给的定义里有一句话是关键：ITL 记录**相邻两次流式
 
 $$\frac{\text{mean ITL}}{\text{TPOT}} = \frac{n_{\text{out}}-1}{n_{\text{streamed gaps}}}$$
 
-`tools/profiling_bench/serving_schema.py --demo` 把这件事算出来了（固定 TTFT = 100 ms、E2EL = 180 ms，只改每个流式输出带几个 token）：
+[字段口径对齐 notebook](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-02-serving-schema/profiling-02-serving-schema.ipynb) 把这件事算出来了（固定 TTFT = 100 ms、E2EL = 180 ms，只改每个流式输出带几个 token）：
 
 ```
 每个流式输出带 token 数         n_out  n_gaps     mean ITL         TPOT   ITL/TPOT
@@ -113,7 +113,7 @@ vLLM 把这件事做成了一个开关：`--goodput "ttft:300 tpot:30"`，键是
 
 ### 2.5 本篇的队列模型
 
-后面所有数字都出自 `tools/profiling_bench/serving_model.py`。它把服务侧写成一个可解析的排队系统，而不是一堆调参结果。
+后面所有数字都出自[服务队列模型 notebook](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-02-serving-model/profiling-02-serving-model.ipynb)（仓库内对应脚本 `tools/profiling_bench/serving_model.py`，notebook 里的代码是从它**逐字抽取**的）。它把服务侧写成一个可解析的排队系统，而不是一堆调参结果。
 
 **单步代价按 roofline 写**，取两种资源的较大者：
 
@@ -507,7 +507,12 @@ decode 阶段的“低 SM 利用率”经常被误读成“GPU 没干活”。�
 
 ## 11. Lab Exercises
 
-全部纯 CPU 可跑。数值代码用 miniconda python（managed python 3.13 无 numpy）。
+**先在线读一遍**——两个 notebook 的输出都已固化，不用配环境：
+
+- [服务队列模型](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-02-serving-model/profiling-02-serving-model.ipynb)（§2.5 / §3 / §5 / §7 的全部数字都在这里）
+- [字段口径对齐](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-02-serving-schema/profiling-02-serving-schema.ipynb)（§2 的字段映射、§2.2 的 ITL/TPOT 分母）
+
+要自己改参数重跑，用仓库内的脚本（notebook 里的代码就是从它逐字抽取的）。全部纯 CPU。数值代码用 miniconda python（managed python 3.13 无 numpy）。
 
 ```bash
 P=/path/to/miniconda3/bin/python3
@@ -568,4 +573,5 @@ $P $C --check             # §2：字段映射与逐字段回读
 - [00 度量口径：MFU、timer 与 goodput 的边界](/2026/09/29/profiling-00-metrics/)
 - [01 训练栈 profiling：把一次迭代切成时间线](/2026/09/29/profiling-01-training/)
 - [NV 卡性能剖析工具全景：从 nvidia-smi 到 Nsight Compute](/2026/08/26/nv-gpu-profiling-toolkit/)
-- 脚本：`tools/profiling_bench/serving_model.py`、`tools/profiling_bench/serving_schema.py`
+- Notebook（输出已固化，GitHub 上直接读）：[服务队列模型](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-02-serving-model/profiling-02-serving-model.ipynb)、[字段口径对齐](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-02-serving-schema/profiling-02-serving-schema.ipynb)
+- 脚本（notebook 的代码从这两个文件逐字抽取）：`tools/profiling_bench/serving_model.py`、`tools/profiling_bench/serving_schema.py`

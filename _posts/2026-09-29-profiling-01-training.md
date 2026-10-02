@@ -24,7 +24,7 @@ mathjax: true
 > * **分布式里“平均值”永远是乐观的。** 8 卡合成 trace：最慢 rank 3 单步 159000 us，中位数 141000 us，**均值 143250 us**——均值把掉队卡的惩罚摊给了其它卡，于是“最慢/均值”只报 +10.99%，而真实代价是 +12.77%。
 > * **更要紧的是：先按 rank 聚合再观察，会把“轮转短板”伪装成轻微不均衡。** 同样平均拖慢 12.77%：短板固定在 rank 3 时，聚合后最慢 rank = 159000 us；短板每轮换卡时，每个 rank 的**平均值**都是 147000 us，只比中位数高 **4.26%**——而每一步实际都被拖了 12.77%。**“逐迭代最慢卡是不是同一张”这个区分，靠聚合后的数字永远看不出来。**
 > * **`algbw` 与 `busbw` 的排名可以完全相反。** 同一张 25 GB/s 单向链路：AllReduce N=8 的 algbw 只有 22.0 但 busbw 38.5；AllGather N=8 的 algbw 高达 39.0 而 busbw 只有 34.1。看 algbw 会得出“AllGather 快得多”，看 busbw 会得出“AllReduce 快得多”。**跨集合类型比带宽数字，是这张表要防的唯一一件事。**
-> * **本篇两个脚本都是纯 CPU 可跑、且必须通过真值反算**：`tools/profiling_bench/trace_agg.py`（合成多 rank chrome trace → 时间分解 / idle 三分 / overlap / 掉队卡，真值反算最大相对误差 **0.00%**）、`tools/profiling_bench/overlap_bound.py`（α-β 交叉点 / 重叠收益上界 / busbw 换算）。前者也能直接吃 Perfetto 与 kineto 的真实 trace。
+> * **本篇两个 notebook 都是纯 CPU 可跑、且必须通过真值反算**：[trace 聚合分析](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-01-trace-agg/profiling-01-trace-agg.ipynb)（合成多 rank chrome trace → 时间分解 / idle 三分 / overlap / 掉队卡，真值反算最大相对误差 **0.00%**）、[重叠收益上界](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-01-overlap-bound/profiling-01-overlap-bound.ipynb)（α-β 交叉点 / 重叠收益上界 / busbw 换算）。前者也能直接吃 Perfetto 与 kineto 的真实 trace。
 
 ---
 
@@ -206,7 +206,7 @@ with _otel_managed_span('checkpoint', 'megatron.checkpoint.save.finalize', is_go
 
 ### 4.1 两个分母
 
-`tools/profiling_bench/trace_agg.py` 用区间代数算重叠——不是“各取一半”的估算，而是 comm 区间集合与 compute 区间集合的**交集长度**。同一份数据，两个分母：
+[trace 聚合 notebook](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-01-trace-agg/profiling-01-trace-agg.ipynb) 用区间代数算重叠——不是“各取一半”的估算，而是 comm 区间集合与 compute 区间集合的**交集长度**。同一份数据，两个分母：
 
 | 分母 | 含义 | 数值（合成 trace，overlap 真值 50%） |
 |:---|:---|:---|
@@ -633,12 +633,12 @@ HTA 当前版本是 **v0.6.0**（MIT；发布提交 PR #341 日期 2026-04-22；
 - PyTorch Profiler / Kineto：[文档](https://pytorch.org/docs/stable/profiler.html)
 - Perfetto：[perfetto.dev](https://perfetto.dev/)
 
-**本系列脚本（纯 CPU 可复算）**
+**本系列 notebook（纯 CPU 可复算，输出已固化，GitHub 上直接读）**
 
-- `tools/profiling_bench/trace_agg.py` —— 合成多 rank chrome trace → temporal 分解 / idle 三分 / overlap 双分母 / 掉队卡形态；同时能直接读真实 chrome trace（`.json` / `.json.gz`）
-- `tools/profiling_bench/overlap_bound.py` —— `D* = n·α·BW` 交叉点、`max(C, M)` 上界与 η 敏感度、TP/SP 通信量对账、`algbw`↔`busbw` 换算
-- `tools/megatron_bench/comm.py` —— α-β 模型与 TP 通信事件清单（本次核实后已更新 SP 分支并附引用）
-- `tools/profiling_bench/timer_semantics.py`、`mfu_accounting.py`、`goodput_calc.py` —— 见上一篇
+- [trace 聚合分析](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-01-trace-agg/profiling-01-trace-agg.ipynb) —— 合成多 rank chrome trace → temporal 分解 / idle 三分 / overlap 双分母 / 掉队卡形态；同时能直接读真实 chrome trace（`.json` / `.json.gz`）
+- [重叠收益上界](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-01-overlap-bound/profiling-01-overlap-bound.ipynb) —— `D* = n·α·BW` 交叉点、`max(C, M)` 上界与 η 敏感度、TP/SP 通信量对账、`algbw`↔`busbw` 换算
+
+仓库内的对应脚本是同一份源码（本仓库 `tools/profiling_bench/trace_agg.py` 与 `overlap_bound.py`，α-β 模型在 `tools/megatron_bench/comm.py`，本次核实后已更新 SP 分支并附引用）。notebook 里的代码是从这些文件**逐字抽取**的，不是另写一份。上一篇的 [Timer 计时语义](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-timer-semantics/profiling-00-timer-semantics.ipynb)、[MFU/HFU 口径](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-mfu-accounting/profiling-00-mfu-accounting.ipynb)、[goodput 与 MFU](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-goodput/profiling-00-goodput.ipynb) 同理。
 
 ---
 

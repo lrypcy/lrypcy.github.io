@@ -22,7 +22,7 @@ mathjax: true
 > * **`filter(x > 0.0)` 会静默丢 rank。** 没进过该 timer 的 rank 被过滤掉不报，于是 min 变成「活跃子集里的最快」。过滤本身合理，但它不告诉你少了谁。
 > * **goodput 与 MFU 是两个正交的量。** 把 checkpoint 间隔从 2000 步缩到 500 步，有效吞吐掉 6.2%，而 goodput 几乎不动（90.56% → 91.15%）——因为 checkpoint 本身被标了 `is_goodput_span=True`，算正事。**只报 MFU 会漏掉「算得快但整天在等数据」，只报 goodput 会把「时间都在算、但算得很慢」当成健康。**
 > * **Megatron v0.20 已经有原生 OTel 观测栈**（`megatron/core/telemetry/`，版权头是 2026）：8 个 span group 预设 + 8 个训练指标 + goodput 标记，开关是 `--otel-enable` / `--otel-service-name` / `--otel-span-groups`，环境变量前缀 `MEGATRON_OTEL`（回退到 `NEMO_LENS`）。
-> * **本篇所有数字都来自三个纯 CPU 脚本**，可复算：`tools/profiling_bench/timer_semantics.py`（同步式计时语义）、`mfu_accounting.py`（分子分母口径）、`goodput_calc.py`（goodput 与 MFU 的分工），FLOPs 记账复用 `tools/megatron_bench/flops.py`。
+> * **本篇所有数字都来自三个纯 CPU notebook**，输出已固化、可直接复算：[Timer 计时语义](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-timer-semantics/profiling-00-timer-semantics.ipynb)（同步式计时语义）、[MFU/HFU 口径](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-mfu-accounting/profiling-00-mfu-accounting.ipynb)（分子分母口径）、[goodput 与 MFU](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-goodput/profiling-00-goodput.ipynb)（两者的分工），FLOPs 记账复用 `tools/megatron_bench/flops.py`。
 
 ---
 
@@ -40,13 +40,15 @@ mathjax: true
 
 所以本系列的第一篇不讲工具——总纲篇已经讲完了——只做一件事：把尺子做准。
 
-本篇带三个可复算的脚本，全部纯 CPU：
+本篇带三个可复算的 notebook，全部纯 CPU，**输出已固化，点开就能看到跑出来的数**：
 
-| 脚本 | 它回答的问题 |
+| Notebook（GitHub 上可直接读 / 运行） | 它回答的问题 |
 |:---|:---|
-| `tools/profiling_bench/mfu_accounting.py` | 分子换一下、分母换一下，MFU 差多少 |
-| `tools/profiling_bench/timer_semantics.py` | 内置 timer 报的是「阶段耗时」还是「排空耗时」 |
-| `tools/profiling_bench/goodput_calc.py` | goodput 和 MFU 为什么会给出相反的结论 |
+| [MFU/HFU 口径实验](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-mfu-accounting/profiling-00-mfu-accounting.ipynb) | 分子换一下、分母换一下，MFU 差多少 |
+| [Timer 计时语义](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-timer-semantics/profiling-00-timer-semantics.ipynb) | 内置 timer 报的是「阶段耗时」还是「排空耗时」 |
+| [goodput 与 MFU 的分工](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-goodput/profiling-00-goodput.ipynb) | goodput 和 MFU 为什么会给出相反的结论 |
+
+> notebook 里的代码是从本仓库 `tools/profiling_bench/` **逐字抽取**的（用 `ast` 按顶层符号抽，不是手抄），所以正文引用的数字与 notebook 的输出是对得上的。仓库内的脚本是同一份源码，命令行跑法见文末 Lab Exercises。
 
 FLOPs 记账复用 `tools/megatron_bench/flops.py`（已有三种口径的交叉验证实现），不重复造。
 
@@ -340,7 +342,7 @@ def stop(self, barrier=False):
 
 第 3 点是全部问题的根源。`stop()` 排空所有流，意味着**边界处还在飞的工作被算进了这个区间**。而「在飞的工作」正是你辛苦做重叠的那部分。
 
-用真线程复刻这个语义（`tools/profiling_bench/timer_semantics.py`）：两条流——compute 流逐 chunk 计算，comm 流的第 i 个 chunk 依赖 compute 流第 i 个 chunk 完成（1F1B 反向重叠的语义）。sleep 模拟设备侧耗时，chunk 时长 = 10 ms，共 8 个 chunk：
+用真线程复刻这个语义（[Timer 计时语义 notebook](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-timer-semantics/profiling-00-timer-semantics.ipynb)）：两条流——compute 流逐 chunk 计算，comm 流的第 i 个 chunk 依赖 compute 流第 i 个 chunk 完成（1F1B 反向重叠的语义）。sleep 模拟设备侧耗时，chunk 时长 = 10 ms，共 8 个 chunk：
 
 ```
 实验一  同步式计时对重叠的破坏（compute chunk = 10 ms，共 8 个 chunk）
@@ -598,7 +600,7 @@ $$\text{goodput} = \frac{\sum \text{计入 goodput 的时长}}{\text{挂钟时�
 
 ### 6.3 两个指标会给出不同的结论
 
-用 `tools/profiling_bench/goodput_calc.py` 把一次稳定迭代拆成 span（叶子 span 之和等于父 span，不要重复计）：
+用 [goodput notebook](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-goodput/profiling-00-goodput.ipynb) 把一次稳定迭代拆成 span（叶子 span 之和等于父 span，不要重复计）：
 
 ```
 单个稳定迭代的 span 拆分（megatron.step 父 span = 1800 ms）：
@@ -814,6 +816,12 @@ cd tools && python -m profiling_bench.timer_semantics
 - [分布式训练全景（00）：为什么大模型必须分布式](/2026/08/31/dist-train-00-overview/) —— 并行策略与通信代价的解析推导
 
 **本片配套脚本**：`tools/profiling_bench/timer_semantics.py`、`tools/profiling_bench/mfu_accounting.py`、`tools/profiling_bench/goodput_calc.py`，FLOPs 记账复用 `tools/megatron_bench/flops.py`。全部纯 CPU 可跑（miniconda python）。
+
+**在线读 / 复算**（输出已固化，GitHub 上直接看）：
+
+- [MFU/HFU 口径实验](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-mfu-accounting/profiling-00-mfu-accounting.ipynb)
+- [Timer 计时语义](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-timer-semantics/profiling-00-timer-semantics.ipynb)
+- [goodput 与 MFU 的分工](https://github.com/lrypcy/ipynbs/blob/main/experiments/profiling/profiling-00-goodput/profiling-00-goodput.ipynb)
 
 ---
 
