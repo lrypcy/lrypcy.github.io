@@ -244,6 +244,11 @@ test('看板渲染出总览、年月曲线与中文地区名', async () => {
   assert.match(html, /"n":"北京","v":\d+/);
   assert.ok(!/"n":"美国"/.test(html), '海外国家不进省级地图');
   assert.match(html, /GCJ-02/, '口径要讲明落点坐标系');
+  assert.match(html, /class="mp-legend"/, '地图要带图例，否则颜色深浅没有参照');
+  assert.ok(
+    ['#93c5fd', '#60a5fa', '#3b82f6', '#1d4ed8'].every((c) => html.includes(c)),
+    '图例色块必须与气泡的 4 个档位同色'
+  );
   assert.equal(
     res.headers.get('referrer-policy'),
     'strict-origin-when-cross-origin',
@@ -261,6 +266,7 @@ test('未配置 TMAP_KEY 时，访问地图卡片整块不渲染，其余卡片�
   );
   const html = await res.text();
   assert.ok(!html.includes('pcy-map-canvas'), '没配 key 不应渲染地图容器');
+  assert.ok(!html.includes('class="mp-legend"'), '没配 key 也不该留下光秃秃的图例');
   assert.ok(!html.includes('map.qq.com/api/gljs'), '没配 key 不应请求腾讯地图 SDK');
   assert.match(html, /国家 \/ 地区排行/, '其它卡片不受影响');
 });

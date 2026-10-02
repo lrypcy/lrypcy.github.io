@@ -274,10 +274,16 @@ function provinceMap(stats, mapKey) {
   const parts = [`${stats.activeCount} 个省级行政区有访问，共 ${fmt(stats.mapped)} 次`];
   if (stats.unmapped > 0) parts.push(`另有 ${fmt(stats.unmapped)} 次只定位到国家、未定位到省份`);
 
+  // 图例色块必须与 mapScript 里 COLORS 的 4 个档位同序同色，改动时两边一起改。
+  const legend = ['#93c5fd', '#60a5fa', '#3b82f6', '#1d4ed8']
+    .map((c) => `<i style="background:${c}"></i>`)
+    .join('');
+
   return `<div id="pcy-map-canvas" class="mapbox-canvas"></div>
 ${mapScript(points, mapKey)}
+<div class="mp-legend"><span>访问量 少</span><b class="mp-scale">${legend}</b><span>多</span></div>
 <p class="mp-summary">${esc(parts.join('；'))}</p>
-<p class="mp-note">气泡圆心为省级行政区中心点（<code>GCJ-02</code>），大小与颜色按访问量分档；港澳台与大陆同图。</p>`;
+<p class="mp-note">气泡圆心为省级行政区中心点（<code>GCJ-02</code>），圆越大、颜色越深表示访问越多；港澳台与大陆同图。</p>`;
 }
 
 export function renderDashboard({
@@ -437,6 +443,10 @@ export function renderDashboard({
   .mapbox-tip{height:100%;display:flex;align-items:center;justify-content:center;
     color:var(--muted);font-size:13px}
   .mp-summary{color:var(--muted);font-size:12.5px;margin:10px 0 0}
+  /* 图例的 4 个色块与地图气泡的 4 个档位一一对应（色值见 mapScript 里的 COLORS） */
+  .mp-legend{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted)}
+  .mp-legend .mp-scale{display:inline-flex;gap:3px}
+  .mp-legend .mp-scale i{display:block;width:15px;height:12px;border-radius:3px}
   .mp-note{color:var(--muted);font-size:12px;line-height:1.75;margin:8px 0 0}
 
   @media (max-width:600px){
