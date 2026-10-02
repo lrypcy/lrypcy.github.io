@@ -38,11 +38,6 @@ permalink: /about/
 {% if ana and ana.enabled and ana.endpoint and ana.endpoint != "" %}
 
 <h2 class="about-section-title">访问统计</h2>
-<p class="about-desc">
-  本站不接第三方统计：GA4 在国内基本加载不出来，Umami 免费版只保留 6 个月数据，GoatCounter 拿不到城市级别。
-  所以这套统计跑在自己搭的 Cloudflare Worker + D1 上——只记录「日期 × 地区」的访问次数，不保存 IP、User-Agent 和 Cookie。
-  下面是实时看板，也可以<a href="{{ ana.endpoint }}/stats" target="_blank" rel="noopener">单独打开</a>。
-</p>
 <div class="about-stats-embed">
 <iframe id="pcy-stats-frame" src="{{ ana.endpoint }}/stats?embed=1" title="本站访问统计看板" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" height="1500"></iframe>
 </div>
