@@ -1,5 +1,5 @@
 ---
-title: "Flow Matching 系列之二：应用篇——从 SD3 到蛋白质设计，速度场如何接管生成产线"
+title: "Flow Matching 系列之四：应用篇——从 SD3 到蛋白质设计，速度场如何接管生成产线"
 date: 2026-08-22 22:30:00 +0800
 categories:
   - 生成模型
@@ -8,11 +8,13 @@ layout: post
 mathjax: true
 ---
 
+> **系列导航** ｜ [建模之一：从概率路径到边际向量场](/2026/08/22/flow-matching-01-algorithm-evolution/) ｜ [建模之二：score、扩散与 SDE 扩展](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/)
+
 > **TL;DR 三连**
 >
 > - **核心结论**：2023–2024 年，图像（Stable Diffusion 3、Flux）、语音（Voicebox、E2-TTS、F5-TTS）、视频音频（Movie Gen）、分子与蛋白质设计（FrameFlow、FoldFlow、SemlaFlow）四大域的大规模生成系统不约而同把训练目标换成了同一行损失——速度场回归。FM 赢的方式不是某个单点 SOTA，而是把「概率路径与耦合分布」从扩散调度的束缚里解放出来，变成显式工程自由度。
 > - **关键实证**：同架构对照下 FM 与扩散的差距是可测的——FrameDiff→FrameFlow 只换训练范式：采样步数少 5 倍、设计性好 2 倍；SD3 内部研究中 25 步以下 Rectified Flow 公式全面占优；F5-TTS 推理 RTF 0.15 大幅优于 SOTA 扩散 TTS；Movie Gen 消融显示 FM 损失对噪声调度选择更鲁棒且天然满足零终端 SNR。
-> - **定位**：本篇是系列一《Flow Matching 深度解析》的应用落地篇——不再推导 CFM≡FM 的梯度等价性，只回答一个问题：**每个场景为什么偏偏是 FM 合适**。所有引用论文均经 arXiv 摘要逐篇核实，工业产品注明非论文出处。
+> - **定位**：本篇是整个系列的**应用落地篇**——前三篇已经把建模讲完（概率路径、边际向量场、score 等价、CFG、离散域、潜空间），这里不再重复推导，只回答一个问题：**每个场景为什么偏偏是 FM 合适**。所有引用论文均经 arXiv 摘要逐篇核实，工业产品注明非论文出处。
 
 ```mermaid
 graph TD
@@ -329,6 +331,6 @@ def sample(model, n, d, nfe=8, device="cpu"):
 * CSDN：v_JULY_v，《[一文通透流匹配 Flow Matching](https://blog.csdn.net/v_JULY_v/article/details/136318383)》—— 中文世界的系统性长文
 * 火山引擎开发者社区：《[F5-TTS：用 Flow Matching 玩转语音](https://developer.volcengine.com/articles/7542491710064951306)》—— 语音域的工程视角解读
 
-* 本站姊妹篇：[Flow Matching 系列之一：算法发展篇——从 CNF 与扩散的统一到 SD3 的工业标准](/2026/08/22/flow-matching-01-algorithm-evolution/)· 《正向学策略，反向学奖励：IRL 在 LLM 对齐里的复活》
+* 本系列：[建模之一：从概率路径到边际向量场](/2026/08/22/flow-matching-01-algorithm-evolution/) ｜ [建模之二：score、扩散与 SDE 扩展](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/)
 
 > 🧪 **动手练习**：① 取 §8 代码骨架，把均匀时间采样 `torch.rand` 换成 logit-normal（试 σ ∈ {0.5, 1.0, 2.0}），在二维螺旋数据上对比 nfe = 1, 2, 4, 8 的样本质量衰减曲线，验证「训练时间步分布」这个 SD3 关键改动在玩具规模是否可见；② 从 F5-TTS 论文抄出 Sway Sampling 的定义式并在 `sample()` 的步长序列上实现，画 s ∈ {-2, -1, 0, 1} 下 ODE 步位置的直方图，确认 s=0 退化为均匀采样、并观察 nfe=8 时合成质量的变化——体会「训练定路径、推理调步长」的解耦设计。

@@ -187,7 +187,7 @@ series:
     layer: 1
     order: 6
     prefixes: [flow-matching-]
-    desc: 2 篇。算法发展篇（CNF 与扩散的统一到 SD3 工业标准）与应用篇（从 SD3 到蛋白质设计）。
+    desc: 4 篇。建模三讲（概率路径与边际向量场、score 与 SDE 扩展、条件生成与离散域潜空间）+ 应用篇（SD3 到蛋白质设计）。
 
   # ---------- layer 2：前沿专题 ----------
   - id: rl-topics

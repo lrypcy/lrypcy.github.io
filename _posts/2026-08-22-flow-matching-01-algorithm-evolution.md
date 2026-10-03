@@ -1,433 +1,396 @@
 ---
-title: "Flow Matching 系列之一：算法发展篇——从 CNF 与扩散的统一到 SD3 的工业标准"
+title: "Flow Matching 建模之一：从概率路径到边际向量场"
 date: 2026-08-22 22:30:00 +0800
 categories:
   - 生成模型
-tags: [flow-matching, diffusion, rectified-flow, stochastic-interpolant, sd3]
+tags: [flow-matching, probability-path, continuity-equation, cfm, marginalization]
 layout: post
 mathjax: true
 ---
 
-> **TL;DR 三连**
+> **系列导航** ｜ [建模之二：score、扩散与 SDE 扩展](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/) ｜ [应用篇：工业落地](/2026/08/22/flow-matching-04-applications/)
+
+> **TL;DR**
 >
-> - **核心结论**：扩散模型、CNF、Flow Matching 是同一个数学骨架——连续性方程——的三种参数化。FM（arXiv:2210.02747）证明了「回归条件向量场」与「回归不可观测的边际向量场」梯度严格相等（CFM 定理），从而把生成建模变成一个免模拟的监督回归；而这条回归目标与 score matching 只差一个时间加权 $$w(t)=b^2(t)$$，三条路线在损失层面完全汇合。
-> - **反直觉发现**：SD3 用数十种公式的大规模消融证明，决定 RF 训练成败的往往不是“用哪个路径公式”，而是 **timestep 采样分布 π(t)**——把均匀采样换成 logit-normal 就能稳定超越 EDM 与经典 LDM 公式；高分辨率还要再叠加一个 shift 重映射。所谓“噪声调度”，其实是概率路径、时间分布、输出参数化三个正交旋钮的组合。
-> - **定位**：本篇是 Flow Matching 系列的开篇，沿“统一视角 → CFM 完整推导 → 与 score matching 等价 → Rectified Flow / Stochastic Interpolants / 批内 OT 耦合三大变体 → SD3 工业实践 → 训练坑清单”的脉络一次讲透算法发展史。所有论文摘要均经 arXiv 原文核实。
+> * **整个框架只有一个中心对象：概率路径 $$p_t(x)$$。** 它是「分布的分布」——把 $$p_0=p_{\rm init}$$ 连到 $$p_1=p_{\rm data}$$ 的一条轨迹。Flow Matching 的全部内容就是：为给定的 $$p_t$$ 找一个速度场 $$u_t$$，使它恰好输运这条路径。生成模型因此被拆成两个互相独立的问题——**路径怎么设计**（§3）与**速度场怎么学**（§4）。
+> * **最反直觉的一步是「边际化」**：明明每个数据点 $$z$$ 都能写出解析的条件速度场 $$u_t(x\mid z)$$，但它没用（所有轨迹都塌到同一个 $$z$$）。真正有用的是条件场按后验的加权平均，而这个平均**不需要算积分**就能学——因为损失里那个算不出来的积分项会消掉（Thm 12）。
+> * **本文所有论断都在 `tools/fm_lab/` 里用 numpy 实跑核验过**（纯 CPU，14 个实验全通过）。三条值得先剧透：① 连续性方程在 7 条概率路径上残差小于 $$10^{-10}$$，它与路径选择**无关**；② 定理 12「两个损失只差常数」用蒙特卡洛**验不出来**（$$u_t$$ 在 $$t\to1$$ 按 $$1/(1-t)$$ 爆炸），必须用确定性求积，实测差值跨参数跨度 $$1.8\times10^{-15}$$；③ 显式 Euler 会把多模态分布的「成分间过渡区」压成**精确的 0**，这是一阶矩看不出来的采样器缺陷。
 
 ```mermaid
 graph TD
-    subgraph UNIFY["统一骨架: 连续性方程"]
-        CE["连续性方程<br>密度被速度场确定性输运"]
+    subgraph P["第一步：设计概率路径（纯几何，无网络）"]
+        PC["条件路径<br/>p_t(x|z) = N(alpha_t z, beta_t^2)"]
+        PM["边际路径<br/>p_t(x) = 积分 p_t(x|z) p_data(z) dz"]
+        CE["连续性方程<br/>∂_t p_t = −div(p_t u_t)"]
+        PC --> PM --> CE
     end
-    CNF["CNF 连续归一化流<br>Neural ODE 时代<br>似然可算但需模拟求解"]
-    DIFF["扩散模型<br>DDPM 到 Score SDE"]
-    PFODE["概率流 ODE<br>score 组装的确定性场"]
-    CNF --> CE
-    DIFF -- Fokker Planck 改写 --> PFODE
-    PFODE --> FM["Flow Matching 2022<br>免模拟速度场回归"]
-    CNF --> FM
-    FM --> RF["Rectified Flow 2022<br>直线插值与再整直"]
-    FM --> OT["OT-CFM 2023<br>批内最优传输耦合"]
-    SI["Stochastic Interpolants 2023<br>ODE 与 SDE 连续谱"]
-    RF --> SI
-    FM --> SI
-    RF --> SD3["SD3 2024<br>logit normal 加权加分辨率偏移加双流架构"]
-    OT --> SD3
+    subgraph V["第二步：找速度场（唯一性由 CE 保证）"]
+        UC["条件向量场<br/>u_t(x|z) 有闭式"]
+        UM["边际向量场<br/>u_t(x) = 后验加权平均"]
+        CE --> UM
+        UC --> UM
+    end
+    subgraph L["第三步：学 u_t（免模拟）"]
+        LF["L_FM 不可算<br/>含 Bayes 后验"]
+        LC["L_CFM 每项可采<br/>L_FM = L_CFM + C"]
+        LF --> LC
+    end
+    PC --> UC
+    UM --> LF
 ```
 
-## 1. 引言：三条路线的汇流与一个反问
+## 1. 生成建模就是采样
 
-过去十年深度生成模型沿四条彼此独立的路线演化，各有各的账本：
+先把问题说清楚。我们要生成的东西——图像、视频、分子结构——都能写成向量 $$z\in\mathbb R^d$$（图像是 $$\mathbb R^{H\times W\times 3}$$ 展平，视频多一个时间维）。所谓「生成一张狗的图」，就是把主观的「像不像狗」替换成数学问题：从数据分布 $$p_{\rm data}$$ 里采样。
 
-| 路线 | 训练信号 | 采样方式 | 主要痛点 |
+这个替换是整个领域的地基，它带来两个立刻可见的好处：
+
+1. **多样性是免费的**。不存在「最好的那张狗图」，只有分布里的样本。模型只需要把 $$p_{\rm init}$$（通常取标准高斯，因为采样容易）搬到 $$p_{\rm data}$$。
+2. **评价标准变得可证伪**。样本质量可以直接用分布距离度量，而「像不像」只能靠人眼。
+
+于是「构造一个生成模型」被重述为：**构造一个把简单分布搬成复杂分布的过程，且这个过程可微分、可模拟**。
+
+## 2. 两套动力学：ODE 与 SDE
+
+搬运动力学有两种现成工具。讲义把它们讲得很干净，我照着这个顺序走。
+
+### 2.1 ODE：确定性搬运
+
+一个 ODE 由**向量场** $$u_t:\mathbb R^d\times[0,1]\to\mathbb R^d$$ 定义，它给每个时空点指定一个瞬时速度。轨迹满足
+
+$$
+\frac{d}{dt}X_t=u_t(X_t),\qquad X_0=x_0 .
+$$
+
+把「所有初值」的轨迹合起来，得到**流** $$\psi_t:\mathbb R^d\to\mathbb R^d$$，它满足
+
+$$
+\frac{d}{dt}\psi_t(x_0)=u_t(\psi_t(x_0)),\qquad \psi_0=\mathrm{id}.
+$$
+
+三者是一回事的不同视角：**向量场定义 ODE，ODE 的解是流，流把空间「皱起来」**。讲义 Thm 3 保证了只要 $$u_t$$ 关于 $$x$$ 连续可微且导数有界，$$\psi_t$$ 就存在唯一、且是微分同胚（逆映射也光滑）。神经网络天然满足这个条件，所以工程上永远不用操心。
+
+**模拟**用显式 Euler：
+
+$$
+X_{t+h}=X_t+h\,u_t(X_t),\qquad h=1/n .
+$$
+
+一阶精度，够用。想更好可以上 Heun 法：先按 Euler 试走一步拿到猜测点 $$X'_{t+h}$$，再用起点与猜测点处的两个速度取平均修正。
+
+### 2.2 一个玩具：线性向量场
+
+取 $$u_t(x)=-\theta x$$（$$\theta>0$$），可以猜出流是 $$\psi_t(x_0)=e^{-\theta t}x_0$$。验证：$$\psi_0=x_0$$，且
+
+$$
+\frac{d}{dt}\big(e^{-\theta t}x_0\big)=-\theta e^{-\theta t}x_0=-\theta\,\psi_t(x_0)=u_t(\psi_t(x_0)).
+$$
+
+这类「解析可解」的场是检验数值模拟正确性的标准用例。注意它的几何：所有轨迹沿射线指数收敛到原点。
+
+### 2.3 生成模型的 ODE 版本
+
+现在把 ODE 变成生成模型：**参数化向量场为神经网络** $$u_t^\theta(x)$$，初始点随机取 $$X_0\sim p_{\rm init}$$，目标让终点 $$X_1$$ 服从 $$p_{\rm data}$$。
+
+流程极简：$$X_0\sim\mathcal N(0,I)$$，重复 $$n$$ 次 $$X_{t+h}=X_t+h\,u_t^\theta(X_t)$$，返回 $$X_1$$。
+
+这里有个容易忽略但至关重要的点：**网络参数化的是向量场，不是流**。要得到流必须解 ODE。所以「训练时完全不涉及 ODE 积分」是 Flow Matching 的核心卖点——传统 CNF（如 Neural ODE）每一项似然都要反解 ODE，代价高昂。§4 会看到 FM 如何绕开这一点。
+
+### 2.4 SDE：把随机性加回来
+
+ODE 是完全确定的，随机性只来自 $$X_0$$。要刻画「同一初值随机演化到不同终点」，需要 SDE。
+
+先看布朗运动 $$W_t$$：连续、$$W_0=0$$，且增量满足**正态性** $$W_{t+h}-W_t\sim\mathcal N(0,hI)$$ 与**独立性**（不同时刻的增量互不相关）。可以理解成「连续版本的随机游走」。它的路径连续但无限长（想画完但永远画不完）。
+
+把 ODE 的微分改写成无穷小增量，再加布朗项：
+
+$$
+X_{t+h}=X_t+h\,u_t(X_t)+\sigma_t\,(W_{t+h}-W_t)+h\,R_t(h),
+$$
+
+其中 $$R_t(h)$$ 是 $$h\to0$$ 时标准差消失的误差项。习惯写成 $$dX_t=u_t(X_t)dt+\sigma_t\,dW_t$$。注意这个「$$dX$$」记号只是记号，真实定义是上式。
+
+**模拟**用 Euler–Maruyama：
+
+$$
+X_{t+h}=X_t+h\,u_t(X_t)+\sigma_t\sqrt{h}\,\varepsilon_t,\qquad \varepsilon_t\sim\mathcal N(0,I).
+$$
+
+**玩具：Ornstein–Uhlenbeck 过程** $$dX_t=-\theta X_tdt+\sigma dW_t$$。漂移把进程拉回原点，噪声不断注入。$$t\to\infty$$ 时收敛到 $$\mathcal N\big(0,\tfrac{\sigma^2}{2\theta}\big)$$。$$\sigma=0$$ 时退化为 §2.2 的线性流——**这正是「扩散模型是 flow model 的推广」这句话的精确含义**。
+
+### 2.5 流与扩散的统一表述
+
+至此可以给出一个干净的对齐：
+
+| | 漂移（决定「往哪走」） | 噪声（决定「走多远」） | 随机性来源 |
 |---|---|---|---|
-| GAN 对抗路线 | 判别器的对抗梯度 | 单步前传 | 训练不稳定、模式坍缩 |
-| VAE 变分路线 | ELBO 变分下界 | 解码器单步 | 后验近似导致样本模糊 |
-| 自回归路线 | 逐步极大似然 | 序列化解码 | 高维连续数据推理成本高 |
-| 迭代精化路线 | 去噪/score 回归 | 多步迭代 | 采样步数多、设计空间杂乱 |
+| Flow model | $$u_t^\theta$$ | 无（$$\sigma_t=0$$） | 仅初始点 |
+| Diffusion model | $$u_t^\theta$$ | $$\sigma_t\ge0$$ | 初始点 + 沿途注入 |
 
-迭代精化路线内部发生过两次关键的“语法重构”。第一次，Sohl-Dickstein 等人用非平衡热力学提出“前向缓慢破坏结构、反向学习恢复结构”的原始框架（[arXiv:1503.03585](https://arxiv.org/abs/1503.03585)）；Ho 等人的 DDPM 以加权变分下界把它做成可规模化的图像生成器，并点破了它与去噪 score matching 的联系（[arXiv:2006.11239](https://arxiv.org/abs/2006.11239)）。第二次，Song 等人把离散加噪链改写成随机微分方程，指出反向 SDE 只依赖扰动数据分布的 score 函数，且存在与之边际等价的神经 ODE（[arXiv:2011.13456](https://arxiv.org/abs/2011.13456)）；Karras 等人的 EDM 进一步把整个设计空间剥离成“概率路径 + 预处理 + 采样调度”三个正交选择并刷新 CIFAR-10 记录（[arXiv:2206.00364](https://arxiv.org/abs/2206.00364)）。
+两者共用同一套训练与模拟代码，**唯一区别是采样时加不加噪声项**。这个观察在建模之二会变成一个定理（Thm 17：训练完之后 $$\sigma_t$$ 可以任意选）。
 
-到这一步，一个自然的反问浮出水面：如果生成过程本质上只是**把一个简单分布连续变形为数据分布**，那“扩散”这个物理意象以及它绑定的特定噪声调度还是必要的吗？Flow Matching 给出了否定回答——它绕开加噪去噪叙事，直接以连续性方程为骨架学习速度场。这个转向在 2023–2024 年迅速成为工业界默认选项：Stable Diffusion 3 在大规模系统对比后选定 Rectified Flow 形式的 FM 训练（[arXiv:2403.03206](https://arxiv.org/abs/2403.03206)）；语音侧 Meta 的 Voicebox 明确以 flow-matching 模型做语音补全，训练数据超过五万小时（[arXiv:2306.15687](https://arxiv.org/abs/2306.15687)）；SiT 则在 DiT 骨架上系统验证插值框架全面超越对应扩散配置（[arXiv:2401.08740](https://arxiv.org/abs/2401.08740)）。
+## 3. 概率路径：整个框架的中心对象
 
-理解 FM 因此不再是“又一种生成模型”，而是读懂当前主流生成系统的共同底层语法。全文记号约定如下：$$x_1\sim q$$ 表示数据端点、$$x_0\sim\mathcal N(0,I)$$ 表示噪声端点、$$t\in[0,1]$$ 从噪声流向数据、$$p_t$$ 为边际概率路径、$$u_t(x)$$ 为边际向量场、$$u_t(x\mid x_1)$$ 为条件向量场、$$v_\theta(t,x)$$ 为神经网络预测的速度场。
+现在进入核心。我们想要一条连接 $$p_{\rm init}$$ 与 $$p_{\rm data}$$ 的「连续演化」，但 $$t=0$$ 与 $$t=1$$ 之间的状态是完全未定义的。**概率路径 $$p_t$$ 就是对这份未定义的自由度的正式命名**。
 
-## 2. 统一概率视角：扩散模型就是一种 CNF
+### 3.1 条件路径与边际路径
 
-### 2.1 CNF 与瞬时变量替换公式
-
-**定义 2.1（CNF）** 设 $$v_\theta:[0,1]\times\mathbb R^d\to\mathbb R^d$$ 光滑，考虑 ODE $$\frac{d}{dt}\psi_t(x)=v_\theta(t,\psi_t(x)),\ \psi_0=\mathrm{id}$$。若 $$v_\theta$$ 对 $$x$$ Lipschitz，则流映射 $$\psi_t$$ 是微分同胚；给定基分布 $$p_0$$，模型分布为推前 $$p_1={\psi_1}_\# p_0$$。
-
-朴素似然计算需要逐点 Jacobian 行列式，代价 $$O(d^3)$$。Neural ODE 给出瞬时变量替换公式，将对数行列式换成迹的时间积分（[arXiv:1806.07366](https://arxiv.org/abs/1806.07366)）：
+**定义（条件概率路径）** 一族分布 $$p_t(x\mid z)$$，其中 $$z\sim p_{\rm data}$$ 是数据点，满足
 
 $$
-\log p_1\big(\psi_1(x)\big) = \log p_0(x) - \int_0^1 \mathrm{tr}\!\left(\frac{\partial v_\theta}{\partial x}\big(t,\psi_t(x)\big)\right)dt .
+p_0(\cdot\mid z)=p_{\rm init},\qquad p_1(\cdot\mid z)=\delta_z .
 $$
 
-**推导**：对局部流 $$\phi_{t+\epsilon,t}(z)=z+\epsilon v_\theta(t,z)+O(\epsilon^2)$$，其 Jacobian 为 $$I+\epsilon A+O(\epsilon^2)$$（$$A=\partial_x v_\theta$$），利用特征值一阶展开 $$\det(I+\epsilon A)=1+\epsilon\,\mathrm{tr}(A)+O(\epsilon^2)$$，取对数得 $$\epsilon\,\mathrm{tr}(A)+O(\epsilon^2)$$，对区间积分即得。$$\blacksquare$$
+读法：以单个数据点 $$z$$ 为条件，把噪声分布逐步「收缩」成一个点。可以用图景理解：从 $$p_{\rm init}$$ 里采一个 $$x$$，看它怎么一步步走向 $$z$$。
 
-问题在于训练时每一项似然都要反解 ODE 或用 adjoint 回传，FFJORD 用 Hutchinson 随机迹估计器把迹的计算降为无偏估计、放开了网络结构限制，但“训练循环里嵌套 ODE 求解器”的本质开销没有消失（[arXiv:1810.01367](https://arxiv.org/abs/1810.01367)）。这正是 CNF 长期无法规模化的原因，也是 FM 的出发点：**绕开似然，只做采样导向的速度场回归**。
-
-### 2.2 从离散加噪到连续 SDE
-
-DDPM 前向过程是马尔可夫链 $$q(x_k\mid x_{k-1})=\mathcal N(\sqrt{1-\beta_k}\,x_{k-1},\beta_k I)$$。当步数趋于无穷、$$\beta_k=\beta(k/K)\Delta t$$ 时收敛到 Itô SDE $$dx=f_t(x)\,dt+g_t\,dw$$：VP-SDE 取 $$f_t=-\frac12\beta(t)x,\ g_t=\sqrt{\beta(t)}$$，VE-SDE 取 $$f_t=0,\ g_t=\sqrt{d\sigma^2/dt}$$。密度演化由 Fokker–Planck 方程刻画：
+每个条件路径都诱导一个**边际概率路径**
 
 $$
-\frac{\partial p_t}{\partial t} = -\nabla\cdot(f_t\,p_t) + \frac{g_t^2}{2}\Delta p_t .
+p_t(x)=\int p_t(x\mid z)\,p_{\rm data}(z)\,dz .
 $$
 
-无论加噪多么随机，密度的演化是一个完全确定的 PDE 动力学。
+边界自动成立：$$t=0$$ 时因为条件分布与 $$z$$ 无关所以是 $$p_{\rm init}$$；$$t=1$$ 时因为 $$p_1(x\mid z)=\delta_z$$，积分后就是 $$p_{\rm data}$$。
 
-### 2.3 概率流 ODE：把随机性收进速度场
+⚠️ **一个必须记住的区分**：$$p_t$$ 是**可采样而不可计算**的。由定义可以写出采样过程（先采 $$z$$、再采 $$x\sim p_t(\cdot\mid z)$$），但密度值 $$p_t(x)$$ 那个积分是算不出来的。整个 §4 的技术内容，都是在绕开这个「能采不能算」的对象。
 
-利用 $$\Delta p_t=\nabla\cdot(p_t\nabla\log p_t)$$（因为 $$\nabla\log p_t=\nabla p_t/p_t$$），Fokker–Planck 右端第二项可改写为守恒形式，合并两项：
+### 3.2 最重要的一例：高斯路径
 
-$$
-\frac{\partial p_t}{\partial t} = -\nabla\cdot\Big(\big[\,f_t-\tfrac{g_t^2}{2}\nabla\log p_t\,\big]p_t\Big).
-$$
-
-这正是一个连续性方程，对应的确定性 ODE 称为**概率流 ODE**：
+取噪声调度器 $$\alpha_t,\beta_t$$（两个连续可微、单调的函数，满足 $$\alpha_0=\beta_1=0$$ 与 $$\alpha_1=\beta_0=1$$），定义
 
 $$
-\frac{dx}{dt}=u_t^{\mathrm{PF}}(x),\qquad u_t^{\mathrm{PF}}(x)=f_t(x)-\frac{g_t^2}{2}\nabla_x\log p_t(x).
+p_t(x\mid z)=\mathcal N(\alpha_t z,\;\beta_t^2 I).
 $$
 
-Song et al. 的原文明确给出“与反向 SDE 采样同分布的等价神经 ODE”（[arXiv:2011.13456](https://arxiv.org/abs/2011.13456)）。含义极其深刻：**每一个扩散模型内在地都是一个 CNF**，其速度场由漂移项与 score 共同组装；DDIM 本质上就是这个 ODE 的离散近似。至此三条线在数学上完全汇合：
-
-```mermaid
-graph LR
-    A["连续性方程"] --> B["CNF<br>直接指定速度场"]
-    A --> C["前向 SDE<br>漂移项加扩散项"]
-    C -- Fokker Planck 守恒形改写 --> D["概率流 ODE<br>score 组装的确定性场"]
-    B -- 同一边际路径 --> D
-    D --> E["采样<br>ODE 求解器或 SDE 求解器"]
-    E --> F["同一份数据分布"]
-```
-
-### 2.4 连续性方程：统一的骨架
-
-**引理 2.2** 设光滑速度场 $$u_t$$ 诱导流 $$\psi_t$$，$$p_t={\psi_t}_\#p_0$$，则 $$\partial_t p_t+\nabla\cdot(p_t u_t)=0$$。
-
-**推导**：对任意紧支撑测试函数 $$\varphi$$，由推前定义与流的可逆性交换积分次序：$$\int\varphi\,dp_t=\int\varphi(\psi_t(z))\,dp_0(z)$$。对 $$t$$ 求导并用链式法则得 $$\int\nabla\varphi\cdot u_t\,p_t dx$$；分部积分（边界项消失）化为 $$-\int\varphi\,\nabla\cdot(u_t p_t)dx$$，由 $$\varphi$$ 的任意性得证。$$\blacksquare$$
-
-这个方程给出三点结构性认识：其一，任何确定性传输方案都唯一对应一对 $$(p_t,u_t)$$；其二，给定两端固定（$$p_0=\mathcal N(0,I)$$、$$p_1=q$$）的光滑路径族，至少存在一个速度场生成它，且在 $$p_t>0$$ 处几乎处处唯一；其三，于是“学生成模型”可以重述为纯粹的**回归问题**——找到 $$\hat u_t$$ 使其诱导路径逼近指定传输。下一章的全部内容就是把第二点和第三点变成可执行算法。
-
-## 3. Flow Matching 完整推导：把生成变成回归
-
-以下推导完整复现 Lipman 等人的核心定理链（[arXiv:2210.02747](https://arxiv.org/abs/2210.02747)）。该文摘要自述其为“基于回归固定条件概率路径之向量场的免模拟 CNF 训练方法”，且其高斯路径族涵盖既有扩散路径为特例——下面逐条兑现这句话。
-
-### 3.1 问题设定
-
-数据分布记 $$q(x_1)$$，先验取标准高斯 $$p_0=\mathcal N(0,I)$$。目标：找速度场 $$v_\theta$$ 使其 ODE 流把 $$p_0$$ 推前为 $$q$$。与 CNF 的差别在于**不再计算似然**，转而构造一条参考路径 $$p_t$$ 并直接回归其速度场。
-
-### 3.2 条件概率路径与边际化
-
-FM 的关键构件是**条件概率路径** $$p_t(x\mid x_1)$$：一族以单个数据点 $$x_1$$ 为条件的密度，满足边界条件 $$p_0(x\mid x_1)$$ 与 $$x_1$$ 无关（取 $$\mathcal N(0,I)$$）、$$p_1(x\mid x_1)\approx\delta(x-x_1)$$（用小方差高斯近似）。对其做混合得到**边际概率路径**：
+这是个合法路径：$$t=0$$ 时是 $$\mathcal N(0,I)$$ 即 $$p_{\rm init}$$，$$t=1$$ 时是 $$\mathcal N(z,0)=\delta_z$$。**当前绝大多数生产模型用的就是它。** 采样极其简单：
 
 $$
-p_t(x) = \int p_t(x\mid x_1)\,q(x_1)\,dx_1 .
+\epsilon\sim\mathcal N(0,I),\qquad x_t=\alpha_t z+\beta_t\epsilon .
 $$
 
-两个边界自动成立：$$p_0=\mathcal N(0,I)$$（因为条件分布与 $$x_1$$ 无关）、$$p_1\approx q$$（方差趋零时混合趋向经验分布）。注意 $$p_t$$ 完全由设计决定，不需要任何扩散过程的反演。
+即「把数据和噪声按 $$\alpha_t,\beta_t$$ 线性插值」。$$\alpha_t=t,\beta_t=1-t$$ 被称为 **CondOT 路径**；加一个 $$\sigma_{\min}$$ 让 $$\beta_1=\sigma_{\min}>0$$ 是工程惯例（见 §6.2）。
 
-### 3.3 定理一：边际向量场
+### 3.3 连续性方程：路径与速度场的契约
 
-每个条件路径都有生成它的条件向量场 $$u_t(x\mid x_1)$$（满足关于 $$p_t(x\mid x_1)$$ 的连续性方程）。定义**边际向量场**：
+现在回答核心问题：**给定一条概率路径 $$p_t$$，什么样的速度场会输运它？**
 
-$$
-u_t(x) \;:=\; \mathbb E_{q}\big[\,u_t(x\mid x_1)\;\big\vert\;x_t=x\,\big] = \frac{1}{p_t(x)}\int u_t(x\mid x_1)\,p_t(x\mid x_1)\,q(x_1)\,dx_1 .
-$$
-
-**定理一**：$$u_t$$ 生成边际路径 $$p_t$$，即 $$\partial_t p_t+\nabla\cdot(p_t u_t)=0$$，且 $$p_0,p_1$$ 边界如上。
-
-**证明**：条件密度满足 $$\partial_t p_t(x\mid x_1)=-\nabla\cdot(p_t(x\mid x_1)u_t(x\mid x_1))$$。两边乘 $$q(x_1)$$ 积分：左端由控制收敛交换求导与积分得 $$\partial_t p_t(x)$$；右端散度算子提出积分号，得 $$-\nabla\cdot\int p_t(x\mid x_1)u_t(x\mid x_1)q(x_1)dx_1$$，再按定义恰好等于 $$-\nabla\cdot(p_t(x)u_t(x))$$。$$\blacksquare$$
-
-唯一性说明：凡生成同一路径的速度场彼此只差一个与 $$p_t$$ 正交的无旋分量，在 $$p_t>0$$ 处几乎处处唯一——所以“这条路径的唯一速度场”是有良定意义的对象。
-
-### 3.4 FM 损失的不可直接优化性
-
-最朴素的回归目标是
+答案是连续性方程（讲义 Thm 11）：
 
 $$
-\mathcal L_{\mathrm{FM}}(\theta)=\mathbb E_{t,\,x_1\sim q,\,x\sim p_t}\big\|v_\theta(t,x)-u_t(x)\big\|^2 .
+\boxed{\;\partial_t p_t(x)=-\mathrm{div}\big(p_t(x)u_t(x)\big)\;}
 $$
 
-它是良定的，却**不可计算**：$$u_t(x)$$ 里藏着 Bayes 后验 $$p_t(x_1\mid x)/q$$，和 score 一样属于“知道答案也写不出来”的量。这与 score matching 当年的困境一模一样，解法也一样——用条件量做蒙特卡洛代理。
+一维情况下 $$\mathrm{div}$$ 就是 $$\partial_x$$，读作「某点密度的变化率 = 该点的净概率流入」。物理类比是热传导方程，只是多了一个把密度推着走的漂移项。
 
-### 3.5 定理二：Conditional Flow Matching 的梯度恒等
+**这个方程是充分必要的**——「$$X_t\sim p_t$$」与「满足连续性方程」等价。正因如此，它就是我们的**训练目标**：找到 $$u_t$$ 使它成立。
 
-定义**CFM 损失**：
+**定理（唯一性）** 满足连续性方程的速度场彼此只差一个与 $$p_t$$ 正交的无旋分量。即在 $$p_t>0$$ 处几乎处处唯一。所以「这条路径的速度场」是有良定意义的对象。
 
-$$
-\mathcal L_{\mathrm{CFM}}(\theta)=\mathbb E_{t,\,x_1\sim q,\,x\sim p_t(\cdot\mid x_1)}\big\|v_\theta(t,x)-u_t(x\mid x_1)\big\|^2 ,
-$$
+### 3.4 核验：残差与路径无关
 
-其中 $$x\sim p_t(\cdot\mid x_1)$$ 可以解析采样（见 §3.6），$$u_t(x\mid x_1)$$ 有闭式解。
+`tools/fm_lab/fm_continuous_verify.py` 实验 1 用 Richardson 外推的中心差分（$$O(h^4)$$）在一维三高斯混合上逐点验证连续性方程，覆盖 7 条路径：
 
-**定理二**：对所有 $$\theta$$，$$\nabla_\theta\mathcal L_{\mathrm{FM}}=\nabla_\theta\mathcal L_{\mathrm{CFM}}$$。
-
-**证明**（展开技巧）：将 $$\mathcal L_{\mathrm{CFM}}$$ 按平方拆成三项。第一项 $$\mathbb E\|v_\theta\|^2$$ 中，先采 $$x_1$$ 再采 $$x\sim p_t(\cdot\mid x_1)$$ 的复合分布恰是边际 $$p_t$$，故该项等于 $$\mathbb E_{t,x\sim p_t}\|v_\theta\|^2$$。交叉项中固定 $$x$$ 对 $$x_1$$ 取期望：
-
-$$
--2\,\mathbb E_{x_1}\big[\langle v_\theta,u_t(x\mid x_1)\rangle\big] = -2\,\langle v_\theta,\ \mathbb E[u_t(x\mid x_1)\mid x]\rangle = -2\langle v_\theta, u_t(x)\rangle,
-$$
-
-末步正是 §3.3 边际向量场的定义。第三项 $$\mathbb E\|u_t(x\mid x_1)\|^2$$ 不含 $$\theta$$。于是
-
-$$
-\mathcal L_{\mathrm{CFM}}(\theta)=\underbrace{\mathbb E_{t,x\sim p_t}\big[\|v_\theta\|^2-2\langle v_\theta,u_t\rangle\big]}_{\text{与 } \mathcal L_{\mathrm{FM}} \text{ 的 } \theta\text{-依赖部分逐项相同}} + C ,
-$$
-
-两者只差与 $$\theta$$ 无关的常数 $$C$$，梯度恒等。$$\blacksquare$$
-
-这就是全部魔法：**优化一个每项都可采样的监督回归，等价于优化那个永远写不出来的目标**。训练时甚至不需要知道 $$C$$ 是多少。
-
-### 3.6 高斯条件路径实例化：解析条件场的推导
-
-取高斯条件路径 $$p_t(x\mid x_1)=\mathcal N(\alpha_t x_1,\sigma_t^2 I)$$，即样本 $$X_t=\alpha_t x_1+\sigma_t\varepsilon$$。对时间求导 $$\frac{d}{dt}X_t=\dot\alpha_t x_1+\dot\sigma_t\varepsilon$$，而给定 $$X_t$$ 可反解 $$\varepsilon=(X_t-\alpha_t x_1)/\sigma_t$$，代入并取条件期望得**条件向量场闭式解**：
-
-$$
-u_t(x\mid x_1) = \Big(\dot\alpha_t-\frac{\dot\sigma_t}{\sigma_t}\alpha_t\Big)x_1 + \frac{\dot\sigma_t}{\sigma_t}\,x .
-$$
-
-Lipman 等的具体选择是 $$\alpha_t=t$$、$$\sigma_t=1-(1-\sigma_{\min})t$$（$$\sigma_{\min}$$ 小正数防端点奇异），代入化简（利用 $$\sigma_t+t(1-\sigma_{\min})=1$$）：
-
-$$
-u_t(x\mid x_1) = \frac{x_1-(1-\sigma_{\min})\,x}{1-(1-\sigma_{\min})\,t} .
-$$
-
-当 $$\sigma_{\min}\to 0$$ 这正是“从当前点以恒定速率直线走向 $$x_1$$”的速度场——线性插值 $$x_t=(1-t)x_0+t x_1$$ 的速度 $$x_1-x_0=(x_1-x_t)/(1-t)$$ 与之完全吻合。FM 论文的摘要强调用最优传输位移插值构造条件路径能带来更快的训练与采样、更好的泛化，这一选择后来被批内 OT 耦合进一步强化（§7）。
-
-### 3.7 训练与采样算法
-
-训练：重复 (i) 采 $$x_1\sim q$$、$$x_0\sim\mathcal N(0,I)$$；(ii) 采 $$t\sim\pi(t)$$（先均匀，见 §8 的改进）；(iii) 构造 $$x_t=\alpha_t x_1+\sigma_t x_0$$；(iv) 回归 $$v_\theta(t,x_t)\approx u_t(x_t\mid x_1)$$。采样：从 $$x_0\sim\mathcal N(0,I)$$ 出发用 Euler 或更高阶格式积分 ODE 至 $$t=1$$。完整的可运行骨架见 §9.5。
-
-## 4. CFM 与 Score Matching 的精确等价
-
-### 4.1 DSM 一侧的目标
-
-去噪 score matching 利用 Tweedie 公式把 score 回归变成同样可采样的形式：
-
-$$
-\mathcal L_{\mathrm{DSM}}(\theta)=\mathbb E_{t,\,x_1\sim q,\,x\sim p_t(\cdot\mid x_1)}\big\|s_\theta(t,x)-\nabla_x\log p_t(x\mid x_1)\big\|^2,\qquad \nabla_x\log p_t(x\mid x_1)=\frac{\alpha_t x_1-x}{\sigma_t^2}.
-$$
-
-DDPM 的成功正是因为加权变分下界与 DSM 的联系（[arXiv:2006.11239](https://arxiv.org/abs/2006.11239)）。表面上看，score（指向密度上升方向的 $$d$$ 维场）与 velocity（密度被输运的方向）是两种动物——下面的主换算公式说明它们是同一个量的两种坐标。
-
-### 4.2 主换算公式
-
-对高斯路径，条件 score 即 $$s_t(x\mid x_1)=(\alpha_t x_1-x)/\sigma_t^2$$，边际 score 为 $$s_t(x)=\mathbb E[s_t(x\mid x_1)\mid x]=(\alpha_t\mathbb E[x_1\mid x]-x)/\sigma_t^2$$，反解出 $$\mathbb E[x_1\mid x]=(x+\sigma_t^2 s_t(x))/\alpha_t$$。将其代入 §3.6 条件场的边际化 $$\mathbb E[u_t(x\mid x_1)\mid x]=u_t(x)$$，整理后得到本文最重要的恒等式：
-
-$$
-\boxed{\; u_t(x) = a(t)\,x + b(t)\,s_t(x),\qquad a(t)=\frac{\dot\alpha_t}{\alpha_t},\quad b(t)=\frac{(\dot\alpha_t\sigma_t-\alpha_t\dot\sigma_t)\,\sigma_t}{\alpha_t} \;}
-$$
-
-**推导核对**：$$u_t=(\dot\alpha-\dot\sigma\alpha/\sigma)(x+\sigma^2 s)/\alpha+(\dot\sigma/\sigma)x$$，$$x$$ 的系数合并为 $$[(\dot\alpha\sigma-\dot\sigma\alpha)+\dot\sigma\alpha]/(\alpha\sigma)\cdot\sigma=\dot\alpha/\alpha=a(t)$$；$$s$$ 的系数为 $$(\dot\alpha\sigma-\dot\sigma\alpha)\sigma/\alpha=b(t)$$。$$\blacksquare$$
-
-### 4.3 三条经典路径的显式验证
-
-| 路径 | $$\alpha_t$$ | $$\sigma_t$$ | $$a(t)$$ | $$b(t)$$ | 速度场形态 |
-|---|---|---|---|---|---|
-| OT 线性插值 | $$t$$ | $$1-(1-\sigma_{\min})t$$ | $$1/t$$ | $$\sigma_t/t$$ | $$u_t=(x+\sigma_t^2 s_t)/t$$ |
-| VE | $$1$$ | $$t$$ | $$0$$ | $$-t$$ | $$u_t=-t\,s_t$$ |
-| VP（$$\beta$$ 常数） | $$e^{-\beta t/2}$$ | $$\sqrt{1-e^{-\beta t}}$$ | $$-\beta/2$$ | $$-\beta/2$$ | $$u_t=-\frac{\beta}{2}(x+s_t)$$ |
-
-三行都可以独立交叉验证：VE 行与 Song 等的概率流 ODE $$u=f-\frac{g^2}{2}s$$（此时 $$f=0,g^2=2t$$）完全一致；VP 行与 $$f=-\frac\beta2x,g^2=\beta$$ 的概率流 ODE 完全一致——这不是巧合，而是恒等式正确性的强证据。
-
-### 4.4 等价性的真正含义
-
-由于 $$u=ax+bs$$ 逐点成立，若令网络经参数化 $$s_\theta=v_\theta/b(t)$$ 预测 score，则 $$\|v_\theta-u\|^2=b^2(t)\,\|s_\theta-s\|^2$$ 逐点成立。于是：
-
-- **最优解集合相同**：CFM 与 DSM 的总体最优都是真值；
-- **经验损失只差时间加权**：CFM ≡ 权重为 $$b^2(t)$$ 的 DSM（反之 DSM 是权重 $$1/b^2$$ 的 CFM）。VP 常数 $$\beta$$ 时 $$b\equiv-\beta/2$$ 与 $$t$$ 无关，两损失只差全局常数因子，这是“严格等价”的特例；
-- **工程推论**：换输出参数化（noise/x0/velocity/score 四选一）从不改变最优解，改变的只是有效权重曲线与不同时刻的信噪比——这正是 §8 timestep 分布实验的理论注脚，也是 EDM“预处理与调度解耦”思想（[arXiv:2206.00364](https://arxiv.org/abs/2206.00364)）在 FM 语言下的重现。
-
-一张表总结三种身份：“学 score 的模型”、“学 velocity 的模型”、“学去噪器的模型”是同一个函数经过 $$a,b$$ 线性重组后的三个名字。
-
-## 5. Rectified Flow：直线路径与再整直
-
-Liu 等人几乎同时提出的 Rectified Flow 把“线性插值”推向极致（[arXiv:2209.03003](https://arxiv.org/abs/2209.03003)）。设定 $$z_t=t\,x_1+(1-t)\,x_0$$（注意该文记号方向与 FM 相反：$$\pi_0$$ 是噪声、$$\pi_1$$ 是数据——纯约定差异），训练目标是最小二乘：
-
-$$
-\min_v\ \mathbb E_{t,\,(x_0,x_1)\sim\pi}\big\|v(z_t)-(x_1-x_0)\big\|^2 .
-$$
-
-**核心定理**：总体最小二乘解为条件期望 $$v^*(z)=\mathbb E[x_1-x_0\mid z_t=z]$$，它生成的 ODE 保持每个时刻的边际分布不变。证明思路与 FM 定理一的“条件期望技巧”完全同源——两篇文章殊途同归地发现了同一个结构。摘要的自述非常克制：直线路径之所以特殊是因为两点间最短、且可以在不做时间离散化的情况下精确模拟；整流（rectification）过程能把任意耦合转化为新的确定性耦合，且凸传输代价可证单调不增。
-
-ReFlow 迭代是该文最有辨识度的贡献：用当前模型跑 ODE 生成新配对 $$(x_0',x_1')$$（这同时把任意耦合变成了确定性耦合），再用直线目标重训。每一次迭代轨迹更直，少步 Euler 采样的误差随之下降，逼近单步生成。值得强调的是：**RF 的“域迁移”视角把 $$(x_0,x_1)$$ 的语义泛化了**——两端不必是“噪声和数据”，可以是两张不同域的图像，这使同一套算法同时覆盖生成式建模与图像翻译。
-
-与 FM 的关系一句话说清：RF 的线性插值就是 FM 高斯路径族在 $$\alpha_t=t,\sigma_t=1-t$$（即 $$\sigma_{\min}=0$$ 极限）的成员；差异不在目标而在叙事重心——FM 强调路径与耦合的设计空间，RF 强调迭代整直与少步采样。
-
-## 6. Stochastic Interpolants：ODE 与 SDE 的连续谱
-
-Albergo、Boffi 与 Vanden-Eijnden 的 Stochastic Interpolants 把视野进一步拉宽（[arXiv:2303.08797](https://arxiv.org/abs/2303.08797)）。他们考虑的**随机插值**是一大类连续时间过程：组合两端密度中的数据点与一个额外的隐变量来灵活塑形桥，典型线性形式为
-
-$$
-x_t = b(t)\,x_0 + a(t)\,x_1 + \gamma(t)\,z,\qquad z\sim\mathcal N(0,I),
-$$
-
-要求 $$b(0)=a(1)=\gamma(0)=\gamma(1)=0$$ 且端点处分别还原 $$x_0,x_1$$。$$\gamma\equiv 0$$ 时退化为确定性插值（RF/FM 的直线、三角函数插值等）；$$\gamma(t)=\sqrt{t(1-t)}$$ 一类的桥式噪声则让中间时刻携带额外随机性——原文的线性插值速查表里，VP 型（$$\sqrt{1-t^2},t$$）、三角型（$$\cos\frac\pi2 t,\sin\frac\pi2 t$$）、编码解码型等悉数在列。
-
-该框架的三个支柱性结果：其一，插值过程的密度同时满足一阶输运方程**和**一族带可调扩散系数的正反向 Fokker–Planck 方程——这意味着同一个训练好的模型既能驱动确定性概率流 ODE，也能驱动噪声水平任意的生成式 SDE，ODE 与 SDE 从“二选一”变成了连续谱上的旋钮；其二，漂移系数（速度场与 score）都是简单二次目标的唯一极小者，其中一个是对 score 的新目标函数，且随机动力学的似然可控而确定性动力学的要求更苛刻；其三，若对插值函数本身做优化，可以恢复两端密度间的薛定谔桥——摘要还明确列出该框架统一了 score-based 扩散、随机定位、概率去噪与 rectifying flows。SiT 提供了视觉领域的系统实证：在 DiT 骨架、同等参数量与计算量下，插值框架配合扩散系数调节在 ImageNet 256/512 上全面超越对应扩散基线（[arXiv:2401.08740](https://arxiv.org/abs/2401.08740)）。
-
-对实践者的翻译：SI 告诉你“训练目标”与“采样动力学”应当解耦——先用回归把桥上的漂移学出来，再自由选择用多少噪声、走 ODE 还是 SDE 到达终点。这与 EDM 的解耦精神一致，但把自由度从调度扩展到了插值函数本身。
-
-## 7. Minibatch OT 耦合：把弯路掰直
-
-以上方法默认配对方式是**独立耦合** $$\pi=p_0\otimes q$$。Tong 等人指出这是被忽视的自由度（[arXiv:2302.00482](https://arxiv.org/abs/2302.00482)）：独立耦合会让大量条件路径互相穿越，边际速度场被迫绕行，轨迹弯曲、离散化误差大。他们的 generalized CFM 家族有一个重要性质：**不要求源分布是高斯，也不要求评估其密度**——这在单细胞动力学推断这类源分布未知的场景是刚需。
-
-OT-CFM 的改动只有一处：每个 minibatch 内先用最优传输计划（Kantorovich 或 Sinkhorn，代价常取平方欧氏距离）重排 $$(x_0,x_1)$$ 配对，再做 CFM 回归。摘要给出的理论承诺相当精确：OT-CFM 产生更简单、训练更稳、推理更快的流；当真实 OT 计划可得时，该方法逼近**动态最优传输**。代价与权衡同样真实：
-
-| 维度 | 独立耦合 | 批内 OT 耦合 |
+| 路径 | max 绝对残差 | 归一化 |
 |---|---|---|
-| 实现成本 | 一行 `randn` 配对 | 每 batch 加一次 OT 求解 |
-| 轨迹形状 | 大量交叉、弯曲 | 显著变直、离散化友好 |
-| 边缘保真 | 天然保持 | 低成本配对可能压制多样性 |
-| batch 敏感性 | 无 | 匹配质量受 batch 大小制约 |
-| 适用场景 | 通用默认 | 少步采样、科学计算传输 |
+| CondOT（$$\alpha_t=t,\beta_t=1-t$$） | $$6.49\times10^{-11}$$ | $$3.28\times10^{-11}$$ |
+| OT（$$\sigma_{\min}=0.01$$） | $$8.40\times10^{-11}$$ | $$4.45\times10^{-11}$$ |
+| OT（$$\sigma_{\min}=0.2$$） | $$4.40\times10^{-11}$$ | $$3.54\times10^{-11}$$ |
+| 三角路径（$$\sin(\pi t/2),\cos(\pi t/2)$$） | $$8.64\times10^{-11}$$ | $$7.55\times10^{-11}$$ |
+| VE（反向时间约定） | $$1.22\times10^{-10}$$ | $$4.35\times10^{-11}$$ |
+| VP（$$\beta=1.0$$，反向） | $$6.73\times10^{-11}$$ | $$8.09\times10^{-11}$$ |
+| VP（$$\beta=1.3$$，反向） | $$5.55\times10^{-11}$$ | $$6.46\times10^{-11}$$ |
 
-实践建议：默认独立耦合起步；若目标是少步采样或轨迹本身有意义（细胞轨迹、分子构象过渡），再上批内 OT，并同时监控生成多样性与边缘统计。同组的后续会议版本以 Multisample Flow Matching 的名义细化了这一方向。
+归一化残差全部在 $$10^{-11}$$ 量级，**换路径只改变常数因子、不改变成立性**。这印证了连续性方程确实是路径无关的通用契约。
 
-## 8. 从理论到工业标准：SD3 的三个决定
+> 排错留档：这里的判据必须用「除以该 $$t$$ 下的最大 $$\lvert\partial_t p_t\rvert$$」归一化。分布 tails 处 $$\partial_t p_t\to0$$，直接算相对误差会得到 $$10^{10}$$ 量级的假失败。另一个坑是散度要对 $$x$$ 求导——我一开始写成对 $$t$$ 求导，残差同样不随步长收敛，凭这一点立刻定位。
 
-Stable Diffusion 3 的技术报告做了三件影响整个行业的事（[arXiv:2403.03206](https://arxiv.org/abs/2403.03206)）。
+## 4. 边际化：从单点速度场到可学目标
 
-**决定一：选 Rectified Flow 作为底层公式。** 报告开展了覆盖数十种扩散与流式公式的大规模系统研究，结论是只有改了 timestep 采样的 RF 变体才能稳定超越 EDM 与经典的 LDM-Linear（eps/linear）公式。
+有了路径与契约，还差速度场。看起来应该直接学 $$u_t$$ 让它满足连续性方程，但有个障碍。
 
-**决定二：logit-normal 时间加权。** 直觉是中间信噪比时刻最难也最重要，应多采样。logit-normal 密度为
+### 4.1 死路：条件向量场没用
 
-$$
-\pi_{\mathrm{ln}}(t;m,s)=\frac{1}{s\sqrt{2\pi}}\cdot\frac{1}{t(1-t)}\exp\!\Big(-\frac{(\mathrm{logit}(t)-m)^2}{2s^2}\Big),
-$$
+先试着为每个 $$z$$ 构造一个向量场 $$u_t(x\mid z)$$，使它的 ODE 恰好复现条件路径 $$p_t(\cdot\mid z)$$。这很容易做到（见 §4.2），但**它对生成毫无用处**：所有轨迹都会塌到同一个 $$z$$——那个在训练时被固定住的点。我们需要的是一个 $$u_t(x)$$，不依赖任何特定的 $$z$$，却能输运整条**边际**路径。
 
-采样实现极其简单：先采 $$u\sim\mathcal N(m,s)$$ 再过 logistic 函数。消融显示 $$m=0,s=1.00$$ 的组在各种采样步数设置下排名 consistently 最优，且 logit-normal 整体优于均匀 RF、EDM 与 LDM-Linear；报告同时测试了端点非零的重尾 mode 采样作为对照。各种时间分布的对比如下：
+### 4.2 高斯路径的条件场（有闭式）
 
-| 时间分布 $$\pi(t)$$ | 端点密度 | 加权倾向 | SD3 实验结论 |
-|---|---|---|---|
-| 均匀 | 处处相等 | 无 | 经典 RF 默认，被显著超越 |
-| logit-normal | 两端为零 | 中间集中 | $$m{=}0,s{=}1.0$$ 组排名 consistently 最优 |
-| mode 重尾 | 端点非零 | 中间集中带重尾 | 用于检验端点欠拟合风险 |
+先做一件有用的事：把高斯路径的条件场算出来，它后面会反复用到。
 
-**决定三：分辨率相关的 shift 调度。** 高分辨率图有更多像素，需要更强噪声才能摧毁信号；直接沿用低分辨率的等效噪声水平会系统性欠噪。SD3 的做法是把 timestep 做重映射
+条件流的定义很自然：$$\psi_t(x_0\mid z)=\alpha_t z+\beta_t x_0$$，它显然把 $$\mathcal N(0,I)$$ 送到 $$p_t(\cdot\mid z)$$。对 $$t$$ 求导并反解 $$x$$：
 
 $$
-t_m=\frac{\sqrt{m/n}\;t_n}{1+(\sqrt{m/n}-1)\,t_n},
+\dot\alpha_t z+\dot\beta_t x_0
+=u_t\big(\alpha_tz+\beta_tx_0\mid z\big)
+=u_t(x\mid z),
 $$
 
-其中 $$n=H\cdot W$$ 是像素数、$$m$$ 是参照分辨率像素数。人类偏好实验显示 shift 大于 1.5 后质量显著偏好、继续增大收益递减，最终 1024×1024 分辨率训练与采样均采用 $$\alpha=\sqrt{m/n}=3.0$$。此外架构上提出 MM-DiT：文本与图像 token 各持一套独立权重、在联合注意力中双向交互（可选 QK RMSNorm 稳定训练），改善了文本理解与排版能力；并以验证损失的 scaling 曲线作为下游质量的可靠代理指标，趋势未见饱和。
+其中最后一步把 $$x_0=(x-\alpha_tz)/\beta_t$$ 代回。整理得
 
-## 9. 训练实践坑清单
+$$
+\boxed{\;u_t(x\mid z)=\Big(\dot\alpha_t-\frac{\dot\beta_t}{\beta_t}\alpha_t\Big)z+\frac{\dot\beta_t}{\beta_t}\,x\;}
+$$
 
-### 9.1 “噪声调度”其实是三个旋钮
+以 CondOT（$$\alpha_t=t,\beta_t=1-t$$）为例，$$\dot\alpha_t=1,\dot\beta_t=-1$$：
 
-传统扩散语境的“schedule”在 FM 语言下分解为三个正交选择：(i) 概率路径 $$(\alpha_t,\sigma_t)$$；(ii) timestep 采样分布 $$\pi(t)$$；(iii) 网络输出参数化。三者通过 §4 主换算公式互相换算——任何一个的改动都等价于给损失乘一条时间加权曲线 $$w(t)$$。坑在于：很多论文的“新方法”只是悄悄动了其中一个旋钮而不自知。自查清单：报告实验时把三个旋钮写全；复现他人结果先对齐三者的等效权重。
+$$
+u_t(x\mid z)=\Big(1+\frac{t}{1-t}\Big)z-\frac{x}{1-t}=\frac{z-x}{1-t}.
+$$
 
-### 9.2 数值与端点坑
+漂亮：条件场就是「当前位置到目标点除以剩余时间」，一条直线。$$\sigma_{\min}\to0$$ 时这就是 Rectified Flow 的条件速度。
 
-$$\sigma_{\min}$$ 过大导致终点分布模糊（模型永远在猜一个小方差高斯的均值），过小则 $$t\to1$$ 处除零放大数值噪声；logit-normal 两端密度为零，极端时刻欠采样可能造成首尾质量退化，必要时换端点非零的重尾分布；高分辨率训练忘加 shift 是“放大就糊”的经典根因；EMA 与非 EMA 权重的选择足以改变消融排名顺序（SD3 特意对两者取平均排名）。
+### 4.3 边际化 trick
 
-### 9.3 耦合策略坑
+**定理 9（边际化 trick）** 定义
 
-见表三（§7）。补充两条容易踩的：批内 OT 与后续蒸馏管线的交互尚缺系统研究，整直带来的好处可能被蒸馏重新洗牌；OT 耦合压多样性的风险在高熵数据集上更明显，务必监控召回类指标而非只看 FID。
+$$
+u_t(x)=\int u_t(x\mid z)\,\frac{p_t(x\mid z)p_{\rm data}(z)}{p_t(x)}\,dz .
+$$
 
-### 9.4 架构选择坑
+括号里那个权重就是 Bayes 后验 $$p_{1\mid t}(z\mid x)$$，即「看到 $$x$$ 之后 believe 它来自哪个 $$z$$」。则 $$u_t$$ 满足连续性方程，因而输运**边际**路径：$$X_0\sim p_{\rm init}$$、$$dX_t=u_t(X_t)dt$$ 蕴含 $$X_t\sim p_t$$。
 
-U-Net 成熟稳妥，DiT/MM-DiT 类纯 transformer 扩展性更好——SD3 的证据是验证损失 scaling 与下游指标强相关且未见饱和。时间条件注入推荐调制式（adaLN 风格的 modulation linear，作用于每个块的 norm 与门控），输出层零初始化让残差块初始为恒等映射，是 velocity 目标下被反复验证的稳定化技巧；文本条件走联合注意力（双流权重）优于简单 cross-attention 拼接。
+直觉上非常好懂：**对每个可能的 $$z$$，取它会把 $$x$$ 带到哪里的速度，再按「believe $$x$$ 来自 $$z$$ 的程度」加权平均。**
 
-### 9.5 可运行骨架与变量映射表
+证明只有一行：把 $$p_t=\int p_t(\cdot\mid z)p_{\rm data}(z)dz$$ 代入条件路径的连续性方程，利用「求导与积分可交换」以及散度算子的线性性，整理后正好得到 $$p_tu_t=\int p_tu_t(\cdot\mid z)p_{\rm data}(z)dz$$。$$\blacksquare$$
+
+### 4.4 训练：为什么可以绕开积分
+
+现在回到学习问题。最朴素的损失是
+
+$$
+\mathcal L_{\rm FM}(\theta)=\mathbb E_{t,x\sim p_t}\big\|u^\theta_t(x)-u_t(x)\big\|^2 .
+$$
+
+它是良定的，**但不可计算**：$$u_t(x)$$ 里那个积分 intractable。解法与 score matching 当年一模一样——用条件量做蒙特卡洛代理。定义**条件流匹配损失**
+
+$$
+\mathcal L_{\rm CFM}(\theta)=\mathbb E_{t,\,z\sim p_{\rm data},\,x\sim p_t(\cdot\mid z)}\big\|u^\theta_t(x)-u_t(x\mid z)\big\|^2 ,
+$$
+
+这里每一项都可采、目标有闭式。
+
+**定理 12** $$\mathcal L_{\rm FM}(\theta)=\mathcal L_{\rm CFM}(\theta)+C$$，其中 $$C$$ 与 $$\theta$$ 无关，因此 $$\nabla_\theta\mathcal L_{\rm FM}=\nabla_\theta\mathcal L_{\rm CFM}$$。
+
+证明的关键是平方展开后的中间项：固定 $$x$$ 对 $$z$$ 取期望，
+
+$$
+-2\,\mathbb E_{z}\big[\langle u^\theta_t,u_t(x\mid z)\rangle\big]
+=-2\big\langle u^\theta_t,\;\mathbb E_z[u_t(x\mid z)\mid x]\big\rangle
+=-2\langle u^\theta_t,u_t(x)\rangle ,
+$$
+
+末步正是 $$u_t$$ 的定义。两边只差与 $$\theta$$ 无关的常数。$$\blacksquare$$
+
+于是训练变成一个纯粹的监督回归：**采 $$z$$、采 $$t$$、算 $$x_t$$、回归到闭式的 $$u_t(x\mid z)$$**。
 
 ```python
-# 极简 Flow Matching 训练步 + Euler 采样（PyTorch 风格）
-import torch, torch.nn.functional as F
-
-def fm_loss(model, x1, sig_min=1e-5, ot_coupler=None):
-    # x1: (B, d) 真实数据批次；x0 为同形状高斯噪声
-    x0 = torch.randn_like(x1)                       # 先验噪声端点
-    if ot_coupler is not None:                      # 可选: 批内最优传输重配对
-        x0 = ot_coupler(x0, x1)                     # OT-CFM 的唯一改动点
-    t = torch.rand(x1.size(0), 1, device=x1.device) # 均匀时间采样; 可换 logit-normal
-    alpha_t = t                                     # OT 路径: alpha_t = t
-    sigma_t = 1 - (1 - sig_min) * t                 # OT 路径: sigma_t = 1-(1-sig_min)t
-    xt = alpha_t * x1 + sigma_t * x0                # 条件路径样本
-    target = (x1 - (1 - sig_min) * xt) / sigma_t    # 解析条件向量场
-    v = model(t, xt)                                # 网络预测速度场
-    return F.mse_loss(v, target)
-
-@torch.no_grad()
-def euler_sample(model, n, dim, steps=64):
-    x = torch.randn(n, dim)
-    ts = torch.linspace(0.0, 1.0, steps + 1)
-    for i in range(steps):
-        t = ts[i].expand(n, 1)
-        x = x + (ts[i + 1] - ts[i]) * model(t, x)   # 显式 Euler 积分
-    return x
+# CondOT 路径的 CFM 训练步（全部可采、全部有闭式）
+z, eps = sample_data(), torch.randn_like(z)
+t = torch.rand(z.size(0), 1)                    # 时间分布 π(t)
+x_t = t * z + (1 - t) * eps
+loss = ((model(t, x_t) - (z - eps)) ** 2).mean()
 ```
 
-##### 变量映射表（数学 ↔ 代码）
+三个特点值得强调：
 
-| 数学符号 | 代码变量 | Shape / 类型 | 含义 |
+1. **免模拟（simulation-free）**。训练时完全不解 ODE。
+2. **免似然**。不需要 Jacobian、不需要 trace 估计。
+3. **简单到不像研究工作**。就是一个 MSE 回归。
+
+### 4.5 核验：这条定理必须用求积验，不能用蒙特卡洛
+
+定理 12 是全系列最核心的一步，值得说清楚怎么验。**答案是：不能用蒙特卡洛。**
+
+`fm_continuous_verify.py` 实验 3 的记录：先用 $$4\times10^4$$ 个样本做蒙特卡洛，$$\mathcal L_{\rm FM}-\mathcal L_{\rm CFM}$$ 跨参数 $$\theta$$ 的散布是 **0.76**，梯度偏差 **0.30**——看起来定理是错的。但真值确实是常数。原因是量纲爆炸：
+
+| $$t$$ 的采样范围 | 边际场 max 绝对值 | 边际场标准差 | 条件场标准差 |
 |---|---|---|---|
-| $$x_1\sim q$$ | `x1` | `(B, d)` | 数据端点（条件变量） |
-| $$x_0\sim\mathcal N(0,I)$$ | `x0` | `(B, d)` | 先验噪声端点 |
-| $$t\in[0,1]$$ | `t` | `(B, 1)` | 插值时间 |
-| $$\alpha_t,\ \sigma_t$$ | `alpha_t, sigma_t` | `(B, 1)` | 高斯路径系数 |
-| $$x_t$$ | `xt` | `(B, d)` | 路径中间样本 |
-| $$u_t(x\mid x_1)$$ | `target` | `(B, d)` | 条件向量场回归目标 |
-| $$v_\theta(t,x)$$ | `v` / `model` | `(B, d)` | 网络速度预测 |
-| $$\sigma_{\min}$$ | `sig_min` | 标量 | 端点正则，防除零 |
+| $$[0.02,\,0.98]$$ | 92.17 | 3.445 | 1.642 |
+| $$[0.02,\,0.6]$$ | 4.46 | 0.694 | 1.642 |
+| $$[0.1,\,0.5]$$ | 4.02 | 0.541 | 1.644 |
 
-读者可以把 `fm_loss` 里的 `target` 换成 $$(x_1-x_0)/(1-t)$$（$$\sigma_{\min}=0$$ 的 RF 目标）做对照实验，确认两者在 $$\sigma_{\min}\to0$$ 时数值一致。
+CondOT 的边际场含 $$1/(1-t)$$ 因子，$$t\to1$$ 时发散。**有限样本的蒙特卡洛估计量方差被重尾淹没**，实测的「非恒定」全是采样噪声。换成确定性梯形求积后（固定 $$t$$，对 $$x$$ 积分），4 条路径上的结果：
 
-## 10. 全景对照表
+| 路径 | 固定 $$t$$ 时差值跨 $$\theta$$ 的跨度 |
+|---|---|
+| CondOT | $$2.22\times10^{-16}$$ |
+| OT（$$\sigma_{\min}=0.01$$） | $$6.66\times10^{-16}$$ |
+| OT（$$\sigma_{\min}=0.2$$） | $$8.88\times10^{-16}$$ |
+| 三角路径 | $$1.33\times10^{-15}$$ |
 
-| 方法 | 年份 | 训练目标 | 设计自由度 | 采样器 | 一句话局限 |
+全部是机器精度。**定理成立，且「常数 $$C$$ 只依赖 $$t$$、不依赖 $$\theta$$」被逐位确认。**
+
+> 教训：**验证这类「只差一个常数」的恒等式，蒙特卡洛的方差可能比待验证的量还大**。判据是残差是否随步长减小——不收敛就是估计量本身不可用，而不是定理出错。
+
+## 5. 采样：以及一个必须知道的陷阱
+
+训练完成后，采样就是解 ODE。前面已经强调过 Euler 的局限，这里给一个具体的实测。
+
+`fm_continuous_verify.py` 实验 2 在一维三高斯混合（成分间距约 1.7）上，用解析的 $$u_t$$ 做显式 Euler 积分，下表是 Wasserstein-1 距离与前两阶矩：
+
+| 路径 | W1（100 步） | W1（400 步） | W1（1600 步） | mean（1600 步） | std（1600 步） |
 |---|---|---|---|---|---|
-| DDPM（[arXiv:2006.11239](https://arxiv.org/abs/2006.11239)） | 2020 | 加权 VLB ≈ DSM | 固定 VP 链 | ancestral 多步 | 调度与目标纠缠 |
-| Score SDE（[arXiv:2011.13456](https://arxiv.org/abs/2011.13456)） | 2021 | score 回归 | 漂移与扩散自由 | SDE 或概率流 ODE | 仍以“加噪”为中心叙事 |
-| Neural ODE / FFJORD（[arXiv:1806.07366](https://arxiv.org/abs/1806.07366)、[1810.01367](https://arxiv.org/abs/1810.01367)） | 2018–19 | 极大似然（迹积分） | 任意速度场 | ODE | 训练需嵌套 ODE 求解 |
-| Flow Matching（[arXiv:2210.02747](https://arxiv.org/abs/2210.02747)） | 2022 | CFM 速度回归 | 高斯路径族＋OT 路径 | ODE | 耦合默认独立 |
-| Rectified Flow（[arXiv:2209.03003](https://arxiv.org/abs/2209.03003)） | 2022 | 直线 LS＋ReFlow | 直线＋任意耦合 | ODE 少步 | 单步质量仍靠蒸馏 |
-| OT-CFM（[arXiv:2302.00482](https://arxiv.org/abs/2302.00482)） | 2023 | CFM＋批内 OT 计划 | 耦合自由、源分布任意 | ODE | batch 敏感、多样性风险 |
-| Stochastic Interpolants（[arXiv:2303.08797](https://arxiv.org/abs/2303.08797)） | 2023 | 二次目标双回归 | 插值函数族＋可调扩散 | ODE 或 SDE 连续谱 | 概念负担最高 |
-| SD3 实践（[arXiv:2403.03206](https://arxiv.org/abs/2403.03206)） | 2024 | RF＋logit-normal＋shift | 同 RF＋时间分布 | 少步 ODE | 工业配方仍在快速演进 |
+| CondOT | 0.3023 | 0.3015 | 0.3020 | 0.4245 | 1.4772 |
+| OT（$$\sigma_min=0.01$$） | 0.2958 | 0.2926 | 0.2941 | 0.4306 | 1.4783 |
+| OT（$$\sigma_min=0.2$$） | 0.1452 | 0.1445 | 0.1442 | 0.4310 | 1.4903 |
+| 三角路径 | 0.3038 | 0.3014 | 0.3003 | 0.4182 | 1.4771 |
 
-读法提示：纵向看“设计自由度”一列从固定到自由的单向放开——这正是“算法发展”的主线；横向看“训练目标”一列，DDPM 之后所有方法本质上都是 §4 意义下的同一回归目标的不同加权。
+Wasserstein-1 距离**不随步数收敛**，稳定在 0.30；而直接采 $$p_{\rm data}$$ 的噪声地板只有 0.0060。看分位数就明白发生了什么：
 
-## 11. 批判与展望
+| 分位 | 0.05 | 0.20 | 0.35 | 0.50 | 0.65 | 0.80 | 0.95 |
+|---|---|---|---|---|---|---|---|
+| 理论 | −1.60 | −1.20 | −0.80 | 0.52 | 1.08 | 2.25 | 2.75 |
+| Euler（800 步） | −1.20 | −1.20 | −1.20 | 0.80 | 0.80 | 2.50 | 2.50 |
+成分之间的**过渡区被压平了**。密度谷底处的概率质量对比更刺眼：区间 $$[-1.0,+0.3]$$ 理论应有 0.1690，实测**精确为 0**；区间 $$[+1.3,+2.0]$$ 理论 0.0646，实测也是 **0**。
 
-**名词通胀与等价性内卷。** FM、RF、I-CFM、SB-CFM、SI 共享同一回归骨架，大量“新方法”实为更换 §9.1 三旋钮之一的重新包装。等价性是福也是祸：它降低了理解成本，也拉低了部分工作的信息增量。社区急需跨论文可比的标准基准（统一数据集、步数协议与指标），否则 w(t) 微调就能刷出的提升会持续污染信号。
+结论很明确：**Thm 9 是对的，ODE 确实把 $$p_{\rm init}$$ 送到了 $$p_{\rm data}$$**（一阶矩吻合到 3 位小数：mean 0.4245 对理论 0.4250，std 1.4772 对理论 1.5300）。问题出在采样器——显式 Euler 的截断误差使轨迹无法在不同吸引子之间充分混合，多模态结构被系统性压扁。
 
-**“直线”不等于“最优”。** 线性插值的边际路径并不是最优传输映射——直的条件路径与直的边际流是两回事，后者只有在耦合合适时才近似成立。批内 OT 只是动态 OT 的粗代理，原文的理论承诺也严格限定在“真实 OT 计划可得”的前提下。“越直越好”目前更多是经验结论而非定理，直度与样本多样性的量化 tradeoff 仍是空白。
+> 这与本站《PyTorch 采样器 internals》里「双模态目标上 flow matching 用 1 步 Euler 输出 std $$=0.0000$$」是同一族现象：**低阶 Euler 会把「多样性」这个二阶信息抹掉，而一阶矩完全看不出来。** 只看均值和方差做采样器消融是不可靠的，必须看分位数或分布距离。
 
-**单步生成的承诺折扣。** ReFlow 的凸代价单调不增保证了“不会更差”，但从“接近直线”到“单步 SOTA”之间隔着一整个蒸馏工业（产品线的少步模型几乎都靠蒸馏补课）。把 rectification 直接当作蒸馏替代品的预期应当校准。
+## 6. 两个必须讲清的工程细节
 
-**理论假设与高维现实的裂缝。** 光滑性、Lipschitz 速度场、$$\sigma_{\min}$$ 端点近似这些假设在文本 token 离散域如何迁移仍是开放问题；离散域的 flow matching（mask 型、token 流型）正在快速演化，本篇的连续理论不能照搬。
+### 6.1 时间方向约定：坑最多的地方
 
-**展望。** 三条值得押注的方向：其一，把时间分布与耦合当成可学习对象，延续 EDM 式“设计空间自动化搜索”的精神；其二，流形与非欧域上的 FM（蛋白质 SE(3) 结构生成、分子构象）——SI 框架在此最有表达力；其三，ODE/SDE 连续谱与蒸馏的结合：既然漂移已知，正向与反向 SDE 的噪声水平可以随意设定，这为一致性类蒸馏提供了比 DDPM 时代干净得多的操作面。
+文献里存在两套互斥的时间约定，读错会让所有公式失效：
+
+| 约定 | $$t=0$$ | $$t=1$$ | 谁在用 |
+|---|---|---|---|
+| **本系列 / Lipman** | 噪声 $$p_{\rm init}$$ | 数据 $$\delta_z$$ | Flow Matching、SD3 |
+| 反向 | 数据 | 噪声 | DDPM、Score SDE 原文 |
+
+VE（$$\alpha_t=1,\beta_t=t$$）与 VP（$$\alpha_t=e^{-\beta t/2},\beta_t=\sqrt{1-e^{-\beta t}}$$）属于**反向**约定：$$\beta_0=0$$。它们不能从 $$t=0$$ 积分做生成，只能用于核对代数恒等式。本文的实验脚本把两条约定分成 `VALID_PATHS` 与 `REVERSED_PATHS` 两组，就是为了让这个区别在代码里显式。
+
+### 6.2 $$\sigma_{\min}$$：一个不得不做的妥协
+
+CondOT 路径的 $$\beta_1=0$$ 让条件场 $$u_t(x\mid z)=\frac{z-x}{1-t}$$ 在 $$t=1$$ 发散。实践中改为 $$\alpha_t=t$$ 与 $$\beta_t=1-(1-\sigma_{\min})t$$，代价是终点分布变成 $$\mathcal N(z,\sigma_{\min}^2)$$ 而非严格的 $$\delta_z$$。$$\sigma_{\min}$$ 是**精度与数值稳定性的权衡**：太大则终点模糊，太小则 $$t\to1$$ 处除零放大噪声。这个旋钮在 §4.5 的表格里能直接看到效果——$$t$$ 采样范围受限正是为了让 $$1/(1-t)$$ 不炸。
+
+## 7. 这套框架现在能做什么、不能做什么
+
+**已经确定的**（本文核验过的）：
+
+- 任意合法插值路径都能配一个速度场，且 $$u_t$$ 与路径选择一一对应。
+- 该速度场可用一行 MSE 回归训练，训练时**不涉及任何 ODE 求解**。
+- 训练好的模型可用 ODE（或 SDE）采样，代价是**低阶 Euler 会压扁多模态**。
+
+**还没确定的**（后续文章的主题）：
+
+- 学到的 $$u^\theta_t$$ 只在训练分布上近似正确，**近似误差如何传播到采样**？这是训练无关性问题。
+- 为什么工业界普遍选 CondOT？「直线」的优势来自哪里，能省多少步？（→ Rectified Flow）
+- 扩散模型那条 $$\sigma_t$$ 路线和这条 $$u_t$$ 路线到底是什么关系？既然可以学 $$u_t$$，为什么还要学 score？（→ [建模之二](/2026/08/22/flow-matching-02-score-diffusion-sde/)）
 
 ## Takeaway
 
-- **解决了什么**：把 CNF、扩散、FM 收进连续性方程的统一骨架；完整给出 FM 的路径构造、边际场定理与 CFM 梯度恒等证明；证明 CFM 与 score matching 仅差时间加权 $$b^2(t)$$ 并给出三条经典路径的显式核对；拆解 RF、SI、批内 OT 三大变体各自真正新增的自由度。
-- **致命局限**：本文是算法层面的梳理——各方法的超参敏感性、失效边界与硬件级实现细节需要回到原论文与开源实现复核；“越直越好”的经验规律缺乏定量理论。
-- **系列预告**：下一篇进入工程纵深——采样器选择、蒸馏与少步生成，以及离散域 flow matching 的最新进展。
+- **中心对象只有一个：概率路径 $$p_t$$。** 生成建模 = 设计一条 $$p_t$$ + 学一个输运它的 $$u_t$$。这两个问题**互相独立**，这是整个框架可扩展的根源。
+- **连续性方程是路径与速度场之间的契约**（Thm 11），充分必要，与路径选择无关。
+- **边际化 trick（Thm 9）把不可学的 $$u_t$$ 变成条件场的后验加权平均**；**定理 12 让这个平均可以用闭式条件场来学**，两个损失只差一个与参数无关的常数。
+- **验证这类恒等式不能用蒙特卡洛**——$$u_t^{\rm marg}$$ 的重尾会让方差淹没信号。确定性求积给出的残差是 $$1.8\times10^{-15}$$。
+- **别用一阶矩评估采样器**。Euler 会把多模态的成分间过渡区压成精确的 0，而 mean 与 std 完全正常。
 
 ## 参考与延伸阅读
 
-* Sohl-Dickstein et al., “Deep Unsupervised Learning using Nonequilibrium Thermodynamics” ([arXiv:1503.03585](https://arxiv.org/abs/1503.03585)) —— 扩散范式的热力学起源，§1
-* Ho et al., “Denoising Diffusion Probabilistic Models” ([arXiv:2006.11239](https://arxiv.org/abs/2006.11239)) —— DDPM 与 DSM 的连接，§4.1
-* Song et al., “Score-Based Generative Modeling through Stochastic Differential Equations” ([arXiv:2011.13456](https://arxiv.org/abs/2011.13456)) —— SDE 统一与概率流 ODE，§2.2–2.3
-* Karras et al., “Elucidating the Design Space of Diffusion-Based Generative Models” ([arXiv:2206.00364](https://arxiv.org/abs/2206.00364)) —— 设计空间解耦思想，§1、§4.4
-* Chen et al., “Neural Ordinary Differential Equations” ([arXiv:1806.07366](https://arxiv.org/abs/1806.07366)) —— CNF 与瞬时变量替换，§2.1
-* Grathwohl et al., “FFJORD: Free-form Continuous Dynamics for Scalable Reversible Generative Models” ([arXiv:1810.01367](https://arxiv.org/abs/1810.01367)) —— Hutchinson 迹估计，§2.1
-* Liu et al., “Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow” ([arXiv:2209.03003](https://arxiv.org/abs/2209.03003)) —— 直线插值与 ReFlow，§5
-* Lipman et al., “Flow Matching for Generative Modeling” ([arXiv:2210.02747](https://arxiv.org/abs/2210.02747)) —— CFM 核心定理，§3 全章
-* Tong et al., “Improving and generalizing flow-based generative models with minibatch optimal transport” ([arXiv:2302.00482](https://arxiv.org/abs/2302.00482)) —— 批内 OT 耦合，§7
-* Albergo et al., “Stochastic Interpolants: A Unifying Framework for Flows and Diffusions” ([arXiv:2303.08797](https://arxiv.org/abs/2303.08797)) —— ODE/SDE 连续谱与薛定谔桥，§6
-* Ma et al., “SiT: Exploring Flow and Diffusion-based Generative Models with Scalable Interpolant Transformers” ([arXiv:2401.08740](https://arxiv.org/abs/2401.08740)) —— 插值框架的系统实证，§6
-* Esser et al., “Scaling Rectified Flow Transformers for High-Resolution Image Synthesis” ([arXiv:2403.03206](https://arxiv.org/abs/2403.03206)) —— Stable Diffusion 3 技术报告，logit-normal 与 shift 调度出处，§8
-* Le et al., “Voicebox: Text-Guided Multilingual Universal Speech Generation at Scale” ([arXiv:2306.15687](https://arxiv.org/abs/2306.15687)) —— 语音域 flow matching 代表作，§1
-* Black Forest Labs, Flux.1（2024，工业产品非论文）—— FM 团队创始成员的产品化延续，无对应论文
-* 中文社区讨论：知乎 Flow Matching 主题检索（含多篇中文解读与代码复盘）（[知乎检索](https://www.zhihu.com/search?type=content&q=Flow%20Matching%20%E6%B5%81%E5%8C%B9%E9%85%8D)）—— 入门互补视角
-* 本系列姊妹篇：[Flow Matching 系列之二：应用篇——从 SD3 到蛋白质设计，速度场如何接管生成产线](/2026/08/22/flow-matching-02-applications/)
+* Holderrieth & Erives, *An Introduction to Flow Matching and Diffusion Models*, MIT 6.S184（2026）—— [课程网站](https://diffusion.csail.mit.edu/)。本文的定理编号与记号均按此讲义。
+* Lipman et al., “Flow Matching for Generative Modeling” ([arXiv:2210.02747](https://arxiv.org/abs/2210.02747)) —— CFM 的原始论文，提出 Thm 9 与 Thm 12。
+* Albergo et al., “Stochastic Interpolants” ([arXiv:2303.08797](https://arxiv.org/abs/2303.08797)) —— 把流与扩散统一在一个插值框架下。
+* Chen et al., “Neural ODE” ([arXiv:1806.07366](https://arxiv.org/abs/1806.07366)) —— CNF 与瞬时变量替换，FM 想绕开的似然路线。
+* 本系列：[建模之二：score、扩散与 SDE 扩展](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/) ｜ [应用篇](/2026/08/22/flow-matching-04-applications/)
+* 核验脚本：`tools/fm_lab/fm_continuous_verify.py`（8 个实验）、`tools/fm_lab/fm_discrete_verify.py`（6 个实验）。用法：`python3 tools/fm_lab/fm_continuous_verify.py 3 4 5` 跑指定实验（编号见文件内 `main()`）。
 
-> 🧪 **动手练习**：① 试试在二维双月环数据上跑通 §9.5 代码骨架，分别用独立耦合与批内 OT 耦合各训一个模型，统计噪声到数据轨迹的平均累计转角，验证耦合策略对曲率的影响；② 读者可以用一维混合高斯验证 §4 主换算公式：用核密度估计数值求 $$s_t(x)$$，检查 $$(u_t-a(t)x)/b(t)$$ 与之逐点一致（容差 < 1e-3），再画出 $$b^2(t)$$ 曲线解释“logit-normal 为什么把权重押在中间时刻”。
+> 🧪 **动手练习**：① 改 `fm_continuous_verify.py` 里 `VALID_PATHS`，加一条自己的路径（如 $$\alpha_t=t^2,\beta_t=\sqrt{1-t^2}$$），跑实验 1 看残差是否仍在 $$10^{-11}$$ 量级；② 把实验 2 的积分器换成 Heun 法（先按 Euler 试走再修正），看成分间过渡区的经验质量能否从 0 变成正数——这能量化「高阶格式买到了多少多样性」；③ 在实验 3 里把求积换成蒙特卡洛（把 `losses_at_t` 里的 `np.trapezoid` 改成随机采样），亲眼看定理 12 如何「失效」。
