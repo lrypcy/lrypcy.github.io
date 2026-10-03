@@ -19,20 +19,20 @@ mathjax: true
 ```mermaid
 graph TD
     subgraph P["第一步：设计概率路径（纯几何，无网络）"]
-        PC["条件路径<br/>p_t(x|z) = N(alpha_t z, beta_t^2)"]
-        PM["边际路径<br/>p_t(x) = 积分 p_t(x|z) p_data(z) dz"]
-        CE["连续性方程<br/>∂_t p_t = −div(p_t u_t)"]
+        PC["条件路径<br>高斯：均值线性放大<br>方差线性收缩"]
+        PM["边际路径<br>对所有数据点求混合"]
+        CE["连续性方程<br>密度的时间变化 = 净概率流入"]
         PC --> PM --> CE
     end
     subgraph V["第二步：找速度场（唯一性由 CE 保证）"]
-        UC["条件向量场<br/>u_t(x|z) 有闭式"]
-        UM["边际向量场<br/>u_t(x) = 后验加权平均"]
+        UC["条件向量场<br>有解析闭式"]
+        UM["边际向量场<br>按后验加权平均"]
         CE --> UM
         UC --> UM
     end
-    subgraph L["第三步：学 u_t（免模拟）"]
-        LF["L_FM 不可算<br/>含 Bayes 后验"]
-        LC["L_CFM 每项可采<br/>L_FM = L_CFM + C"]
+    subgraph L["第三步：学速度场（免模拟）"]
+        LF["原始损失不可算<br>含 Bayes 后验"]
+        LC["条件损失每项可采<br>两者只差一个常数"]
         LF --> LC
     end
     PC --> UC

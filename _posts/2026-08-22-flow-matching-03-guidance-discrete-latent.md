@@ -18,24 +18,24 @@ mathjax: true
 
 ```mermaid
 graph TD
-    subgraph G["条件生成（§1）"]
-        B["Bayes<br/>∇log p_t(x|y) = ∇log p_t(x) + ∇log p_t(y|x)"]
-        CFG["CFG<br/>ũ = (1−w)u(x|∅) + w·u(x|y)"]
+    subgraph G["条件生成"]
+        B["Bayes 分解<br>引导场 = 无引导场<br>加分类器梯度项"]
+        CFG["Classifier-Free Guidance<br>用空标签消掉分类器<br/>外推放大条件"]
         B --> CFG
     end
-    subgraph D["离散域（§2-§4）"]
-        CTMC["速率矩阵 Q_t(y|x)<br/>两个稳定性条件"]
-        KFE["Kolmogorov 前向方程<br/>离散版连续性方程"]
-        MT["Thm 36 离散边际化<br/>与 Thm 9 平行"]
-        TH38["Thm 38<br/>边际速率 = 逐位置分类器"]
+    subgraph D["离散域"]
+        CTMC["速率矩阵<br>两个稳定性条件"]
+        KFE["Kolmogorov 前向方程<br>离散版连续性方程"]
+        MT["离散边际化 Thm 36<br>与连续版 Thm 9 平行"]
+        TH38["Thm 38<br>边际速率 = 逐位置分类器"]
         CTMC --> KFE --> MT --> TH38
     end
-    subgraph L["潜空间（§5）"]
-        VAE["VAE 潜空间<br/>KL 压向标准高斯"]
-        RD["rFID vs gFID 张力<br/>膝点即最优分工"]
+    subgraph L["潜空间"]
+        VAE["VAE 潜空间<br>KL 把潜分布压向高斯"]
+        RD["重建质量与生成质量的张力<br>膝点即最优分工"]
         VAE --> RD
     end
-    CFG -.引导也可用于离散域.-> TH38
+    CFG -.引导思想同样适用于离散域.-> TH38
 ```
 
 ## 1. 条件生成：从 Bayes 到 classifier-free guidance

@@ -18,15 +18,14 @@ mathjax: true
 
 ```mermaid
 graph LR
-    A["高斯路径<br/>p_t(x|z) = N(alpha_t z, beta_t^2)"]
-    A --> B["条件 score<br/>-(x - alpha_t z)/beta_t^2"]
-    A --> C["条件场<br/>u_t(x|z) 有闭式"]
-    B --> D["Prop 1<br/>u = a_t·s + b_t·x"]
+    A["高斯条件路径"] --> B["条件 score<br>有闭式"]
+    A --> C["条件向量场<br>有闭式"]
+    B --> D["换算公式 Prop 1<br>场是 score 的仿射重组"]
     C --> D
-    D --> E["四个等价参数化<br/>velocity / score / denoiser / noise"]
-    D --> F["Thm 17 SDE 扩展<br/>加 sigma^2/2 · score"]
-    F --> G["同一 p_t<br/>任意 sigma_t"]
-    E --> H["Thm 19 Fokker-Planck<br/>ODE 与 SDE 的统一契约"]
+    D --> E["四个等价参数化<br>velocity / score<br>denoiser / noise"]
+    D --> F["SDE 扩展 Thm 17<br>额外加一项噪声修正"]
+    F --> G["边际分布不变<br>噪声水平任意选"]
+    E --> H["Fokker-Planck Thm 19<br>ODE 与 SDE 的统一契约"]
     F --> H
 ```
 
