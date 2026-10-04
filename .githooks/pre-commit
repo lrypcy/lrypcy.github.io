@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# pre-commit：文章、知识图谱配置或布局代码有变动时，自动体检首页知识图谱
+# pre-commit：提交前跑两道体检
+#   1. Liquid 冲突符号（tools/check_liquid.py）—— 有命中就一定阻断
+#   2. 首页知识图谱（tools/graph_sync.py + tools/kg_layout_check.mjs）
 #
 # 行为：
-#   - 只在 _posts/*.md、_data/knowledge_graph.yml、assets/js/kg-layout.js 进入暂存区时才跑，其他提交零开销
-#   - 默认只提示、不阻断提交（写得再烂也能提交，WIP 不受影响）
+#   - 第 1 道对所有 md/html 生效：正文里任何裸 `{{` / `{%` 都会让 GitHub Pages
+#     构建直接失败（Liquid syntax error），本地肉眼完全看不出来，所以必须拦住
+#   - 第 2 道只在 _posts/*.md、_data/knowledge_graph.yml、assets/js/kg-layout.js
+#     进入暂存区时才跑，其他提交零开销
+#   - 第 2 道默认只提示、不阻断提交（写得再烂也能提交，WIP 不受影响）
 #   - GRAPH_SYNC_STRICT=1 时切换为严格模式：有必须处理项就阻断
 #   - 配置文件本身坏了（yml 解析失败 / 边指向不存在的系列）一定阻断
 #   - 布局体检（tools/kg_layout_check.mjs）发现节点重叠时也一定阻断——那是肉眼可见的坏
@@ -14,6 +19,30 @@ set -u
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$ROOT" || exit 0
+
+# ---------- 第 1 道：Liquid 冲突符号 ----------
+# 找一个可用的 python3（脚本只用标准库）
+PY_BASE="${CHECK_PYTHON:-}"
+if [ -z "$PY_BASE" ]; then
+  for cand in "$HOME/Software/miniconda3/bin/python3" "$(command -v python3 || true)" "$(command -v python || true)"; do
+    if [ -n "$cand" ] && [ -x "$cand" ]; then
+      PY_BASE="$cand"
+      break
+    fi
+  done
+fi
+
+if [ -n "$PY_BASE" ]; then
+  if ! "$PY_BASE" tools/check_liquid.py --staged; then
+    echo ""
+    echo "  以上写法会让 GitHub Pages 构建失败（Liquid 把 {{ 当标记开头）。"
+    echo "  数学：{ \\rm data } 改成 \\mathrm{data}；代码块：包一层 {% raw %}...{% endraw %}。"
+    echo "  确认无害就用 git commit --no-verify 跳过。"
+    exit 1
+  fi
+else
+  echo "check_liquid: 未找到 python3，跳过 Liquid 体检"
+fi
 
 changed="$(git diff --cached --name-only --diff-filter=ACM \
   | grep -E '^(_posts/[^/]+\.md|_data/knowledge_graph\.yml|assets/js/kg-layout\.js)$' || true)"
