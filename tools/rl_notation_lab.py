@@ -13,14 +13,14 @@ RL 符号与计算全景：GAE、优势估计、概率与重要性比的数值�
   §5.4  gamma=1 下 GAE 的闭式解
   §5.5  lambda=0 / lambda=1 两端的量纲差异
   §5.6  critic 塌缩与 KL shaping
-  §7.2  logprob 的数值精度（fp64/fp32/fp16/bf16/naive）
-  §7.3  top-p 截断带来的 logprob 系统性偏移
-  §8.1  KL 的 k1/k2/k3 三个估计器（两种漂移 regime）
-  §8.2  k3 的梯度符号陷阱
-  §9.1  PPO 裁剪在哪个点上切断梯度
-  §9.2  长序列上 token 级重要性比的病态程度
-  §10.1 GRPO / Dr.GRPO 的组内优势
-  §10.2 零梯度组占比
+  §6.2  logprob 的数值精度（fp64/fp32/fp16/bf16/naive）
+  §6.3  top-p 截断带来的 logprob 系统性偏移
+  §7.1  KL 的 k1/k2/k3 三个估计器（两种漂移 regime）
+  §7.2  k3 的梯度符号陷阱
+  §8.1  PPO 裁剪在哪个点上切断梯度
+  §8.2  长序列上 token 级重要性比的病态程度
+  §9.1 GRPO / Dr.GRPO 的组内优势
+  §9.2 零梯度组占比
 
 运行：
   ~/Software/miniconda3/bin/python tools/rl_notation_lab.py
@@ -272,10 +272,10 @@ def lab_5_6():
               f"非零 token 数 = {int((np.abs(out) > 1e-12).sum())}/{Tl}")
 
 
-# ==================================================== §7.2  logprob 的数值精度
+# ==================================================== §6.2  logprob 的数值精度
 
-def lab_7_2():
-    section("§7.2  logprob 的数值精度（logits ~ N(0,8)，词表 128000）")
+def lab_6_2():
+    section("§6.2  logprob 的数值精度（logits ~ N(0,8)，词表 128000）")
     rng = np.random.default_rng(11)
     lg = rng.normal(0, 8, size=128000)
 
@@ -308,10 +308,10 @@ def lab_7_2():
     print(f"（V=128000 时正确答案是 -ln 128000 = {np.log(1.0 / 128000):+.4f}）")
 
 
-# ==================================================== §7.3  top-p 截断的偏移
+# ==================================================== §6.3  top-p 截断的偏移
 
-def lab_7_3():
-    section("§7.3  top-p 截断分布与完整分布的 logprob 之差")
+def lab_6_3():
+    section("§6.3  top-p 截断分布与完整分布的 logprob 之差")
     rng = np.random.default_rng(11)
     z = rng.normal(0, 3, size=128000)      # sd=8 会让分布塌到单个 token 上，不真实
     p = np.exp(z - z.max())
@@ -326,10 +326,10 @@ def lab_7_3():
         print(f"{tp:6.2f} | {k:16d} | {mass:14.4f} | {-np.log(mass):16.4f}")
 
 
-# ==================================================== §8.1  KL 的三个估计器
+# ==================================================== §7.1  KL 的三个估计器
 
-def lab_8_1():
-    section("§8.1  KL 的 k1 / k2 / k3（词表 2000，40 万样本；真值用全词表求和）")
+def lab_7_1():
+    section("§7.1  KL 的 k1 / k2 / k3（词表 2000，40 万样本；真值用全词表求和）")
     Vv = 2000
 
     def softmax(x):
@@ -349,28 +349,38 @@ def lab_8_1():
         k2 = 0.5 * np.log(r_ref) ** 2
         k3 = r_ref - np.log(r_ref) - 1
         print(f"\n--- regime {tag}   真 KL = {true_kl:.5f}")
-        print(f"{'':>4} | {'均值':>9} | {'偏差':>9} | {'标准差':>9} | {'负值占比':>8}")
+        print(f"{'':>4} | {'均值':>9} | {'偏差':>9} | {'标准差':>9} | {'标准差÷真值':>10} | {'负值占比':>8}")
         for nm, k in [("k1", k1), ("k2", k2), ("k3", k3)]:
             print(f"{nm:>4} | {k.mean():9.5f} | {k.mean() - true_kl:+9.5f} | "
-                  f"{k.std():9.5f} | {(k < 0).mean() * 100:7.1f}%")
+                  f"{k.std():9.5f} | {k.std() / true_kl:9.2f}x | {(k < 0).mean() * 100:7.1f}%")
+        # 自校验：k1 / k3 无偏（E_p[k1] = E_p[k3] = D_KL），用全词表求和反算
+        chk1 = float(np.sum(p * (-np.log(q / p))))
+        chk3 = float(np.sum(p * (q / p - np.log(q / p) - 1)))
+        print(f"     自校验（全词表求和反算真值）: E_p[k1] = {chk1:.5f}, "
+              f"E_p[k3] = {chk3:.5f}, 真 KL = {true_kl:.5f}")
 
 
-# ==================================================== §8.2  k3 的梯度符号陷阱
+# ==================================================== §7.2  k3 的梯度符号陷阱
 
-def lab_8_2():
-    section("§8.2  KL 项进梯度的系数：正确值 -log(r^ref) vs stop-gradient 后的 k3")
-    print(f"{'r^ref':>8} | {'正确 -log r^ref':>15} | {'k3':>10} | {'k2':>10} | 判定")
+def lab_7_2():
+    section("§7.2  KL 项进梯度的系数：正确值 -log(r^ref) vs stop-gradient 后的 k3")
+    print(f"{'r^ref':>8} | {'k1 = -log r^ref':>15} | {'k3':>10} | {'k3 / k1':>8} | {'k2':>10} | 判定")
     for r_ in [0.25, 0.50, 0.80, 1.00, 1.25, 2.00, 4.00]:
         corr, k3, k2 = -np.log(r_), r_ - np.log(r_) - 1, 0.5 * np.log(r_) ** 2
-        same = "" if abs(r_ - 1) < 1e-12 else (
-            "符号相反" if corr * k3 < 0 else "同号但量级差 %.1fx" % (corr / k3 if k3 else float("nan")))
-        print(f"{r_:8.2f} | {corr:+12.4f} | {k3:+10.4f} | {k2:+10.4f} | {same}")
+        if abs(r_ - 1) < 1e-12:
+            same = "—"
+        elif corr * k3 < 0:
+            same = "符号相反"
+        else:
+            same = f"同号，强度只剩 {k3 / corr * 100:.0f}%"
+        ratio = "—" if abs(corr) < 1e-12 else f"{k3 / corr * 100:6.0f}%"
+        print(f"{r_:8.2f} | {corr:+12.4f} | {k3:+10.4f} | {ratio:>8} | {k2:+10.4f} | {same}")
 
 
-# ==================================================== §9.1  PPO 裁剪切断点
+# ==================================================== §8.1  PPO 裁剪切断点
 
-def lab_9_1():
-    section("§9.1  PPO 裁剪在哪个 ratio 上切断梯度（eps=0.2，中心差分）")
+def lab_8_1():
+    section("§8.1  PPO 裁剪在哪个 ratio 上切断梯度（eps=0.2，中心差分）")
     eps = 0.2
     obj = lambda r_, adv: np.minimum(r_ * adv, np.clip(r_, 1 - eps, 1 + eps) * adv)
     grad = lambda r_, adv, h=1e-6: (obj(r_ + h, adv) - obj(r_ - h, adv)) / (2 * h)
@@ -384,14 +394,14 @@ def lab_9_1():
             print(f"{r_:>10.2f} | {obj(r_, adv):9.4f} | {g:>10.4f} | {state}")
 
 
-# ==================================================== §9.2  长序列 token 级 ratio
+# ==================================================== §8.2  长序列 token 级 ratio
 
 def v_size(v):
     return abs(float(v))
 
 
-def lab_9_2():
-    section("§9.2  长序列上 token 级 ratio 的病态程度（log ratio ~ N(mu, 0.05^2)）")
+def lab_8_2():
+    section("§8.2  长序列上 token 级 ratio 的病态程度（log ratio ~ N(mu, 0.05^2)）")
     rng = np.random.default_rng(11)
     print(f"{'T':>5} | {'mu':>5} | {'序列 ratio 中位数':>18} | {'p99':>12} | {'P(r>2)':>9} | {'GSPO 中位数':>11}")
     for Tl in [64, 256, 1024, 4096]:
@@ -406,8 +416,8 @@ def lab_9_2():
 
 # ==================================================== §10.1 GRPO / Dr.GRPO
 
-def lab_10_1():
-    section("§10.1  G=8、二值奖励下组内 k 条答对时的 advantage")
+def lab_9_1():
+    section("§9.1  G=8、二值奖励下组内 k 条答对时的 advantage")
     G = 8
     print(f"{'k':>3} | {'GRPO 正确':>10} | {'GRPO 错误':>10} | {'Dr.GRPO 正确':>12} | {'Dr.GRPO 错误':>12}")
     for k in range(1, G):
@@ -421,8 +431,8 @@ def lab_10_1():
 
 # ==================================================== §10.2 零梯度组
 
-def lab_10_2():
-    section("§10.2  组内奖励全同时的零梯度组占比")
+def lab_9_2():
+    section("§9.2  组内奖励全同时的零梯度组占比")
     print(f"{'pass rate':>10} | {'G=8':>8} | {'G=16':>8}")
     for pr in [0.10, 0.30, 0.50, 0.70, 0.90, 0.95, 0.99]:
         print(f"{pr:10.2f} | {(pr ** 8 + (1 - pr) ** 8) * 100:7.2f}% | "
@@ -436,12 +446,12 @@ if __name__ == "__main__":
     Vv = lab_5_4()
     lab_5_5(Vv)
     lab_5_6()
+    lab_6_2()
+    lab_6_3()
+    lab_7_1()
     lab_7_2()
-    lab_7_3()
     lab_8_1()
     lab_8_2()
     lab_9_1()
     lab_9_2()
-    lab_10_1()
-    lab_10_2()
     print("\n完成。")

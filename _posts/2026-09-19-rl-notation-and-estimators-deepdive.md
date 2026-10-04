@@ -17,7 +17,7 @@ mathjax: true
 > * **$$\hat A_t+V(s_t)$$ 只有在 $$\lambda=1$$ 且末步 bootstrap 取 0 时才等于 return-to-go（§5.3）**。$$\lambda=0.95$$ 时它与真 $$G_t$$ 的相关系数是 0.960，$$\lambda=0$$ 时只有 0.097。若末步用 critic 的 $$V(s_T)$$ 做 bootstrap，$$\lambda=1$$ 也会多出一个 $$\gamma^T V(s_T)$$ 项——$$\gamma=0.95,T=30$$ 时 $$\gamma^T=0.215$$，实测带来 $$-0.078$$ 的系统偏置。
 > * **$$\gamma=1$$、确定性转移、仅终端奖励时（RLVR 的标准设定），GAE 有闭式解（§5.4）**：$$\hat A_t=-V_t+(1-\lambda)\sum_{j\ge1}\lambda^{j-1}V_{t+j}+\lambda^{T-1-t}R$$。$$\lambda=0$$ 退化为逐 token 价值增量 $$V_{t+1}-V_t$$（$$\sum_t\hat A_t=R-V_0$$，望远镜和守恒），$$\lambda=1$$ 退化为 $$R-V_t$$（$$\sum_t\hat A_t$$ 是前者的 8 倍，梯度尺度随 $$T$$ 线性放大）。
 > * **critic 塌缩成常数 $$c$$ 时，$$\hat A_t=\lambda^{T-1-t}(R-c)$$（§5.6）**：信号从句尾向句首指数衰减，$$\lambda=0$$ 时只有最后一个 token 有梯度。加入逐 token 的 KL shaping 后每个位置都有非零即时奖励，但总量仍随 $$\lambda$$ 放大。
-> * **KL 的 $$k_3$$ 估计器有个梯度符号陷阱（§7.2）**：作为估计量它无偏且非负，是 [Schulman 2020](http://joschu.net/blog/kl-approx.html) 推荐的选择；但如果把它当 loss 且**不反向传播穿过它**，策略梯度的系数会从正确的 $$-\log r^{\rm ref}$$ 变成 $$k_3\approx\frac12(\log r^{\rm ref})^2$$——当 $$r^{\rm ref}>1$$ 时**符号直接相反**，惩罚变成奖励。
+> * **KL 的 $$k_3$$ 估计器有个梯度符号陷阱（§7.2）**：作为估计量它无偏且非负，是 [Schulman 2020](http://joschu.net/blog/kl-approx.html) 推荐的选择；但如果把它当 loss 且**不反向传播穿过它**，策略梯度的系数会从正确的 $$-\log r^{\rm ref}$$（即 $$k_1$$）变成 $$k_3$$ 自己，而 $$k_3$$ 在 $$r^{\rm ref}\approx1$$ 附近退化成二阶小量 $$\approx\frac12(\log r^{\rm ref})^2$$——当 $$r^{\rm ref}>1$$ 时**符号直接相反**，惩罚变成奖励。
 > * **token 级重要性比在长序列上是病态的（§8.2）**：即使策略平均而言完全没变，4096 token 的序列级 ratio 的 p99 也有 1719；每 token 的 $$\log$$ ratio 只要有个 $$+0.01$$ 的系统漂移，$$T=4096$$ 时中位数就到 $$6.1\times10^{17}$$。这是 GSPO 改用序列级几何平均的动机。
 >
 > 全文每张数值表都由 `tools/rl_notation_lab.py` 生成（纯 numpy，CPU 上约 1 分钟），复现方式见 [§11](#11-附录复现脚本)。
@@ -499,67 +499,124 @@ RL 里加的 entropy bonus 通常是 token 级平均 $$\frac{1}{\sum_i\lvert o_i
 
 ## 7. KL：三种估计器与梯度符号陷阱
 
-### 7.1 三个估计量
+### 7.1 要估的是哪个量，三个估计量分别是什么
 
-记 $$r^{\rm ref}=\pi_{\rm ref}(o)/\pi_\theta(o)$$，采样 $$o\sim\pi_\theta$$（on-policy）。三个估计量都来自 [Schulman 的 KL 近似笔记](http://joschu.net/blog/kl-approx.html)：
+RLHF 的 KL 惩罚压的是“当前策略 $$\pi_\theta$$ 相对 SFT 起点 $$\pi_{\rm ref}$$ 漂移了多少”。先写成**逐 token 的 KL**，再对序列取平均：
 
-$$k_1=-\log r^{\rm ref},\qquad k_2=\tfrac12(\log r^{\rm ref})^2,\qquad k_3=r^{\rm ref}-\log r^{\rm ref}-1$$
+$$\mathbb D_{\rm KL}(\pi_\theta\,\Vert\,\pi_{\rm ref})\;=\;\mathbb E_{o\sim\pi_\theta}\Big[\frac{1}{\lvert o\rvert}\sum_{t=1}^{\lvert o\rvert}\mathbb D^{(t)}_{\rm KL}\Big],\qquad \mathbb D^{(t)}_{\rm KL}=\sum_{v}\pi_\theta(v\mid s_t)\log\frac{\pi_\theta(v\mid s_t)}{\pi_{\rm ref}(v\mid s_t)}$$
 
-帽子落在哪一层：$$r^{\rm ref}$$ 无帽（两个分布的精确比值），而 $$k_1,k_2,k_3$$ 是**单个样本上的估计量**——它们各自的期望才是 $$\mathbb D_{\rm KL}$$ 的估计：
+方向要说清楚：是 $$\pi_\theta\,\Vert\,\pi_{\rm ref}$$（**以 $$\pi_\theta$$ 为采样分布**），不是反过来。反过来的 $$\pi_{\rm ref}\Vert\pi_\theta$$ 得从 $$\pi_{\rm ref}$$ 采样才估得到。
 
-$$\hat{\mathbb D}_{\rm KL}=\frac1M\sum_{m=1}^{M}k_n^{(m)}$$
+$$\mathbb D^{(t)}_{\rm KL}$$ 这一层是对**词表**求和，与熵同量级，本来算得起。实践里没人这么算的原因是：你手上只有采样出来的**一个** token $$y_t$$，只能用单样本去估它。**这才是帽子 $$\hat{\mathbb D}_{\rm KL}$$ 的来源**——不是“序列空间太大算不起”（§2.1 纠正过这个说法），而是“每个位置只采到一个样本”。
 
-实测（词表 2000，40 万样本，真 KL 用全词表求和得到）：
+记 token 级的参考比（沿用 Schulman 博客的 $$r$$，加上标与重要性比 $$r_t(\theta)$$ 区分，见 §1）：
 
-**regime A：策略轻微漂移（logit 噪声 sd$$=0.15$$，真 KL$$=0.01148$$）**
+$$r^{\rm ref}_t=\frac{\pi_{\rm ref}(y_t\mid s_t)}{\pi_\theta(y_t\mid s_t)},\qquad \text{于是}\qquad -\log r^{\rm ref}_t=\log\frac{\pi_\theta(y_t\mid s_t)}{\pi_{\rm ref}(y_t\mid s_t)}$$
 
-| | 均值 | 偏差 | 标准差 | 负值占比 |
-|:---|---:|---:|---:|---:|
-| $$k_1$$ | 0.01166 | +0.00018 | 0.15129 | 47.6% |
-| $$k_2$$ | 0.01151 | +0.00003 | 0.01635 | 0.0% |
-| $$k_3$$ | 0.01144 | −0.00004 | 0.01642 | 0.0% |
+$$r^{\rm ref}_t$$ 本身是两个分布的精确比值，无帽。三个候选估计量都是 $$\mathbb D^{(t)}_{\rm KL}$$ 的**单样本估计量**，区别只在用哪个函数去顶替 $$-\log r^{\rm ref}_t$$ 这一项：
 
-**regime B：策略大幅漂移（logit 噪声 sd$$=1.20$$，真 KL$$=0.72959$$）**
+$$k_{1,t}=-\log r^{\rm ref}_t$$
 
-| | 均值 | 偏差 | 标准差 | 负值占比 |
-|:---|---:|---:|---:|---:|
-| $$k_1$$ | 0.73179 | +0.00220 | 1.19559 | 25.8% |
-| $$k_2$$ | 0.98248 | **+0.25289** | 1.24483 | 0.0% |
-| $$k_3$$ | 0.72797 | −0.00162 | 1.34662 | 0.0% |
+$$k_{2,t}=\tfrac12\big(\log r^{\rm ref}_t\big)^2$$
 
-三条结论：
+$$k_{3,t}=r^{\rm ref}_t-\log r^{\rm ref}_t-1$$
 
-- **$$k_1$$ 的标准差是真值的 13 倍**（regime A），且 47.6% 的样本给出负值——“KL 散度为负”在数值上很荒谬。REINFORCE++ 用的正是 $$k_1$$（§4），把它作为逐 token 的 reward shaping 注入，等于给每个位置加了一个近半数概率为负的噪声项。
-- **$$k_2$$ 在大 KL 时严重高估**（regime B 里 +0.253，相对偏差 35%）。它在 $$q\approx p$$ 附近与 KL 二阶等价（$$f''(1)=1$$），离开这个邻域就不成立。
-- **$$k_3$$ 保持无偏，但“低方差”的优势只在小 KL 时成立**：regime A 里 std$$=0.0164$$（比 $$k_1$$ 小 9 倍），regime B 里 std$$=1.347$$，与 $$k_1$$ 的 1.196 相当甚至更差。$$k_3$$ 里含 $$r^{\rm ref}$$ 项，当 $$\pi_\theta(o)\ll\pi_{\rm ref}(o)$$ 时 $$r^{\rm ref}\gg1$$，方差会爆。**异步训练（rollout 落后 learner 很多步）时，这正是你会走进的 regime**。
+拼回序列级就是逐 token 取平均：
+
+$$\hat{\mathbb D}_{\rm KL}(o)=\frac{1}{\lvert o\rvert}\sum_{t=1}^{\lvert o\rvert}k_{n,t},\qquad n\in\{1,2,3\}$$
+
+> 除不除 $$\lvert o\rvert$$ 各框架不同，同一个 $$\beta$$ 在两种口径下不可比——源码侧的对照见 [RL 框架里的那些变量到底怎么算](/2026/09/30/rl-variables-in-frameworks/)。
+
+**实测。** 固定一个 token 位置（词表 $$V=2000$$），从 $$\pi_\theta$$ 采样 40 万次；真值用上面的全词表求和算出，作为对照基准。两种漂移幅度：
+
+**regime A —— 策略轻微漂移**（logit 噪声的标准差 $$0.15$$，真 KL $$=0.01148$$）
+
+| 估计量 | 均值 | 偏差 | 标准差 | 标准差 ÷ 真值 | 负值占比 |
+|:---|---:|---:|---:|---:|---:|
+| $$k_1$$ | 0.01166 | +0.00018 | 0.15129 | **13.17×** | 47.6% |
+| $$k_2$$ | 0.01151 | +0.00003 | 0.01635 | 1.42× | 0.0% |
+| $$k_3$$ | 0.01144 | −0.00004 | 0.01642 | 1.43× | 0.0% |
+
+**regime B —— 策略大幅漂移**（logit 噪声的标准差 $$1.20$$，真 KL $$=0.72959$$）
+
+| 估计量 | 均值 | 偏差 | 标准差 | 标准差 ÷ 真值 | 负值占比 |
+|:---|---:|---:|---:|---:|---:|
+| $$k_1$$ | 0.73179 | +0.00220 | 1.19559 | 1.64× | 25.8% |
+| $$k_2$$ | 0.98248 | **+0.25289** | 1.24483 | 1.71× | 0.0% |
+| $$k_3$$ | 0.72797 | −0.00162 | 1.34662 | 1.85× | 0.0% |
+
+- **$$k_1$$：无偏，但吵**。两个 regime 都无偏，可 regime A 里标准差是真值的 **13.17 倍**，且 47.6% 的样本直接给出负值——“KL 散度为负”在数值上很荒谬。REINFORCE++ 用的正是 $$k_1$$（§4 里那个 $${\rm KL}(t)=\log\frac{\pi_\theta^{\rm RL}(o_t\mid q,o_{<t})}{\pi^{\rm SFT}(o_t\mid q,o_{<t})}$$），把它当逐 token 的 reward shaping 注入，等于给每个位置塞了一个近半数概率为负的噪声项。
+- **$$k_2$$：只在一个邻域里成立**。它是 $$-\log r$$ 在 $$r=1$$ 处的二阶展开（二阶系数为 1），真 KL 到 0.73 时高估 0.253（相对 +35%）。
+- **$$k_3$$：全程无偏，但“低方差”只在小 KL 时成立**。regime A 里标准差只有 $$k_1$$ 的 1/9；regime B 里 1.347，比 $$k_1$$ 的 1.196 **还差**。原因是 $$k_3$$ 里含 $$r^{\rm ref}_t$$ 项，$$\pi_\theta(y_t)\ll\pi_{\rm ref}(y_t)$$ 时 $$r^{\rm ref}_t\gg1$$，方差被拉爆。**异步训练（rollout 落后 learner 很多步）时正是这个 regime。**
 
 ### 7.2 梯度侧：$$k_3$$ 的符号陷阱
 
-真正容易错的是“KL 项怎么进梯度”。设目标里加了 $$-\beta\,\mathbb D_{\rm KL}$$，用 $$k_3$$ 估计：
+估计量选对了还不够——真正容易错的是 **KL 项怎么进梯度**。要最大化的目标形如
 
-$$\nabla_\theta\,\mathbb E_{o\sim\pi_\theta}\!\left[k_3\right]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot k_3+\nabla_\theta k_3\Big]$$
+$$L(\theta)=J(\theta)-\beta\,\mathbb D_{\rm KL}(\pi_\theta\,\Vert\,\pi_{\rm ref})$$
 
-第二项：由 $$\nabla_\theta\log r^{\rm ref}=-\nabla_\theta\log\pi_\theta$$ 得 $$\nabla_\theta k_3=\nabla_\theta r^{\rm ref}-\nabla_\theta\log r^{\rm ref}=-(r^{\rm ref}-1)\nabla_\theta\log\pi_\theta$$。代回：
+下面固定一个 token 位置 $$t$$，省略下标（$$r^{\rm ref}_t\to r^{\rm ref}$$、$$k_{n,t}\to k_n$$）。这样推导最清楚；序列级会多出跨位置的耦合项（$$\nabla_\theta\log\pi_\theta(y_t\mid s_t)\cdot k_{n,t'}$$、$$t'\ne t$$），但不影响下面的系数与符号结论。
 
-$$\nabla_\theta\,\mathbb E[k_3]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot\big(k_3+1-r^{\rm ref}\big)\Big]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot(-\log r^{\rm ref})\Big]$$
+**① 真值：系数就是 $$k_1$$**
 
-而真 KL 的梯度是 $$\mathbb E[\nabla_\theta\log\pi_\theta\cdot(-\log r^{\rm ref})]$$（因为 $$\mathbb E[\nabla_\theta\log\pi_\theta\cdot k_1]=\nabla{\rm KL}$$）。**两者完全相同**——前提是**反向传播要穿过 $$k_3$$**。
+$$\mathbb D^{(t)}_{\rm KL}\;=\;\mathbb E_{y_t\sim\pi_\theta(\cdot\mid s_t)}\big[k_{1,t}\big]$$
 
-如果实现里对 $$k_3$$ 做了 stop-gradient（只保留 REINFORCE 项，很多框架这么写），系数就从 $$-\log r^{\rm ref}$$ 变成了 $$k_3$$：
+对 $$\theta$$ 求导，同样有两项：
 
-| $$r^{\rm ref}$$ | 正确系数 $$-\log r^{\rm ref}$$ | $$k_3=r^{\rm ref}-\log r^{\rm ref}-1$$ | $$k_2=\frac12(\log r^{\rm ref})^2$$ | |
-|---:|---:|---:|---:|:---|
-| 0.25 | +1.3863 | 0.6363 | 0.9609 | 同号，低估 2.2 倍 |
-| 0.50 | +0.6931 | 0.1931 | 0.2402 | 同号，低估 3.6 倍 |
-| 0.80 | +0.2231 | 0.0231 | 0.0249 | 同号，低估 9.6 倍 |
-| 1.00 | 0.0000 | 0.0000 | 0.0000 | |
-| 1.25 | **−0.2231** | **+0.0269** | 0.0249 | **符号相反** |
-| 2.00 | **−0.6931** | **+0.3069** | 0.2402 | **符号相反** |
-| 4.00 | **−1.3863** | **+1.6137** | 0.9609 | **符号相反** |
+$$\nabla_\theta\,\mathbb D^{(t)}_{\rm KL}\;=\;\mathbb E\Big[\nabla_\theta\log\pi_\theta(y_t\mid s_t)\cdot k_{1,t}\Big]\;+\;\mathbb E\Big[\nabla_\theta k_{1,t}\Big]$$
 
-注意符号：$$r^{\rm ref}>1$$ 意味着 $$\pi_\theta$$ 比 $$\pi_{\rm ref}$$ **更不**偏好这个 token，此时正确的 KL 梯度系数是负的，而 $$k_3$$ 恒非负——**惩罚变成了奖励**。另外在 $$r^{\rm ref}\approx1$$ 附近，$$k_3\approx\frac12(\log r^{\rm ref})^2$$ 是 $$-\log r^{\rm ref}$$ 的二阶小量（$$\lvert\log r^{\rm ref}\rvert=0.1$$ 时 0.005 vs 0.1，低估 20 倍），正则强度被严重削弱。
+第二项里 $$\nabla_\theta k_{1,t}=-\nabla_\theta\log r^{\rm ref}_t=\nabla_\theta\log\pi_\theta(y_t\mid s_t)$$（分子 $$\pi_{\rm ref}$$ 不含 $$\theta$$），它的期望由 score-function 恒等式 $$\mathbb E\big[\nabla_\theta\log\pi_\theta\big]=0$$ 恰好为 **0**，于是只剩第一项：
 
-> 这一节的结论：**用 $$k_3$$ 估计 KL 没问题（它是无偏的），但要确认梯度是否穿过它**。检查方法：在你的框架里搜 `kl_penalty` / `kld`，看它进入 loss 前有没有 `.detach()`。源码侧的逐行对照见 [RL 框架里的那些变量到底怎么算](/2026/09/30/rl-variables-in-frameworks/)。
+$$\nabla_\theta\,\mathbb D^{(t)}_{\rm KL}\;=\;\mathbb E\Big[\nabla_\theta\log\pi_\theta(y_t\mid s_t)\cdot k_{1,t}\Big]\;=\;\mathbb E\Big[\nabla_\theta\log\pi_\theta(y_t\mid s_t)\cdot\big(-\log r^{\rm ref}_t\big)\Big]$$
+
+**记住这一项为什么消失**：它消失是因为 $$k_1$$ 对 $$\theta$$ 的导数正好是 score function，期望为零。$$k_3$$ 没有这个性质——这就是 ③ 里陷阱的来源。
+
+**② 换成 $$k_3$$ 估计，梯度必须穿过它**
+
+要算的是 $$\nabla_\theta\,\mathbb E[k_{3,t}]$$。它有**两项**，第二项就是 stop-gradient 会丢掉的那个：
+
+$$\nabla_\theta\,\mathbb E\big[k_{3,t}\big]\;=\;\underbrace{\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot k_{3,t}\Big]}_{\text{REINFORCE 项}}\;+\;\underbrace{\mathbb E\Big[\nabla_\theta k_{3,t}\Big]}_{\text{对估计量自身求导}}$$
+
+第二项单独展开（$$k_3=r^{\rm ref}-\log r^{\rm ref}-1$$）：
+
+$$\nabla_\theta k_3=\nabla_\theta r^{\rm ref}-\nabla_\theta\log r^{\rm ref}=\big(r^{\rm ref}-1\big)\,\nabla_\theta\log r^{\rm ref}=-\big(r^{\rm ref}-1\big)\,\nabla_\theta\log\pi_\theta$$
+
+（用到 $$\nabla_\theta\log r^{\rm ref}=-\nabla_\theta\log\pi_\theta$$：分子 $$\pi_{\rm ref}$$ 与 $$\theta$$ 无关。）代回，两个期望合并：
+
+$$\nabla_\theta\,\mathbb E\big[k_3\big]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot\big(k_3+1-r^{\rm ref}\big)\Big]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot\big(-\log r^{\rm ref}\big)\Big]$$
+
+最后一步的恒等式是 $$k_3+1-r^{\rm ref}=-\log r^{\rm ref}=k_1$$。与 ① 逐字相同：**只要梯度穿过 $$k_3$$，用 $$k_3$$ 估 KL 得到的梯度就等于真值梯度。**
+
+**③ stop-gradient 之后：系数从 $$k_1$$ 变成 $$k_3$$**
+
+很多实现给 $$k_3$$ 加了 `.detach()`（只保留 REINFORCE 项）。第二项消失，系数从 $$-\log r^{\rm ref}$$ 变成 $$k_3$$ 自己：
+
+| $$r^{\rm ref}$$ | 正确系数 $$k_1=-\log r^{\rm ref}$$ | stop-gradient 后 $$k_3=r^{\rm ref}-\log r^{\rm ref}-1$$ | $$k_3/k_1$$ | $$k_2=\tfrac12(\log r^{\rm ref})^2$$ | 后果 |
+|---:|---:|---:|---:|---:|:---|
+| 0.25 | +1.3863 | +0.6363 | 46% | +0.9609 | 同号，强度只剩 46% |
+| 0.50 | +0.6931 | +0.1931 | 28% | +0.2402 | 同号，强度只剩 28% |
+| 0.80 | +0.2231 | +0.0231 | 10% | +0.0249 | 同号，强度只剩 10% |
+| 1.00 | 0.0000 | 0.0000 | — | 0.0000 | — |
+| 1.25 | **−0.2231** | **+0.0269** | −12% | +0.0249 | **符号相反** |
+| 2.00 | **−0.6931** | **+0.3069** | −44% | +0.2402 | **符号相反** |
+| 4.00 | **−1.3863** | **+1.6137** | −116% | +0.9609 | **符号相反** |
+
+$$r^{\rm ref}>1$$ 意味着 $$\pi_\theta$$ 比 $$\pi_{\rm ref}$$ **更不**偏好这个 token（$$r^{\rm ref}=\pi_{\rm ref}/\pi_\theta$$）。此时正确的系数是**负的**——惩罚把策略往回拉；而 $$k_3$$ 恒非负——**方向反转，惩罚变成奖励**。
+
+即便 $$r^{\rm ref}<1$$ 方向没反，强度也被削掉一大截：$$r^{\rm ref}\approx1$$ 时 $$k_3\approx\frac12(\log r^{\rm ref})^2$$ 是 $$k_1=-\log r^{\rm ref}$$ 的**二阶小量**（$$\lvert\log r^{\rm ref}\rvert=0.1$$ 时 0.005 对 0.100，只剩 5%）。
+
+> 结论：**用 $$k_3$$ 估 KL 没问题（它无偏），但要确认梯度是否穿过它**。检查方法：在你的框架里搜 `kl_penalty` / `kld`，看它进入 loss 前有没有 `.detach()`。源码侧的逐行对照见 [RL 框架里的那些变量到底怎么算](/2026/09/30/rl-variables-in-frameworks/)。
+
+### 7.3 三个估计量的分工
+
+不是“挑一个最好的”，而是**看你拿它干什么**：
+
+| 用途 | 用哪个 | 理由 |
+|:---|:---|:---|
+| 训练监控 / 早停判据 | $$k_3$$（或 $$k_2$$） | 非负、无偏，屏幕上不会出现“负 KL”。$$k_2$$ 更平滑但大 KL 时高估，两者切换时阈值要跟着改 |
+| 加在 loss 上的惩罚项 | $$k_3$$，**且梯度必须穿过它** | 少了第二项等价于用有偏梯度做惩罚（§7.2） |
+| 注入 reward 做逐 token shaping | $$k_1$$ 可以 | REINFORCE++ 的做法。代价是要接受它 47.6% 为负、标准差是真值的 13 倍 |
+| 需要无偏的梯度估计 | 别用 $$k_2$$ | 只在 $$\pi_\theta\approx\pi_{\rm ref}$$ 的邻域里二阶等价，训练中期就偏了 |
 
 ---
 
@@ -726,10 +783,10 @@ batch 级 whitening $$\tilde A=(A-\mu_{\rm batch})/\sigma_{\rm batch}$$ 引入�
 ~/Software/miniconda3/bin/python tools/rl_notation_lab.py
 ```
 
-脚本按正文小节编号组织（`lab_5_1` … `lab_10_2`），输出顺序与正文一致，便于逐表对照。合成数据做了两处自校验：
+脚本按正文小节编号组织（`lab_5_1` … `lab_9_2`），输出顺序与正文一致，便于逐表对照。合成数据做了两处自校验：
 
 - MDP 的 $$V^\pi,Q^\pi$$ 由线性方程组解出，再核 $$\max_s\lvert\mathbb E_\pi[A^\pi]\rvert=3.9\times10^{-16}$$（应为 0）；
-- KL 的真值用全词表求和算出，作为三个采样估计器的对照基准（§7.1）。
+- KL 的真值用全词表求和算出，作为三个采样估计器的对照基准（§7.1）；同时反算 $$\mathbb E_{\pi_\theta}[k_1]$$ 与 $$\mathbb E_{\pi_\theta}[k_3]$$，两者都回落到同一个真值（脚本里两个 regime 都打印 `自校验` 一行），$$k_2$$ 则不回落。
 
 核心部分（GAE 的定义式与 $$\gamma=1$$ 闭式解）摘录如下，其余见脚本：
 
