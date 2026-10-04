@@ -344,10 +344,10 @@ def lab_8_1():
         p = softmax(logits_p)
         true_kl = float(np.sum(p * np.log(p / q)))
         idx = rng.choice(Vv, size=400000, p=p)
-        rho_ref = q[idx] / p[idx]           # pi_ref / pi_theta
-        k1 = -np.log(rho_ref)
-        k2 = 0.5 * np.log(rho_ref) ** 2
-        k3 = rho_ref - np.log(rho_ref) - 1
+        r_ref = q[idx] / p[idx]             # r^ref = pi_ref / pi_theta
+        k1 = -np.log(r_ref)
+        k2 = 0.5 * np.log(r_ref) ** 2
+        k3 = r_ref - np.log(r_ref) - 1
         print(f"\n--- regime {tag}   真 KL = {true_kl:.5f}")
         print(f"{'':>4} | {'均值':>9} | {'偏差':>9} | {'标准差':>9} | {'负值占比':>8}")
         for nm, k in [("k1", k1), ("k2", k2), ("k3", k3)]:
@@ -358,8 +358,8 @@ def lab_8_1():
 # ==================================================== §8.2  k3 的梯度符号陷阱
 
 def lab_8_2():
-    section("§8.2  KL 项进梯度的系数：正确值 -log(rho_ref) vs stop-gradient 后的 k3")
-    print(f"{'rho_ref':>8} | {'正确 -log r':>12} | {'k3':>10} | {'k2':>10} | 判定")
+    section("§8.2  KL 项进梯度的系数：正确值 -log(r^ref) vs stop-gradient 后的 k3")
+    print(f"{'r^ref':>8} | {'正确 -log r^ref':>15} | {'k3':>10} | {'k2':>10} | 判定")
     for r_ in [0.25, 0.50, 0.80, 1.00, 1.25, 2.00, 4.00]:
         corr, k3, k2 = -np.log(r_), r_ - np.log(r_) - 1, 0.5 * np.log(r_) ** 2
         same = "" if abs(r_ - 1) < 1e-12 else (
@@ -376,12 +376,12 @@ def lab_9_1():
     grad = lambda r_, adv, h=1e-6: (obj(r_ + h, adv) - obj(r_ - h, adv)) / (2 * h)
     for adv in [+1.0, -1.0]:
         print(f"\nA = {adv:+.0f}（{'好动作' if adv > 0 else '坏动作'}）")
-        print(f"{'rho':>6} | {'loss':>9} | {'d loss/d rho':>13} | 状态")
+        print(f"{'r_t(theta)':>10} | {'loss':>9} | {'dL/d r_t':>10} | 状态")
         grid = [0.5, 1.0, 1.19, 1.21, 3.0] if adv > 0 else [0.3, 0.79, 0.81, 1.2, 2.0]
         for r_ in grid:
             g = grad(r_, adv)
             state = "梯度被切断" if abs(g) < 1e-3 else "正常更新"
-            print(f"{r_:6.2f} | {obj(r_, adv):9.4f} | {g:13.4f} | {state}")
+            print(f"{r_:>10.2f} | {obj(r_, adv):9.4f} | {g:>10.4f} | {state}")
 
 
 # ==================================================== §9.2  长序列 token 级 ratio
@@ -393,7 +393,7 @@ def v_size(v):
 def lab_9_2():
     section("§9.2  长序列上 token 级 ratio 的病态程度（log ratio ~ N(mu, 0.05^2)）")
     rng = np.random.default_rng(11)
-    print(f"{'T':>5} | {'mu':>5} | {'序列 ratio 中位数':>18} | {'p99':>12} | {'P(rho>2)':>9} | {'GSPO 中位数':>11}")
+    print(f"{'T':>5} | {'mu':>5} | {'序列 ratio 中位数':>18} | {'p99':>12} | {'P(r>2)':>9} | {'GSPO 中位数':>11}")
     for Tl in [64, 256, 1024, 4096]:
         for mu in [0.00, 0.01]:
             lr = rng.normal(mu, 0.05, size=(200000, Tl))

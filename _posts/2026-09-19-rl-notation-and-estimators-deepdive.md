@@ -17,7 +17,7 @@ mathjax: true
 > * **$$\hat A_t+V(s_t)$$ 只有在 $$\lambda=1$$ 且末步 bootstrap 取 0 时才等于 return-to-go（§5.3）**。$$\lambda=0.95$$ 时它与真 $$G_t$$ 的相关系数是 0.960，$$\lambda=0$$ 时只有 0.097。若末步用 critic 的 $$V(s_T)$$ 做 bootstrap，$$\lambda=1$$ 也会多出一个 $$\gamma^T V(s_T)$$ 项——$$\gamma=0.95,T=30$$ 时 $$\gamma^T=0.215$$，实测带来 $$-0.078$$ 的系统偏置。
 > * **$$\gamma=1$$、确定性转移、仅终端奖励时（RLVR 的标准设定），GAE 有闭式解（§5.4）**：$$\hat A_t=-V_t+(1-\lambda)\sum_{j\ge1}\lambda^{j-1}V_{t+j}+\lambda^{T-1-t}R$$。$$\lambda=0$$ 退化为逐 token 价值增量 $$V_{t+1}-V_t$$（$$\sum_t\hat A_t=R-V_0$$，望远镜和守恒），$$\lambda=1$$ 退化为 $$R-V_t$$（$$\sum_t\hat A_t$$ 是前者的 8 倍，梯度尺度随 $$T$$ 线性放大）。
 > * **critic 塌缩成常数 $$c$$ 时，$$\hat A_t=\lambda^{T-1-t}(R-c)$$（§5.6）**：信号从句尾向句首指数衰减，$$\lambda=0$$ 时只有最后一个 token 有梯度。加入逐 token 的 KL shaping 后每个位置都有非零即时奖励，但总量仍随 $$\lambda$$ 放大。
-> * **KL 的 $$k_3$$ 估计器有个梯度符号陷阱（§7.2）**：作为估计量它无偏且非负，是 [Schulman 2020](http://joschu.net/blog/kl-approx.html) 推荐的选择；但如果把它当 loss 且**不反向传播穿过它**，策略梯度的系数会从正确的 $$-\log\rho^{\rm ref}$$ 变成 $$k_3\approx\frac12(\log\rho^{\rm ref})^2$$——当 $$\rho^{\rm ref}>1$$ 时**符号直接相反**，惩罚变成奖励。
+> * **KL 的 $$k_3$$ 估计器有个梯度符号陷阱（§7.2）**：作为估计量它无偏且非负，是 [Schulman 2020](http://joschu.net/blog/kl-approx.html) 推荐的选择；但如果把它当 loss 且**不反向传播穿过它**，策略梯度的系数会从正确的 $$-\log r^{\rm ref}$$ 变成 $$k_3\approx\frac12(\log r^{\rm ref})^2$$——当 $$r^{\rm ref}>1$$ 时**符号直接相反**，惩罚变成奖励。
 > * **token 级重要性比在长序列上是病态的（§8.2）**：即使策略平均而言完全没变，4096 token 的序列级 ratio 的 p99 也有 1719；每 token 的 $$\log$$ ratio 只要有个 $$+0.01$$ 的系统漂移，$$T=4096$$ 时中位数就到 $$6.1\times10^{17}$$。这是 GSPO 改用序列级几何平均的动机。
 >
 > 全文每张数值表都由 `tools/rl_notation_lab.py` 生成（纯 numpy，CPU 上约 1 分钟），复现方式见 [§11](#11-附录复现脚本)。
@@ -57,7 +57,7 @@ mathjax: true
 
 **坑二：$$\pi_{\rm old}$$ 与 $$\pi_{\rm ref}$$ 是两个东西。**
 
-- $$\pi_{\rm old}$$（也叫 $$\pi_{\theta_{\rm old}}$$、behavior policy $$\mu$$）：**生成当前这批 rollout 的那份策略**，每轮 rollout 刷新一次。只出现在重要性比 $$\rho_t=\pi_\theta/\pi_{\rm old}$$ 里。
+- $$\pi_{\rm old}$$（也叫 $$\pi_{\theta_{\rm old}}$$、behavior policy $$\mu$$）：**生成当前这批 rollout 的那份策略**，每轮 rollout 刷新一次。只出现在重要性比 $$r_t(\theta)=\pi_\theta/\pi_{\rm old}$$ 里。
 - $$\pi_{\rm ref}$$：**RL 开始前的 SFT 模型**，全程冻结。只出现在 KL 惩罚 $$\mathbb D_{\rm KL}(\pi_\theta\Vert\pi_{\rm ref})$$ 里。
 
 TRPO 的信任域约束是对 $$\pi_{\rm old}$$ 的；RLHF 的 KL 惩罚是对 $$\pi_{\rm ref}$$ 的。混用会让裁剪失效或者把模型往错误的锚点拉。
@@ -81,7 +81,7 @@ LLM RL 里所有量的“时间维”就是 token 位置，状态转移是**确�
 | $$a_t$$ | 动作 | 第 $$t$$ 个 token $$y_t$$ | `[B]` |
 | $$T,\ \lvert o\rvert$$ | 回答长度 | — | `[B]` |
 | $$\pi_\theta(a_t\mid s_t)$$ | 策略 | next-token 分布 | `[B, T, V]` |
-| $$\ell_t=\log\pi_\theta(y_t\mid q,y_{<t})$$ | token 对数概率 | logits 的 log-softmax 取对应项 | `[B, T]` |
+| $$\log\pi_\theta(y_t\mid q,y_{<t})$$ | token 对数概率 | logits 的 log-softmax 取对应项 | `[B, T]` |
 | $$r_t$$ | 即时奖励 | RLVR 里只有 $$t=T-1$$ 非零；KL shaping 时每步非零 | `[B, T]` |
 | $$R,\ R(o)$$ | 轨迹总奖励 / 终端奖励 | 答案对=1，错=0 | `[B]` |
 | $$\gamma$$ | 折扣因子 | RLHF 常取 1 | 标量 |
@@ -92,15 +92,31 @@ LLM RL 里所有量的“时间维”就是 token 位置，状态转移是**确�
 | $$A^\pi(s_t,a_t)$$ | 优势 $$=Q^\pi-V^\pi$$ | — | `[B, T]` |
 | $$\delta_t$$ | TD error $$=r_t+\gamma V(s_{t+1})-V(s_t)$$ | — | `[B, T]` |
 | $$\hat A_t$$ | 优势的估计量 | GAE / 组相对 / RLOO … | `[B, T]` |
-| $$\rho_t$$ | 重要性比 $$=\pi_\theta(a_t\mid s_t)/\pi_{\rm old}(a_t\mid s_t)$$ | — | `[B, T]` |
-| $$\rho^{\rm ref}_t$$ | 参考比 $$=\pi_{\rm ref}(a_t\mid s_t)/\pi_\theta(a_t\mid s_t)$$ | 只出现在 KL 里 | `[B, T]` |
+| $$r_t(\theta)$$ | 重要性比 $$=\pi_\theta(a_t\mid s_t)/\pi_{\rm old}(a_t\mid s_t)$$ | 沿用 [PPO 原文](https://arxiv.org/abs/1707.06347) | `[B, T]` |
+| $$r^{\rm ref}_t$$ | 参考比 $$=\pi_{\rm ref}(a_t\mid s_t)/\pi_\theta(a_t\mid s_t)$$ | 沿用 [Schulman 博客](http://joschu.net/blog/kl-approx.html) | `[B, T]` |
+| $$s_i(\theta)$$ | GSPO 的序列级比 $$=r_i(\theta)^{1/\lvert o_i\rvert}$$ | 沿用 [GSPO 原文](https://arxiv.org/abs/2507.18071) | `[B]` |
 | $$\epsilon$$ | PPO 裁剪半径 | 0.2（policy），0.1~0.5（value） | 标量 |
 | $$\beta$$ | KL 系数 | 0.001~0.1 | 标量 |
 
-两个字母约定，全文遵守：
+**两组记号约定，全文遵守。**
 
-- **$$r_t$$ 只表示奖励**，不表示比值。所有比值都写成 $$\rho$$ 家族。
-- **$$\rho_t$$（对 $$\pi_{\rm old}$$）与 $$\rho^{\rm ref}_t$$（对 $$\pi_{\rm ref}$$）不互为倒数**。只有在 $$\pi_{\rm old}=\pi_{\rm ref}$$ 时才有 $$\rho^{\rm ref}_t=1/\rho_t$$，而这在多 epoch 复用 rollout 时并不成立。
+**第一组：字母 $$r$$ 出现三次，靠装饰区分、不靠上下文猜。**
+
+- **$$r_t$$** — 即时奖励（$$\delta_t$$、$$G_t$$ 里都是它）。
+- **$$r_t(\theta)$$** — 重要性比 $$\pi_\theta/\pi_{\rm old}$$。**显式写出 $$(\theta)$$**，这是 PPO 原文区分它与奖励的方式。
+- **$$r^{\rm ref}_t$$** — 参考比 $$\pi_{\rm ref}/\pi_\theta$$，只出现在 KL 里。
+
+三者**互不为倒数**：$$r^{\rm ref}_t=1/r_t(\theta)$$ 只在 $$\pi_{\rm old}=\pi_{\rm ref}$$ 时成立，而多 epoch 复用 rollout 时这不成立。
+
+**第二组：三个策略各司其职，写成 $$\pi$$ 加下标，不要另造字母。**
+
+| 符号 | 含义 | 什么时候刷新 | 出现在哪 |
+|:---|:---|:---|:---|
+| $$\pi_\theta$$ | 当前策略（被优化的那个） | 每个 minibatch | 分子：重要性比、KL |
+| $$\pi_{\rm old}$$ | 旧策略 / behavior policy $$\mu$$ | 每轮 rollout | 分母：重要性比 $$r_t(\theta)$$ |
+| $$\pi_{\rm ref}$$ | 参考策略（RL 开始前的 SFT 模型） | 全程冻结 | 分母：KL 的参考比 $$r^{\rm ref}_t$$ |
+
+三者**两两不同**：$$\pi_{\rm old}$$ 追着 $$\pi_\theta$$ 走，$$\pi_{\rm ref}$$ 全程不动。
 
 ---
 
@@ -114,7 +130,7 @@ $$\hat x = \text{某个期望的蒙特卡洛替代（随机性来自数据）},\
 
 判据只有一条：**这个数是不是某个期望的采样替代？** 是就加帽，不是就不加。它推出三个反直觉的结论：
 
-- $$\ell_t$$、$$\rho_t$$、$$\mathcal H_t=-\sum_v p_v\log p_v$$ **不加帽**：给定模型和 token，它们是前向的确定性输出。熵虽然作用在采样出来的 token 上，但它对整个词表求和，128k 维一次前向就算完。
+- $$\log\pi_\theta(y_t\mid q,y_{<t})$$、$$r_t(\theta)$$、$$\mathcal H_t=-\sum_v p_v\log p_v$$ **不加帽**：给定模型和 token，它们是前向的确定性输出。熵虽然作用在采样出来的 token 上，但它对整个词表求和，128k 维一次前向就算完。
 - $$\mathbb D_{\rm KL}$$ **加帽**：它是 $$\mathbb E_{o\sim\pi_\theta}[\cdot]$$，只能用手上采样到的 token 去估，跨采样会变。
 
   > 注意理由**不是**“序列空间太大算不起”。逐 token 的 KL $$\sum_v\pi_\theta(v\mid s_t)\log\frac{\pi_\theta(v\mid s_t)}{\pi_{\rm ref}(v\mid s_t)}$$ 对词表求一次和就能算精确，与熵同量级——**那种实现下它不加帽**。加帽与否取决于你是不是在用采样替代期望，与这个量“大不大”无关。§7.1 实验里的真 KL 就是用全词表求和算出来的，作为三个采样估计器的对照基准。
@@ -134,16 +150,16 @@ $$\hat x = \text{某个期望的蒙特卡洛替代（随机性来自数据）},\
 | 策略梯度 | $$\nabla_\theta J(\theta)$$ | $$\hat g$$ | ① + $$\hat A$$ |
 | KL | $$\mathbb D_{\rm KL}$$（定义） | $$\hat{\mathbb D}_{\rm KL}$$（实现里就是 $$k_3$$ 的平均） | ① 对 $$o\sim\pi_\theta$$ 采样 |
 | value target | — | $$\hat R_t=\hat A_t+V_\phi(s_t)$$ | 见 §2.3 |
-| logprob / 重要性比 / 熵 | $$\ell_t,\ \rho_t,\ \rho^{\rm ref}_t,\ \mathcal H_t$$ | — | 精确可算 |
+| logprob / 重要性比 / 熵 | $$\log\pi_\theta,\ r_t(\theta),\ r^{\rm ref}_t,\ \mathcal H_t$$ | — | 精确可算 |
 | Bellman 方程 | $$V^\pi(s)=\mathbb E_\pi[r+\gamma V^\pi(s')]$$ | 更新式 $$\hat V\leftarrow\hat V+\alpha(\hat R-\hat V)$$ | 定义 vs 算法 |
 
 把帽子写进 Bellman 方程是概念错误：那个方程说的是**真值满足什么关系**，不是你手上的数满足什么关系。你手上的 $$\hat V$$ 一般并不满足它——差值就是 TD error。
 
 PPO 的裁剪目标是“混着戴”的典型：
 
-$$L^{\rm CLIP}=\mathbb E\Big[\min\big(\rho_t\,\hat A_t,\ \mathrm{clip}(\rho_t,1-\epsilon,1+\epsilon)\,\hat A_t\big)\Big]$$
+$$L^{\rm CLIP}=\mathbb E\Big[\min\big(r_t(\theta)\,\hat A_t,\ \mathrm{clip}(r_t(\theta),1-\epsilon,1+\epsilon)\,\hat A_t\big)\Big]$$
 
-这行公式里三种帽子混着戴：$$\rho_t$$ 无帽（精确比值）、$$\hat A_t$$ 有帽（估计量）、外层 $$\mathbb E$$ 无帽（这是目标函数的**定义**）。只有当你把它换成 $$\frac1N\sum$$ 去做 minibatch 更新时才变成估计 $$\hat L$$。PPO 的“目标”和“你每步实际在优化的那个数”差一顶帽子。
+这行公式里三种帽子混着戴：$$r_t(\theta)$$ 无帽（精确比值）、$$\hat A_t$$ 有帽（估计量）、外层 $$\mathbb E$$ 无帽（这是目标函数的**定义**）。只有当你把它换成 $$\frac1N\sum$$ 去做 minibatch 更新时才变成估计 $$\hat L$$。PPO 的“目标”和“你每步实际在优化的那个数”差一顶帽子。
 
 ### 2.3 RL 特有的自举循环
 
@@ -424,9 +440,9 @@ lambda=1.00 : A[:6] = [ 0.1338  0.1297  0.1240  0.1428  0.0899  0.0977]  非零 
 
 ### 6.1 定义
 
-$$\ell_t=\log\pi_\theta(y_t\mid q,y_{<t})=z_{t,y_t}-\mathrm{logsumexp}(z_t),\qquad z_t\in\mathbb R^{V}$$
+$$\log\pi_\theta(y_t\mid q,y_{<t})=z_{t,y_t}-\mathrm{logsumexp}(z_t),\qquad z_t\in\mathbb R^{V}$$
 
-$$\log\pi_\theta(o\mid q)=\sum_{t=1}^{\lvert o\rvert}\ell_t,\qquad \mathcal H_t=-\sum_{v}p_{t,v}\log p_{t,v},\qquad \mathrm{PPL}(o)=\exp\Big(-\frac{1}{\lvert o\rvert}\log\pi_\theta(o\mid q)\Big)$$
+$$\log\pi_\theta(o\mid q)=\sum_{t=1}^{\lvert o\rvert}\log\pi_\theta(y_t\mid q,y_{<t}),\qquad \mathcal H_t=-\sum_{v}p_{t,v}\log p_{t,v},\qquad \mathrm{PPL}(o)=\exp\Big(-\frac{1}{\lvert o\rvert}\log\pi_\theta(o\mid q)\Big)$$
 
 带温度采样时（$$p\propto\exp(z/T)$$）：
 
@@ -448,7 +464,7 @@ $$\log p_T(y_t)=z_{t,y_t}/T-\mathrm{logsumexp}(z_t/T)$$
 
 1. **必须 log-sum-exp 稳定化**。logits 稍大就溢出：上表最后一行用 logits$$=800$$、词表 10 演示，naive 写法直接给 `inf`，稳定版正确给出 $$-\ln 10=-2.3026$$（词表 128000 时正确答案是 $$-\ln 128000=-11.76$$）。
 2. **bf16 存 logits 的代价是 logprob 有 $$10^{-1}$$ 量级误差**。这个误差在两处放大：
-   - **重要性比**：$$\rho=\exp(\Delta\ell)$$，两个 $$10^{-1}$$ 量级的误差相减后取指数 → ratio 百分级误差；
+   - **重要性比**：$$r_t(\theta)=\exp(\log\pi_\theta-\log\pi_{\rm old})$$，两个 $$10^{-1}$$ 量级的误差相减后取指数 → ratio 百分级误差；
    - **长序列**：$$T$$ 个 token 的 logprob 累加，序列级 ratio 的误差随 $$T$$ 指数放大（§8.2）。
 
    > 说明：这里的 bf16 用“尾数截断”模拟，真实硬件是 round-to-nearest，误差大约减半，量级不变。多数框架在 log-softmax 前会把 logits 提到 fp32，此时误差回到 fp32 的 $$10^{-6}$$ 量级——**请确认你的框架做了这一步**。
@@ -485,11 +501,11 @@ RL 里加的 entropy bonus 通常是 token 级平均 $$\frac{1}{\sum_i\lvert o_i
 
 ### 7.1 三个估计量
 
-记 $$\rho^{\rm ref}=\pi_{\rm ref}(o)/\pi_\theta(o)$$，采样 $$o\sim\pi_\theta$$（on-policy）。三个估计量都来自 [Schulman 的 KL 近似笔记](http://joschu.net/blog/kl-approx.html)：
+记 $$r^{\rm ref}=\pi_{\rm ref}(o)/\pi_\theta(o)$$，采样 $$o\sim\pi_\theta$$（on-policy）。三个估计量都来自 [Schulman 的 KL 近似笔记](http://joschu.net/blog/kl-approx.html)：
 
-$$k_1=-\log\rho^{\rm ref},\qquad k_2=\tfrac12(\log\rho^{\rm ref})^2,\qquad k_3=\rho^{\rm ref}-\log\rho^{\rm ref}-1$$
+$$k_1=-\log r^{\rm ref},\qquad k_2=\tfrac12(\log r^{\rm ref})^2,\qquad k_3=r^{\rm ref}-\log r^{\rm ref}-1$$
 
-帽子落在哪一层：$$\rho^{\rm ref}$$ 无帽（两个分布的精确比值），而 $$k_1,k_2,k_3$$ 是**单个样本上的估计量**——它们各自的期望才是 $$\mathbb D_{\rm KL}$$ 的估计：
+帽子落在哪一层：$$r^{\rm ref}$$ 无帽（两个分布的精确比值），而 $$k_1,k_2,k_3$$ 是**单个样本上的估计量**——它们各自的期望才是 $$\mathbb D_{\rm KL}$$ 的估计：
 
 $$\hat{\mathbb D}_{\rm KL}=\frac1M\sum_{m=1}^{M}k_n^{(m)}$$
 
@@ -515,7 +531,7 @@ $$\hat{\mathbb D}_{\rm KL}=\frac1M\sum_{m=1}^{M}k_n^{(m)}$$
 
 - **$$k_1$$ 的标准差是真值的 13 倍**（regime A），且 47.6% 的样本给出负值——“KL 散度为负”在数值上很荒谬。REINFORCE++ 用的正是 $$k_1$$（§4），把它作为逐 token 的 reward shaping 注入，等于给每个位置加了一个近半数概率为负的噪声项。
 - **$$k_2$$ 在大 KL 时严重高估**（regime B 里 +0.253，相对偏差 35%）。它在 $$q\approx p$$ 附近与 KL 二阶等价（$$f''(1)=1$$），离开这个邻域就不成立。
-- **$$k_3$$ 保持无偏，但“低方差”的优势只在小 KL 时成立**：regime A 里 std$$=0.0164$$（比 $$k_1$$ 小 9 倍），regime B 里 std$$=1.347$$，与 $$k_1$$ 的 1.196 相当甚至更差。$$k_3$$ 里含 $$\rho^{\rm ref}$$ 项，当 $$\pi_\theta(o)\ll\pi_{\rm ref}(o)$$ 时 $$\rho^{\rm ref}\gg1$$，方差会爆。**异步训练（rollout 落后 learner 很多步）时，这正是你会走进的 regime**。
+- **$$k_3$$ 保持无偏，但“低方差”的优势只在小 KL 时成立**：regime A 里 std$$=0.0164$$（比 $$k_1$$ 小 9 倍），regime B 里 std$$=1.347$$，与 $$k_1$$ 的 1.196 相当甚至更差。$$k_3$$ 里含 $$r^{\rm ref}$$ 项，当 $$\pi_\theta(o)\ll\pi_{\rm ref}(o)$$ 时 $$r^{\rm ref}\gg1$$，方差会爆。**异步训练（rollout 落后 learner 很多步）时，这正是你会走进的 regime**。
 
 ### 7.2 梯度侧：$$k_3$$ 的符号陷阱
 
@@ -523,15 +539,15 @@ $$\hat{\mathbb D}_{\rm KL}=\frac1M\sum_{m=1}^{M}k_n^{(m)}$$
 
 $$\nabla_\theta\,\mathbb E_{o\sim\pi_\theta}\!\left[k_3\right]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot k_3+\nabla_\theta k_3\Big]$$
 
-第二项：由 $$\nabla_\theta\log\rho^{\rm ref}=-\nabla_\theta\log\pi_\theta$$ 得 $$\nabla_\theta k_3=\nabla_\theta\rho^{\rm ref}-\nabla_\theta\log\rho^{\rm ref}=-(\rho^{\rm ref}-1)\nabla_\theta\log\pi_\theta$$。代回：
+第二项：由 $$\nabla_\theta\log r^{\rm ref}=-\nabla_\theta\log\pi_\theta$$ 得 $$\nabla_\theta k_3=\nabla_\theta r^{\rm ref}-\nabla_\theta\log r^{\rm ref}=-(r^{\rm ref}-1)\nabla_\theta\log\pi_\theta$$。代回：
 
-$$\nabla_\theta\,\mathbb E[k_3]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot\big(k_3+1-\rho^{\rm ref}\big)\Big]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot(-\log\rho^{\rm ref})\Big]$$
+$$\nabla_\theta\,\mathbb E[k_3]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot\big(k_3+1-r^{\rm ref}\big)\Big]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot(-\log r^{\rm ref})\Big]$$
 
-而真 KL 的梯度是 $$\mathbb E[\nabla_\theta\log\pi_\theta\cdot(-\log\rho^{\rm ref})]$$（因为 $$\mathbb E[\nabla_\theta\log\pi_\theta\cdot k_1]=\nabla{\rm KL}$$）。**两者完全相同**——前提是**反向传播要穿过 $$k_3$$**。
+而真 KL 的梯度是 $$\mathbb E[\nabla_\theta\log\pi_\theta\cdot(-\log r^{\rm ref})]$$（因为 $$\mathbb E[\nabla_\theta\log\pi_\theta\cdot k_1]=\nabla{\rm KL}$$）。**两者完全相同**——前提是**反向传播要穿过 $$k_3$$**。
 
-如果实现里对 $$k_3$$ 做了 stop-gradient（只保留 REINFORCE 项，很多框架这么写），系数就从 $$-\log\rho^{\rm ref}$$ 变成了 $$k_3$$：
+如果实现里对 $$k_3$$ 做了 stop-gradient（只保留 REINFORCE 项，很多框架这么写），系数就从 $$-\log r^{\rm ref}$$ 变成了 $$k_3$$：
 
-| $$\rho^{\rm ref}$$ | 正确系数 $$-\log\rho^{\rm ref}$$ | $$k_3=\rho^{\rm ref}-\log\rho^{\rm ref}-1$$ | $$k_2=\frac12(\log\rho^{\rm ref})^2$$ | |
+| $$r^{\rm ref}$$ | 正确系数 $$-\log r^{\rm ref}$$ | $$k_3=r^{\rm ref}-\log r^{\rm ref}-1$$ | $$k_2=\frac12(\log r^{\rm ref})^2$$ | |
 |---:|---:|---:|---:|:---|
 | 0.25 | +1.3863 | 0.6363 | 0.9609 | 同号，低估 2.2 倍 |
 | 0.50 | +0.6931 | 0.1931 | 0.2402 | 同号，低估 3.6 倍 |
@@ -541,7 +557,7 @@ $$\nabla_\theta\,\mathbb E[k_3]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot\b
 | 2.00 | **−0.6931** | **+0.3069** | 0.2402 | **符号相反** |
 | 4.00 | **−1.3863** | **+1.6137** | 0.9609 | **符号相反** |
 
-注意符号：$$\rho^{\rm ref}>1$$ 意味着 $$\pi_\theta$$ 比 $$\pi_{\rm ref}$$ **更不**偏好这个 token，此时正确的 KL 梯度系数是负的，而 $$k_3$$ 恒非负——**惩罚变成了奖励**。另外在 $$\rho^{\rm ref}\approx1$$ 附近，$$k_3\approx\frac12(\log\rho^{\rm ref})^2$$ 是 $$-\log\rho^{\rm ref}$$ 的二阶小量（$$\lvert\log\rho^{\rm ref}\rvert=0.1$$ 时 0.005 vs 0.1，低估 20 倍），正则强度被严重削弱。
+注意符号：$$r^{\rm ref}>1$$ 意味着 $$\pi_\theta$$ 比 $$\pi_{\rm ref}$$ **更不**偏好这个 token，此时正确的 KL 梯度系数是负的，而 $$k_3$$ 恒非负——**惩罚变成了奖励**。另外在 $$r^{\rm ref}\approx1$$ 附近，$$k_3\approx\frac12(\log r^{\rm ref})^2$$ 是 $$-\log r^{\rm ref}$$ 的二阶小量（$$\lvert\log r^{\rm ref}\rvert=0.1$$ 时 0.005 vs 0.1，低估 20 倍），正则强度被严重削弱。
 
 > 这一节的结论：**用 $$k_3$$ 估计 KL 没问题（它是无偏的），但要确认梯度是否穿过它**。检查方法：在你的框架里搜 `kl_penalty` / `kld`，看它进入 loss 前有没有 `.detach()`。源码侧的逐行对照见 [RL 框架里的那些变量到底怎么算](/2026/09/30/rl-variables-in-frameworks/)。
 
@@ -551,32 +567,32 @@ $$\nabla_\theta\,\mathbb E[k_3]=\mathbb E\Big[\nabla_\theta\log\pi_\theta\cdot\b
 
 ### 8.1 PPO 的裁剪到底切断了什么
 
-$$L^{\rm CLIP}=\mathbb E\Big[\min\big(\rho_t \hat A_t,\ \mathrm{clip}(\rho_t,1-\epsilon,1+\epsilon)\hat A_t\big)\Big]$$
+$$L^{\rm CLIP}=\mathbb E\Big[\min\big(r_t(\theta) \hat A_t,\ \mathrm{clip}(r_t(\theta),1-\epsilon,1+\epsilon)\hat A_t\big)\Big]$$
 
 实测（$$\epsilon=0.2$$，中心差分）：
 
 ```
-A = +1（好动作）：
-     rho |     loss | d loss/d rho | 状态
-  0.50 |   0.5000 |    1.0000 | 正常更新
-  1.00 |   1.0000 |    1.0000 | 正常更新
-  1.19 |   1.1900 |    1.0000 | 正常更新
-  1.21 |   1.2000 |    0.0000 | 梯度被切断（已推得够远）
-  3.00 |   1.2000 |    0.0000 | 梯度被切断（已推得够远）
-A = -1（坏动作）：
-  0.30 |  -0.8000 |    0.0000 | 梯度被切断（已压得够低）
-  0.79 |  -0.8000 |    0.0000 | 梯度被切断（已压得够低）
-  0.81 |  -0.8100 |   -1.0000 | 正常更新
-  2.00 |  -2.0000 |   -1.0000 | 正常更新
+A = +1（好动作）
+r_t(theta) |      loss |   dL/d r_t | 状态
+      0.50 |    0.5000 |     1.0000 | 正常更新
+      1.00 |    1.0000 |     1.0000 | 正常更新
+      1.19 |    1.1900 |     1.0000 | 正常更新
+      1.21 |    1.2000 |     0.0000 | 梯度被切断（已推得够远）
+      3.00 |    1.2000 |     0.0000 | 梯度被切断（已推得够远）
+A = -1（坏动作）
+      0.30 |   -0.8000 |     0.0000 | 梯度被切断（已压得够低）
+      0.79 |   -0.8000 |     0.0000 | 梯度被切断（已压得够低）
+      0.81 |   -0.8100 |    -1.0000 | 正常更新
+      2.00 |   -2.0000 |    -1.0000 | 正常更新
 ```
 
 裁剪是**单向**的：只在“优势方向已经把 ratio 推到界外且方向不变”时才切断。所以 $$\epsilon$$ 不是“限制更新幅度”的软约束，而是**硬阈值**——超过就完全不更新。$$\epsilon=0.2$$ 意味着一个 token 的概率在一次 rollout 复用期内最多被推高 20%（相对），超过就停止。
 
 ### 8.2 长序列上 token 级 ratio 是病态的
 
-假设一次 mini-batch 更新后每个 token 的 $$\log$$ ratio 独立地服从 $$\mathcal N(\mu,0.05^2)$$，看序列级 $$\rho=\exp(\sum_t\log\rho_t)$$ 的分布：
+假设一次 mini-batch 更新后每个 token 的 $$\log$$ ratio 独立地服从 $$\mathcal N(\mu,0.05^2)$$，看序列级 $$r(\theta)=\exp\big(\sum_t\log r_t(\theta)\big)$$ 的分布：
 
-| $$T$$ | $$\mu$$ | 序列级 ratio 中位数 | p99 | $$P(\rho>2)$$ | GSPO 形式 $$\rho^{1/T}$$ 中位数 |
+| $$T$$ | $$\mu$$ | 序列级 $$r(\theta)$$ 中位数 | p99 | $$P(r>2)$$ | GSPO 的 $$s_i(\theta)$$ 中位数 |
 |---:|---:|---:|---:|---:|---:|
 | 64 | 0.00 | 1.002 | 2.535 | 0.042 | 1.0000 |
 | 64 | +0.01 | 1.895 | 4.802 | 0.446 | 1.0100 |
@@ -587,11 +603,11 @@ A = -1（坏动作）：
 | 4096 | 0.00 | 0.993 | 1719.226 | 0.414 | 1.0000 |
 | 4096 | +0.01 | **$$6.1\times10^{17}$$** | $$1.04\times10^{21}$$ | 1.000 | 1.0100 |
 
-即使策略**平均而言完全没变**（$$\mu=0$$），4096 token 的序列级 ratio 的 p99 也有 1719——因为 $$\sum_t\log\rho_t$$ 的标准差是 $$0.05\sqrt{T}$$，$$T=4096$$ 时是 3.2，取指数后跨越 3 个数量级。
+即使策略**平均而言完全没变**（$$\mu=0$$），4096 token 的序列级 ratio 的 p99 也有 1719——因为 $$\sum_t\log r_t(\theta)$$ 的标准差是 $$0.05\sqrt{T}$$，$$T=4096$$ 时是 3.2，取指数后跨越 3 个数量级。
 
 这就是 [GSPO](https://arxiv.org/abs/2507.18071) 把重要性比改成**序列级几何平均**的动机：
 
-$$\rho^{\rm GSPO}(o)=\Big(\frac{\pi_\theta(o\mid q)}{\pi_{\rm old}(o\mid q)}\Big)^{1/\lvert o\rvert}=\exp\Big(\frac{1}{\lvert o\rvert}\sum_{t=1}^{\lvert o\rvert}\log\rho_t\Big)$$
+$$s_i(\theta)=\Big(\frac{\pi_\theta(o_i\mid q)}{\pi_{\rm old}(o_i\mid q)}\Big)^{1/\lvert o_i\rvert}=\exp\Big(\frac{1}{\lvert o_i\rvert}\sum_{t=1}^{\lvert o_i\rvert}\log r_t(\theta)\Big)$$
 
 上表最后一列：无论 $$T$$ 多大，GSPO 的 ratio 始终稳定在 1.000~1.010。**长度归一化把 $$O(\sqrt T)$$ 的漂移压回了 $$O(1/\sqrt T)$$**。
 
@@ -654,30 +670,30 @@ batch 级 whitening $$\tilde A=(A-\mu_{\rm batch})/\sigma_{\rm batch}$$ 引入�
 
 ### 10.1 速查总表
 
-最后一列是帽子（§2）：✅ = 采样替代某个期望，❌ = 真值或精确可算的量。
+最后一列「帽」按 §2 的判据填：**有帽** = 采样替代某个期望，**无帽** = 真值或精确可算的量。
 
 | 量 | 符号 | 计算式 | 帽子 | 备注 |
 |:---|:---|:---|:---:|:---|
 | 回报 | $$G_t$$ | $$\sum_{l\ge0}\gamma^l r_{t+l}$$ | 视角色 | RLVR 中常退化为 $$G_t=R$$（$$\gamma=1$$） |
-| 状态价值（真） | $$V^\pi$$ | $$\mathbb E_\pi[G_t\mid s_t]$$ | ❌ | 拿不到 |
+| 状态价值（真） | $$V^\pi$$ | $$\mathbb E_\pi[G_t\mid s_t]$$ | 无帽 | 拿不到 |
 | 状态价值（critic） | $$V_\phi(s_t)$$ | 网络输出 | 下标 $$\phi$$ | 训练 target 见 §5.3 |
-| 动作价值 | $$Q^\pi$$ | $$r_t+\gamma V^\pi(s_{t+1})$$ | ❌ | 确定性环境下成立 |
-| 优势（真） | $$A^\pi$$ | $$Q^\pi-V^\pi$$ | ❌ | $$\mathbb E_\pi[A]=0$$ 只对它成立 |
-| TD error | $$\hat\delta_t$$ | $$r_t+\gamma V_\phi(s_{t+1})-V_\phi(s_t)$$ | ✅ | 确定性环境下 $$\delta^\pi=A^\pi$$（无帽版） |
-| GAE | $$\hat A_t$$ | $$\hat\delta_t+\gamma\lambda\hat A_{t+1}$$ | ✅ | 反向递归，跨 episode 断开 |
-| n-step | $$\hat A_t^{(n)}$$ | $$\sum_{l<n}\gamma^l r_{t+l}+\gamma^n V(s_{t+n})-V(s_t)$$ | ✅ | GAE 的 $$(1-\lambda)\lambda^{n-1}$$ 加权平均 |
-| value target | $$\hat R_t$$ | $$\hat A_t+V_\phi(s_t)$$ | ✅ | 仅 $$\lambda=1$$ 且末步 bootstrap 为 0 时 $$=G_t$$ |
-| token logprob | $$\ell_t$$ | $$z_{t,y_t}-\mathrm{logsumexp}(z_t)$$ | ❌ | 精确；必须稳定化 |
-| 序列 logprob | $$\ell(o)$$ | $$\sum_t\ell_t$$ | ❌ | bf16 下误差随 $$T$$ 放大 |
-| 熵 | $$\mathcal H_t$$ | $$-\sum_v p_v\log p_v$$ | ❌ | 精确；用 token 平均，别用序列和 |
-| 重要性比（token） | $$\rho_t$$ | $$\exp(\ell_t^\theta-\ell_t^{\rm old})$$ | ❌ | 精确；在 log 空间算再 exp |
-| 参考比 | $$\rho^{\rm ref}_t$$ | $$\exp(\ell_t^{\rm ref}-\ell_t^\theta)$$ | ❌ | 与 $$\rho_t$$ 不互为倒数 |
-| 重要性比（序列） | $$\rho(o)$$ | $$\exp(\sum_t\Delta\ell_t)$$ | ❌ | 精确但病态，见 §8.2 |
-| GSPO 比 | $$\rho^{\rm GSPO}$$ | $$\exp(\frac1T\sum_t\Delta\ell_t)$$ | ❌ | 长度归一化 |
-| KL（定义） | $$\mathbb D_{\rm KL}$$ | $$\mathbb E_{o\sim\pi_\theta}[\log\frac{\pi_\theta}{\pi_{\rm ref}}]$$ | ❌ | 若对词表求完整和则可精确计算 |
-| KL（估计） | $$\hat{\mathbb D}_{\rm KL}$$ | $$\rho^{\rm ref}-\log\rho^{\rm ref}-1$$ 的平均 | ✅ | 无偏、非负 |
-| 组内均值 / std | $$\hat\mu_g,\hat\sigma_g$$ | $$\frac1G\sum_jR_j$$，$$\sqrt{\frac1G\sum_j(R_j-\hat\mu_g)^2}$$ | ✅ | 含 $$R_i$$ 自身 |
-| 组内优势 | $$\hat A_i$$ | $$(R_i-\hat\mu_g)/\hat\sigma_g$$ 或 $$R_i-\hat\mu_g$$ | ✅ | 见 §9.1 |
+| 动作价值 | $$Q^\pi$$ | $$r_t+\gamma V^\pi(s_{t+1})$$ | 无帽 | 确定性环境下成立 |
+| 优势（真） | $$A^\pi$$ | $$Q^\pi-V^\pi$$ | 无帽 | $$\mathbb E_\pi[A]=0$$ 只对它成立 |
+| TD error | $$\hat\delta_t$$ | $$r_t+\gamma V_\phi(s_{t+1})-V_\phi(s_t)$$ | 有帽 | 确定性环境下 $$\delta^\pi=A^\pi$$（无帽版） |
+| GAE | $$\hat A_t$$ | $$\hat\delta_t+\gamma\lambda\hat A_{t+1}$$ | 有帽 | 反向递归，跨 episode 断开 |
+| n-step | $$\hat A_t^{(n)}$$ | $$\sum_{l<n}\gamma^l r_{t+l}+\gamma^n V(s_{t+n})-V(s_t)$$ | 有帽 | GAE 的 $$(1-\lambda)\lambda^{n-1}$$ 加权平均 |
+| value target | $$\hat R_t$$ | $$\hat A_t+V_\phi(s_t)$$ | 有帽 | 仅 $$\lambda=1$$ 且末步 bootstrap 为 0 时 $$=G_t$$ |
+| token logprob | $$\log\pi_\theta(y_t\mid q,y_{<t})$$ | $$z_{t,y_t}-\mathrm{logsumexp}(z_t)$$ | 无帽 | 精确；必须稳定化 |
+| 序列 logprob | $$\log\pi_\theta(o\mid q)$$ | $$\sum_t\log\pi_\theta(y_t\mid q,y_{<t})$$ | 无帽 | bf16 下误差随 $$T$$ 放大 |
+| 熵 | $$\mathcal H_t$$ | $$-\sum_v p_v\log p_v$$ | 无帽 | 精确；用 token 平均，别用序列和 |
+| 重要性比（token） | $$r_t(\theta)$$ | $$\exp(\log\pi_\theta-\log\pi_{\rm old})$$ | 无帽 | 精确；在 log 空间算再 exp |
+| 参考比 | $$r^{\rm ref}_t$$ | $$\exp(\log\pi_{\rm ref}-\log\pi_\theta)$$ | 无帽 | 与 $$r_t(\theta)$$ 不互为倒数 |
+| 重要性比（序列） | $$r(o,\theta)$$ | $$\exp(\sum_t\log r_t(\theta))$$ | 无帽 | 精确但病态，见 §8.2 |
+| GSPO 比 | $$s_i(\theta)$$ | $$\exp(\frac1{\lvert o_i\rvert}\sum_t\log r_t(\theta))$$ | 无帽 | 长度归一化 |
+| KL（定义） | $$\mathbb D_{\rm KL}$$ | $$\mathbb E_{o\sim\pi_\theta}[\log\frac{\pi_\theta}{\pi_{\rm ref}}]$$ | 无帽 | 若对词表求完整和则可精确计算 |
+| KL（估计） | $$\hat{\mathbb D}_{\rm KL}$$ | $$r^{\rm ref}-\log r^{\rm ref}-1$$ 的平均 | 有帽 | 无偏、非负 |
+| 组内均值 / std | $$\hat\mu_g,\hat\sigma_g$$ | $$\frac1G\sum_jR_j$$，$$\sqrt{\frac1G\sum_j(R_j-\hat\mu_g)^2}$$ | 有帽 | 含 $$R_i$$ 自身 |
+| 组内优势 | $$\hat A_i$$ | $$(R_i-\hat\mu_g)/\hat\sigma_g$$ 或 $$R_i-\hat\mu_g$$ | 有帽 | 见 §9.1 |
 | 归一化后 | $$\tilde A_i$$ | $$(\hat A_i-\mu)/\sigma$$ | 用 tilde | 确定性后处理，不叠帽子 |
 
 ### 10.2 15 个坑
@@ -694,11 +710,11 @@ batch 级 whitening $$\tilde A=(A-\mu_{\rm batch})/\sigma_{\rm batch}$$ 引入�
 10. **top-p 采样但用完整分布算 logprob**——每 token 系统性偏 $$-\ln(\text{top-}p)$$（§6.3）。
 11. **$$k_1$$ 当 KL 用**——47.6% 的样本给出负值（§7.1）。REINFORCE++ 正是把它当 reward shaping 用。
 12. **$$k_2$$ 在大 KL 时用**——35% 相对高估（§7.1）。
-13. **对 $$k_3$$ stop-gradient**——$$\rho^{\rm ref}>1$$ 时梯度符号相反（§7.2）。
+13. **对 $$k_3$$ stop-gradient**——$$r^{\rm ref}>1$$ 时梯度符号相反（§7.2）。
 14. **pass rate > 0.9 还用 $$G=8$$**——66% 的 rollout 零梯度（§9.2）。
 15. **batch 级 whitening + 组内归一化叠加**——引入跨样本耦合，梯度方向改变（§9.3）。
 
-一个记法上的注意点（不是 bug，但会误导自己）：$$\ell_t,\rho_t,\rho^{\rm ref}_t,\mathcal H_t$$ 都是精确可算的量，给它们加帽会让你以为存在需要处理的采样噪声；反过来 $$\hat{\mathbb D}_{\rm KL}$$ 必须加帽，因为它是对 $$o\sim\pi_\theta$$ 的采样替代（§2.1）。
+一个记法上的注意点（不是 bug，但会误导自己）：$$\log\pi_\theta,\ r_t(\theta),\ r^{\rm ref}_t,\ \mathcal H_t$$ 都是精确可算的量，给它们加帽会让你以为存在需要处理的采样噪声；反过来 $$\hat{\mathbb D}_{\rm KL}$$ 必须加帽，因为它是对 $$o\sim\pi_\theta$$ 的采样替代（§2.1）。
 
 ---
 
