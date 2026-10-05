@@ -87,7 +87,7 @@ $$J(\pi') - J(\pi) \;=\; \rho_0^{\top} (I - \gamma P_{\pi'})^{-1} \bar{A} \;=\; 
 
 ### 2.3 实测：这条恒等式精确到机器精度
 
-表格 MDP 上 $$V, Q, A, \rho^\pi$$ 都能解析算出，于是可以直接对账（`tools/trpo_pdl_lab.py`，$$\lvert\mathcal{S}\rvert = 8,\ \lvert\mathcal{A}\rvert = 4,\ \gamma = 0.9$$）：
+表格 MDP 上 $$V, Q, A, \rho^\pi$$ 都能解析算出，于是可以直接对账（[`ipynbs/experiments/rl/trpo-pdl/trpo_pdl_lab.py`](https://github.com/lrypcy/ipynbs/blob/a1a206aefd13577ea2afdca95e77fa91cfe980ff/experiments/rl/trpo-pdl/trpo_pdl_lab.py)，锁定 commit，$$\lvert\mathcal{S}\rvert = 8,\ \lvert\mathcal{A}\rvert = 4,\ \gamma = 0.9$$）：
 
 ```text
 seed   J(pi')-J(pi)     sum_t gamma^t E    残差
@@ -462,7 +462,7 @@ kl    = (old_logp.exp() * (old_logp - logp)).mean() # E[KL(π_old ‖ π_θ)] �
 | $$\lambda$$ | `cg_damping` | 标量 | 阻尼（论文未提，实现必需） |
 | $$\alpha$$ | backtracking 步长 | 标量 | 线搜索系数 |
 
-> 本篇所有实测数字出自 `tools/trpo_pdl_lab.py`（表格 MDP，$$V/Q/A/\rho^\pi/F$$ 全部解析可算，因此能直接和真值对账）。分组运行：`python3 tools/trpo_pdl_lab.py 1 2`。
+> 本篇所有实测数字出自 [`ipynbs/experiments/rl/trpo-pdl/`](https://github.com/lrypcy/ipynbs/blob/a1a206aefd13577ea2afdca95e77fa91cfe980ff/experiments/rl/trpo-pdl/)（[`trpo_pdl_lab.py`](https://github.com/lrypcy/ipynbs/blob/a1a206aefd13577ea2afdca95e77fa91cfe980ff/experiments/rl/trpo-pdl/trpo_pdl_lab.py) 锁定 commit；表格 MDP 上 $$V/Q/A/\rho^\pi/F$$ 全部解析可算，因此能直接和真值对账，README 含结论与运行说明）。分组运行：`python3 trpo_pdl_lab.py 1 2`。
 
 > 🧪 **动手练习**：① 在表格 MDP 上验证 PDL 恒等式到机器精度（脚本第 1 组），改 $$\gamma = 0.99$$ 看部分和要多少项才收敛；② 把你实现的 Fisher-vector product 与有限差分 Hessian 对账；③ 扫 $$\delta \in \{10^{-3}, 10^{-2}, 10^{-1}\}$$，统计 line search 触发次数与真实 KL 相对二阶预测的偏差。
 
