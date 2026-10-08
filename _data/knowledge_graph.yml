@@ -32,7 +32,7 @@ categories:
   - name: 强化学习
     icon: "🎮"
     color: "#e11d48"
-    desc: MDP → 策略梯度 → TRPO/PPO → GRPO，加上 IRL、奖励设计与信用分配
+    desc: MDP → 策略梯度 → TRPO/PPO → GRPO 的算法主干，下分四条支线：符号与估计器、Agentic RL、奖励的来源、训练栈
   - name: LLM算法
     icon: "🧩"
     color: "#d97706"
@@ -112,7 +112,7 @@ series:
     layer: 0
     order: 4
     prefixes: [megatron-]
-    desc: 5 篇。源码层走读：00 代码地图与配置系统 → 01 并行体系源码 → 02 优化工具箱 → 03 实测调优 → 04 RL/refit 桥接。承接 dist-train 系列的并行原理，补上源码、实测与 2026 新特性（GTP、MLA/DSA、MFSDP v2、Dynamic CP、full CUDA graph、原生 RL 栈）。
+    desc: 14 篇。00 地基（代码地图与配置系统、一次迭代控制流）→ 01 进程组与通信/计算重叠 → 02 专家并行（进程组双表、token dispatch 全链路、负载均衡）→ 03–07 并行源码层（TP+SP / GTP / DP 与优化器三套实现 / PP 调度器 / CP 与长上下文）→ 08–10 优化工具箱（显存账本与重计算 / FP8 与 FP4 / 算子融合与 CUDA Graph）→ 11–13 延伸（原生 RL 与 Refit / Checkpoint 与容错 / Bridge 与导出）。承接 dist-train 系列的并行原理，只做源码层，补上 2026 新特性（GTP、MLA/DSA、MFSDP v2、Dynamic CP、full CUDA graph、原生 RL 栈）。实测与调优已外迁至性能剖析系列。
 
   - id: perf-analysis
     name: 性能剖析：度量口径、训练栈归因与服务测量
@@ -140,9 +140,9 @@ series:
     category: 模型蒸馏
     layer: 1
     order: 1
-    prefixes: [distillation-, online-distillation, on-policy-distillation, opd-one-year]
+    prefixes: [distillation-, online-distillation, on-policy-distillation, opd-one-year, distill-rl-unified]
     exclude: [llm-quant]
-    desc: 4 篇。Dark Knowledge 主线、在线蒸馏（MiniLLM/GKD）、On-Policy Distillation 深度剖析与一年后的生态现状。
+    desc: 5 篇。Dark Knowledge 主线、在线蒸馏（MiniLLM/GKD）、On-Policy Distillation 深度剖析与一年后的生态现状，最后用统一损失光谱把 SFT / OPD / RLVR 串成一条谱系。
 
   - id: quant
     name: 大模型量化算法
@@ -190,21 +190,48 @@ series:
     desc: 4 篇。建模三讲（概率路径与边际向量场、score 与 SDE 扩展、条件生成与离散域潜空间）+ 应用篇（SD3 到蛋白质设计）。
 
   # ---------- layer 2：前沿专题 ----------
-  - id: rl-topics
-    name: RL 前沿专题
-    short: RL 前沿专题
+  - id: rl-estimation
+    name: RL 符号、估计量与信用分配
+    short: 估计与信用分配
     category: 强化学习
     layer: 2
     order: 0
-    prefixes: [irl-, toolrl, search-rl, distill-rl-unified, self-improving-reward, rl-advantage, rl-credit-assignment, rl-notation, rl-training-frameworks, rl-variables]
-    desc: 11 篇。逆强化学习两讲、ToolRL 奖励设计、Search RL、蒸馏与 RL 的统一损失光谱、自我改进奖励、优势估计的方法谱系、信用分配与符号体系、RL 训练框架全景横评（系统侧），以及优势/概率比/KL 的源码级对照（变量侧）。
+    prefixes: [rl-notation, rl-advantage, rl-credit-assignment]
+    desc: 3 篇长文。符号对照（GAE、概率比、KL 的定义与实算）→ 优势估计的方法谱系（REINFORCE 到组相对基线与 2026 新形态）→ 信用分配与奖励系数的结算清单（2025–2026）。回答「同一个符号，各家文献与框架到底在算什么、差多少」。
+
+  - id: agentic-rl
+    name: Agentic RL：工具与搜索
+    short: Agentic RL
+    category: 强化学习
+    layer: 2
+    order: 1
+    prefixes: [toolrl, search-rl]
+    desc: 2 篇。动作空间从词表扩张到工具调用与搜索引擎之后的 RL：ToolRL 讲奖励为什么是工具学习的全部，Search RL 讲检索动作上的 credit assignment 与 rollout 成本控制。
+
+  - id: reward-source
+    name: 奖励从哪来：IRL 与自我改进
+    short: 奖励的来源
+    category: 强化学习
+    layer: 2
+    order: 2
+    prefixes: [irl-, self-improving-reward]
+    desc: 3 篇。示范反推奖励（逆强化学习五十年）→ IRL 在 LLM 对齐里的复活（奖励模型、DPO 与 RLVR 的关系）→ 模型给自己发奖励的第四象限（RLAIF、Constitutional AI、self-rewarding 与 reward hacking）。
+
+  - id: rl-stack
+    name: RL 训练栈：框架与源码
+    short: RL 训练栈
+    category: 强化学习
+    layer: 2
+    order: 3
+    prefixes: [rl-training-frameworks, rl-variables]
+    desc: 2 篇。系统侧的框架横评（TRL / veRL / OpenRLHF / AReaL / slime 的设计取舍）+ 变量侧的源码对照（优势、概率比、KL 与损失聚合在各框架里怎么算）。承接 dist-train 的并行原理与 Megatron 的 refit / 权重同步。
 
   - id: wam
     name: 世界模型与世界动作模型
     short: 世界模型 WAM
     category: 具身智能
     layer: 2
-    order: 1
+    order: 4
     prefixes: [world-model]
     desc: 1 篇长文。从 Dreamer V4 到 Cosmos Policy / DreamZero 的 2025–2026 完整地图。
 
@@ -213,11 +240,19 @@ series:
     short: 超越函数
     category: 芯片架构
     layer: 2
-    order: 2
+    order: 5
     prefixes: [gpu-transcendental]
     desc: 1 篇纵深长文。归约—逼近—重建三步算法、MUFU/SFU 的微架构选择、H100 上 989 vs 3.9 的吞吐悬崖，以及 FlashAttention-3 与 RoPE 长上下文的数值陷阱；含 5 组可复现实验。是 op 系列第 10 篇的续篇。
 
   # ---------- 单篇专题（只在分类面板出现） ----------
+  - id: distill-rl
+    name: 蒸馏 × RL 的统一损失光谱
+    short: 统一光谱
+    category: 强化学习
+    node: false
+    prefixes: [distill-rl-unified]
+    desc: 1 篇。SFT、OPD、RLVR 是同一个损失的三次取值。同时收录在模型蒸馏系列的谱系尾端，是两个分类之间的桥梁篇。
+
   - id: xdsl
     name: xDSL 编译器体系
     short: xDSL
@@ -254,16 +289,19 @@ links:
   - { from: dist-train,to: quant,      label: QAT 要在训练栈里插伪量化 }
   - { from: dist-train,to: mdp-grpo,   label: RLHF/GRPO 训练依赖分布式栈 }
   - { from: dist-train,to: megatron,   label: 并行原理已在分布式训练系列讲透，Megatron 系列只做源码层与实测 }
-  - { from: megatron,  to: rl-topics,  label: Megatron 原生 RL 栈与 RL 训练框架在 refit / 权重同步处交汇 }
+  - { from: megatron,  to: rl-stack,  label: Megatron 原生 RL 栈与 RL 训练框架在 refit / 权重同步处交汇 }
   - { from: distill,   to: quant,      label: 蒸馏 + QAT 联合压缩 }
   - { from: distill,   to: mdp-grpo,   label: 蒸馏与 RL 的统一损失光谱 }
   - { from: posem,     to: quant,      label: KV Cache 量化与长上下文 }
   - { from: posem,     to: ttt,        label: 上下文建模是 TTT 的底座 }
   - { from: flow,      to: embodied,   label: Diffusion Policy 生成连续动作 }
   - { from: mdp-grpo,  to: embodied,   label: RL / 模仿学习是具身的学习范式 }
-  - { from: mdp-grpo,  to: rl-topics,  label: GRPO 主干通向 RLVR / 信用分配专题 }
-  - { from: distill,   to: rl-topics,  label: 蒸馏、DPO 与 RL 的目标函数同源 }
-  - { from: rl-topics, to: wam,        label: 想象轨迹里的信用分配 }
+  - { from: mdp-grpo,  to: rl-estimation,  label: GRPO 主干通向 GAE / 优势估计与信用分配 }
+  - { from: distill,   to: mdp-grpo,     label: 蒸馏、DPO 与 RL 的目标函数同源（统一损失光谱） }
+  - { from: rl-estimation, to: wam,        label: 想象轨迹里的信用分配 }
+  - { from: mdp-grpo,  to: agentic-rl,  label: GRPO 是工具与搜索动作的编解码底座 }
+  - { from: reward-source, to: rl-estimation, label: 奖励信号最终落到 token 级信用分配 }
+  - { from: agentic-rl, to: rl-estimation, label: 长程 rollout 的 credit assignment 最难 }
   - { from: mdp-grpo,  to: wam,        label: WAM 用 RL 训练动作模型 }
   - { from: embodied,  to: wam,        label: 世界模型驱动具身决策 }
   - { from: flow,      to: wam,        label: 生成式世界模型（Cosmos / DreamZero） }
