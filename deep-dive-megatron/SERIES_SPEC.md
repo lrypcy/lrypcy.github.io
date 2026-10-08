@@ -110,6 +110,87 @@ git show 60e039626:<path> | wc -l
 
 **禁止**：来历不明的图；自己无法复现却标「官方图」的图。
 
+### 3.4 引用许可白名单（2026-10-08 核定，有原文依据）
+
+结论：**默认一律自绘。** 现成图只在许可明确时才引。
+
+#### arXiv 论文图 —— 逐篇看 abs 页有没有 CC 标识
+
+arXiv 官方「Permissions and Reuse」页（<https://info.arxiv.org/help/license/reuse.html>）的原文：
+
+> **Can I reuse figures from an arXiv paper?**
+> The short answer is "it depends". More specifically:
+> - If the license applied to the work allows for remixing or reuse with citation, then yes.
+> - If not, then the version is assigned one of the arXiv perpetual non-exclusive licenses,
+>   and you will need to contact the submitter or copyright holder (if published) to determine
+>   applicable permissions.
+
+> All e-prints submitted to arXiv are subject to copyright protections.
+> **arXiv is not the copyright holder on any of the e-prints in our corpus.**
+> The overwhelming majority of e-prints are submitted using the arXiv perpetual non-exclusive
+> license, **which does not grant further reuse permissions directly.**
+
+**判定方法**（同页给出）：所有 abs 页在 "Download:" 选项下方标注该版本 assigned license；
+若提交者选了 Creative Commons，页面会出现 **CC 标识**。
+
+| abs 页状态 | 能否复制该论文的图 |
+| --- | --- |
+| 有 CC 标识（CC BY 4.0 / CC BY-SA 4.0） | ✅ 可，须署名 + 标注许可 |
+| 只有 "view license"（默认 arXiv 永久非独占许可） | ❌ **不可**，须自绘 |
+| 论文正文自带明确授权语句 | ✅ 按该语句条款 |
+
+- 「CC BY 4.0 允许 reuse、remix、adapt、build upon，commercial use 亦可，只要署名」
+  （<https://info.arxiv.org/help/license/index.html>）
+- CC BY-SA 额外要求：改作须同许可发布。
+- **本系列已核**：arXiv:2205.05198（Korthikanti，01/03 两篇都在引）的 abs 页**只有
+  "view license"、无 CC 标识** → 走默认许可 → **其图不可复制，只能自绘**。
+  引用其余论文图前一律先看 abs 页有没有 CC 标识，不许凭印象。
+
+#### 论文正文自带授权（少数，逐篇确认）
+
+存在但少见，引用前必须在该论文正文里找到原句。例如 *Attention Is All You Paper*（arXiv:1706.03762）：
+
+> Provided proper attribution is provided, Google hereby grants permission to reproduce the
+> tables and figures in this paper solely for use in journalistic or scholarly works.
+
+这种「按论文逐条给授权」的情况才可复制，且必须照抄其限定条件。
+
+#### NVIDIA 官方 blog / docs / 仓库文档 —— 一律不可复制
+
+NVIDIA 法务页（<https://www.nvidia.com/legal-info>）原文：
+
+> **OWNERSHIP OF MATERIALS** Materials are copyrighted and are protected by worldwide copyright
+> laws and treaty provisions. **They may not be copied, reproduced, modified, published, uploaded,
+> posted, transmitted, or distributed in any way, without NVIDIA's prior written permission.**
+
+CUDA SDK License 更明确把图列入受版权标的（<https://developer.nvidia.com/downloads/license/nsclv1>）：
+
+> **Intellectual Property Ownership:** All rights, title, interest, and copyrights in and to the
+> Materials (**including but not limited to all images, photographs, animations, video, audio,
+> music, text, and other information** incorporated into the Materials), are owned by NVIDIA, or its suppliers.
+
+NVIDIA Technology Access Terms §5(d) 亦禁止把 NVIDIA Content 「copy, reproduce, publish, blog,
+disclose, transmit, or otherwise disseminate elsewhere」。
+
+**结论：NVIDIA 的一切图（blog 配图、docs 截图、README 图、架构示意图）默认版权保留，
+一律不复制。** 需要时自绘并在图注写「据官方文档 X 重绘」，链接到原页面。
+
+#### 图注模板
+
+| 情形 | 图注写法 |
+| --- | --- |
+| 自绘、结论来自源码 | 数据/结论来源：<permalink>（或 `文件 L<a>-L<b>`） |
+| 自绘、据官方文档重绘 | 据 <官方文档 URL> 重绘 |
+| 自绘、据 CC BY 论文重绘 | 据 arXiv:<id>（CC BY）重绘 |
+| 直接复制 CC BY 论文图 | 图源：arXiv:<id>，CC BY 4.0 —— **必须逐篇确认 CC 标识** |
+| 直接复制 NVIDIA 图 | **禁止** |
+
+#### 落地要求
+
+- 用户要求「丰富的网络引用图」→ **用「图多 + 每张图都注明出处」来满足，不是靠搬别人的图**。
+  本系列的价值在源码级精度，自绘的示意图比官方截图更贴合作者的代码行号与推导。
+- 每张图下方必须有图注，指向具体 permalink / 论文 / 官方页面，**不许出现无出处的图**。
+
 ---
 
 ## 4. 证据分级（沿用 RESEARCH_PLAN.md §1，不得自创）
@@ -161,10 +242,18 @@ git show 60e039626:<path> | wc -l
 
 **两个 agent 不许自己 commit、不许自己 push。** 写文件即可。监工验收通过后统一提交并立即推送。
 
-> **违规记录（2026-10-08 08:08）**：agent 在收到本条禁令后仍自建并推送了 `7842859`
-> （01 篇 + RESEARCH_PLAN.md）。此前 02 篇的 `4da4066` 也是 agent 自建。
-> **这是明确禁令，不是建议。** 写完文件 → 报告监工 → 等指令，就这三步。
-> 出现第二次，监工会中止该 agent 并收回写权限。
+> **违规记录**
+>
+> 1. `7842859`（2026-10-08 08:08）——01 篇。收到禁令后仍自建并推送。
+> 2. `ff675e6`（2026-10-08 08:51）——03 篇。**在监工完成验收之前**就推送。
+>    监工当时正在核第三处引文（`layers.py` L1503 的 assert），推送发生在核完前 2 分钟。
+>
+> 两次都是「内容合格、流程越权」：事后核验都通过，但**流程越权比内容出错更危险** ——
+> 它意味着未验收的内容可以自己上线，而验收门禁正是本契约存在的唯一理由。
+>
+> **第三次即终止该 agent 的写权限**，由监工接管其全部文件写入。
+>
+> 这是明确禁令，不是建议。写完文件 → 报告监工 → 等指令，就这三步。
 
 如果 agent 需要暂存，**只允许按路径精确 stage 自己的那一个文件**：
 
