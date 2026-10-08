@@ -18,23 +18,23 @@ mathjax: true
 
 **TL;DR**
 
-> * 一个 rank 到底握着几个通信域？答案不是「TP 一个、PP 一个」，而是**全部由一次函数调用建立、存进 59 个模块级全局变量**。`initialize_model_parallel` 一个函数 L601–L1583（983 行）建完所有组，没有对象、没有注册表、没有生命周期管理。
-> * **状态载体是模块级全局变量，不是对象。** `parallel_state.py` L29–L159 共 59 个：39 个是进程组句柄、10 个 `*_GLOBAL_RANKS` 记录组内 rank 列表、10 个 `_*_MPU_*_SIZE|RANK` 做记账。「析构」`destroy_model_parallel()` L2506–L2692 就是把逐个置 `None`。
-> * **所有 `torch.distributed.new_group` 收口在一个函数**：`create_group()` L232–L266。它额外做两件事——按torch 版本裁剪参数（L249–L258），以及把本rank 所属的组登记进 `_global_process_group_list`（L264–L265，首位 `None` 代表默认组）。这个台账的唯一用途是 `update_pg_timeout()` L203–L229 批量改超时。
-> * **网格切分是一个不依赖 rank 的纯函数。** `RankGenerator` L465–L557 只吃 `world_size`、各轴 size、`order` 字符串，输出与当前 rank 无关。这是「同序创建」能成立的前提：`generate_masked_orthogonal_rank_groups` 建立在混合基数恒等式 $$r_{\text{global}} = r_{\text{tp}} + r_{\text{dp}} S_{\text{tp}} + r_{\text{pp}} S_{\text{tp}} S_{\text{dp}}$$ 上，`order` 决定分解顺序，`mask` 决定哪些轴在组内变化、哪些决定组编号。全部是整数运算，一次通信都不发。
-> * **「相同的 PG 互不影响」是两件事叠加**：构建期靠 `if rank in ranks` 过滤（非成员不保存句柄，L1171–L1173），运行期靠 NCCL communicator 只存在于成员之间。而 `new_group` 本身是集合操作，要求所有 rank **同序同参**调用——因此 `order` 归一化（L504–L511）与 dense / expert 两套网格的 PP 组一致性断言（L904–L906）都是刚需，不是洁癖。
-> * **单进程持有七八个组句柄不乱，靠三层机制**：`__init__` 显式注入（`None` 才回落全局，L261–L263）→ forward 只用 `self.tp_group` → **组存进 `ctx.tp_group`（L612），反向自动拿到同一个组**。第三层是关键：`f`/`g` 算子对能共用一个组对象，靠的就是 `ctx`。另有组内坐标抽象 `get_pg_rank`（L650–L661）返回 0..size-1 而非全局 rank，且 `group is None` 时返回 0，让「单卡」与「组只有我一个」走同一条路径。
-> * **哪些所有卡同步、哪些各自算，取决于通信落在哪个时间尺度。** TP / SP / CP / EP 在**层内**，PP 在**层间**，DP 在**iteration 末尾**。三档天然错开，这就是 1F1B 能成立的前提，也是单进程同时持有多个句柄却不需要任何仲裁的原因。
-> * **通信与计算的组织有两个流派，而且全局约束互斥。** 流派 A 不切side stream，用 `async_op=True` 在默认 stream 上提交通信后立刻排后续 GEMM，靠 `CUDA_DEVICE_MAX_CONNECTIONS=1` 强制「launch 顺序 = 执行顺序」来实现物理并行（L831–L836）；代价是该进程内所有 kernel 串行排队。流派 B 按 `(chain_id, group)` 建独立 side stream，依赖全用 event 显式声明（L290–L291、L361–L374、L1388–L1400）。
-> * **同一个环境变量有两条相反的硬约束**：`layers.py` L897–L909 要求 `CUDA_DEVICE_MAX_CONNECTIONS == "1"`，而 `parallel_state.py` L1201–L1207 在UCC backend 下断言它 `!= "1"`。根因见 L1188–L1192 的注释——UCC 的卖点之一是 Zero-SM 不占 SM 资源，反过来说 NCCL 通信是占 SM 的。**改这个变量前必须先确认 backend。**
-> * **CUDA graph 与 side stream 相撞时，裸的 stream 上下文会丢依赖边**，必须额外持一个 event，且该 event **挂在 `self` 上**而非放进 event pool，否则 capture 与 replay 之间被回收，重放时静默读脏数据（L1385–L1387）。
-> * **规模感**：`parallel_state.py` 2692 行，其中 `initialize_model_parallel` 占 983 行；`layers.py` 1583 行，单个 `LinearWithGradAccumulationAndAsyncCommunication` 就占 226 行；`generalized_tensor_parallelism.py` 2647 行。
+> * 一个 rank 到底握着几个通信域？答案不是「TP 一个、PP 一个」，而是**全部由一次函数调用建立、存进 59 个模块级全局变量**。`initialize_model_parallel` 一个函数 L601–L1583（983 行）建完所有组，没有对象、没有注册表、没有生命周期管理（[`parallel_state.py` L601–L1583](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L601-L1583)）。
+> * **状态载体是模块级全局变量，不是对象。** `parallel_state.py` L29–L159 共 59 个：39 个是进程组句柄、10 个 `*_GLOBAL_RANKS` 记录组内 rank 列表、10 个 `_*_MPU_*_SIZE|RANK` 做记账。「析构」`destroy_model_parallel()` L2506–L2692 就是把逐个置 `None`。（[`parallel_state.py` L29–L159](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L29-L159)）
+> * **所有 `torch.distributed.new_group` 收口在一个函数**：`create_group()` L232–L266。它额外做两件事——按torch 版本裁剪参数（`parallel_state.py` L249–L258），以及把本rank 所属的组登记进 `_global_process_group_list`（`parallel_state.py` L264–L265，首位 `None` 代表默认组）。这个台账的唯一用途是 `update_pg_timeout()` L203–L229 批量改超时。（[`create_group()` L232–L266](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L232-L266)）
+> * **网格切分是一个不依赖 rank 的纯函数。** `RankGenerator` L465–L557 只吃 `world_size`、各轴 size、`order` 字符串，输出与当前 rank 无关。这是「同序创建」能成立的前提：`generate_masked_orthogonal_rank_groups` 建立在混合基数恒等式 $$r_{\text{global}} = r_{\text{tp}} + r_{\text{dp}} S_{\text{tp}} + r_{\text{pp}} S_{\text{tp}} S_{\text{dp}}$$ 上，`order` 决定分解顺序，`mask` 决定哪些轴在组内变化、哪些决定组编号。全部是整数运算，一次通信都不发。（[`RankGenerator` L465–L557](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L465-L557)）
+> * **「相同的 PG 互不影响」是两件事叠加**：构建期靠 `if rank in ranks` 过滤（非成员不保存句柄，L1171–L1173），运行期靠 NCCL communicator 只存在于成员之间。而 `new_group` 本身是集合操作，要求所有 rank **同序同参**调用——因此 `order` 归一化（`parallel_state.py` L504–L511）与 dense / expert 两套网格的 PP 组一致性断言（`parallel_state.py` L904–L906）都是刚需，不是洁癖。（[TP 组建立循环 L1164–L1173](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L1164-L1173)）
+> * **单进程持有七八个组句柄不乱，靠三层机制**：`__init__` 显式注入（`None` 才回落全局，L261–L263）→ forward 只用 `self.tp_group` → **组存进 `ctx.tp_group`（`layers.py` L612），反向自动拿到同一个组**。第三层是关键：`f`/`g` 算子对能共用一个组对象，靠的就是 `ctx`。另有组内坐标抽象 `get_pg_rank`（`utils.py` L650–L661）返回 0..size-1 而非全局 rank，且 `group is None` 时返回 0，让「单卡」与「组只有我一个」走同一条路径。（[`ctx.tp_group` L612](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L612-L612)）
+> * **哪些所有卡同步、哪些各自算，取决于通信落在哪个时间尺度。** TP / SP / CP / EP 在**层内**，PP 在**层间**，DP 在**iteration 末尾**。三档天然错开，这就是 1F1B 能成立的前提，也是单进程同时持有多个句柄却不需要任何仲裁的原因。（[`LinearWithGradAccumulationAndAsyncCommunication` L630–L798](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L630-L798)）
+> * **通信与计算的组织有两个流派，而且全局约束互斥。** 流派 A 不切side stream，用 `async_op=True` 在默认 stream 上提交通信后立刻排后续 GEMM，靠 `CUDA_DEVICE_MAX_CONNECTIONS=1` 强制「launch 顺序 = 执行顺序」来实现物理并行（`layers.py` L831–L836）；代价是该进程内所有 kernel 串行排队。流派 B 按 `(chain_id, group)` 建独立 side stream，依赖全用 event 显式声明（`generalized_tensor_parallelism.py` L290–L291、L361–L374、L1388–L1400）。（[L831–L836](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L831-L836)）
+> * **同一个环境变量有两条相反的硬约束**：`layers.py` L897–L909 要求 `CUDA_DEVICE_MAX_CONNECTIONS == "1"`，而 `parallel_state.py` L1201–L1207 在UCC backend 下断言它 `!= "1"`。根因见 L1188–L1192 的注释——UCC 的卖点之一是 Zero-SM 不占 SM 资源，反过来说 NCCL 通信是占 SM 的。**改这个变量前必须先确认 backend。**（[L897–L909](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L897-L909)）
+> * **CUDA graph 与 side stream 相撞时，裸的 stream 上下文会丢依赖边**，必须额外持一个 event，且该 event **挂在 `self` 上**而非放进 event pool，否则 capture 与 replay 之间被回收，重放时静默读脏数据（`generalized_tensor_parallelism.py` L1385–L1387）。（[L1385–L1387](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/generalized_tensor_parallelism.py#L1385-L1387)）
+> * **规模感**：`parallel_state.py` 2692 行，其中 `initialize_model_parallel` 占 983 行；`layers.py` 1583 行，单个 `LinearWithGradAccumulationAndAsyncCommunication` 就占 226 行；`generalized_tensor_parallelism.py` 2647 行。（[`initialize_model_parallel` L601–L1583](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L601-L1583)）
 
 ---
 
 ## 1. 一个 rank 握着多少个通信域
 
-并行原理层面，「通信域」这个词并不常被单独拿出来讨论。张量并行要all-reduce、流水并行要 send/recv、数据并行要归约梯度、上下文并行要换 KV、专家并行要 all-to-all——这些在《分布式训练》系列里是分别讲的，读者很容易形成「一个维度对应一个通信域」的印象。
+并行原理层面，「通信域」这个词并不常被单独拿出来讨论。张量并行要all-reduce、流水并行要 send/recv、数据并行要归约梯度、上下文并行要换 KV、专家并行要 all-to-all——这些在《分布式训练》系列里是分别讲的，读者很容易形成「一个维度对应一个通信域」的印象。（[`generate_masked_orthogonal_rank_groups` L269–L375](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L269-L375)）
 
 但从代码的角度看，问题要尖锐得多：
 
@@ -86,6 +86,8 @@ flowchart TB
     end
     LAYER--> BOUND--> TAIL
 ```
+*图 1：一次 iteration 里集合通信的三档时机。分层依据是对源码调用点的归纳——层内来自 [`layers.py` L630–L798](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L630-L798) 的线性层前后向与 MoE dispatcher，层间来自流水调度的 p2p，iteration 末尾来自 [`parallel_state.py` L601–L1583](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L601-L1583) 里 data-parallel 与 embedding 两组只建一次、以及 [`parallel_state.py` L1269–L1288](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L1269-L1288) 的 embedding 组创建。*
+
 
 「互不重叠」这四个字是本文很多结论的根因。§9 会展开为什么它使得「单进程持多组」这件事完全不需要仲裁机制，§10 会展开通信与计算如何在每一档内部再叠加重叠。
 
@@ -93,7 +95,7 @@ flowchart TB
 
 ## 2. 两层初始化：torch 的默认组与 Megatron 的子组
 
-通信初始化分两层，调用点都在 `megatron/training/initialize.py` 的 `_initialize_distributed()`（L271–L412）里。
+通信初始化分两层，调用点都在 `megatron/training/initialize.py` 的 `_initialize_distributed()`（`initialize.py` L271–L412）里。（[`_initialize_distributed` L271–L412](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/initialize.py#L271-L412)）
 
 ### 2.1 第一层：torch 的默认通信域
 
@@ -171,7 +173,7 @@ if device_count > 0 and not skip_model_parallel_init:
 
 关于这个函数有三个要点，后面都会用到：
 
-**第一，`order` 是唯一决定网格形状的实参**（L394）。默认 `'tp-cp-ep-dp-pp'`，开了 `--use-tp-pp-dp-mapping` 则换成 `'tp-cp-ep-pp-dp'`。§5 会说明这个字符串如何被拆成 `RankGenerator` 的六个轴。
+**第一，`order` 是唯一决定网格形状的实参**（`initialize.py` L394）。默认 `'tp-cp-ep-dp-pp'`，开了 `--use-tp-pp-dp-mapping` 则换成 `'tp-cp-ep-pp-dp'`。§5 会说明这个字符串如何被拆成 `RankGenerator` 的六个轴。
 
 **第二，是 eager 建立而不是 lazy 建立。** `initialize_model_parallel` 返回时，全部进程组已经建完。后续所有 getter 只做校验，不做创建。这个选择让「初始化」的边界非常清晰：`initialize_megatron` 返回后进程组状态不再变化。代价是即使某个并行维度 size 为 1，对应的单元素组也会被建出来（见 §5.3 的 order 归一化）。
 
@@ -201,12 +203,14 @@ flowchart TB
     H --> I["create_group 循环<br/>唯一 new_group 收口 L259"]
     I --> J["NCCL communicator<br/>仅存在于成员之间"]
 ```
+*图 2：两层初始化的调用顺序。据 [`initialize.py` L271–L412](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/initialize.py#L271-L412) 的 `_initialize_distributed` 与 [`parallel_state.py` L601–L1583](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L601-L1583) 的 `initialize_model_parallel` 重绘。*
+
 
 ---
 
 ## 3. 状态载体：59 个模块级全局变量
 
-`parallel_state.py` L29–L159 是全部并行状态的存放处。这段区间内共 **59** 个模块级赋值，分三类：
+`parallel_state.py` L29–L159 是全部并行状态的存放处。这段区间内共 **59** 个模块级赋值，分三类：（[`parallel_state.py` L29–L159](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L29-L159)）
 
 | 类别 | 数量 | 例子 | 作用 |
 | --- | --- | --- | --- |
@@ -241,8 +245,10 @@ flowchart TB
     U1 --> E1
     U2 --> E1
 ```
+*图 3：模块级全局的三类配对。三个数字（39 / 10 / 10，合计 59）是对 [`parallel_state.py` L29–L159](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L29-L159) 区间内每个模块级赋值逐个计数所得，非估计值。*
 
-举例，TP 组的一对（L29 与 L113）：
+
+举例，TP 组的一对（`parallel_state.py` L29 与 L113）：
 
 ```python
 _TENSOR_MODEL_PARALLEL_GROUP = None        # L29
@@ -254,7 +260,7 @@ _TENSOR_MODEL_PARALLEL_GLOBAL_RANKS = None # L113
 
 这套设计最直接的后果是：**没有 RAII，没有注册表，没有「谁拥有这个组」的概念**。
 
-「是否已初始化」的判据就是某个全局是否为 `None`（L1681–L1683）：
+「是否已初始化」的判据就是某个全局是否为 `None`（`parallel_state.py` L1681–L1683）：
 
 ```python
 def is_initialized():
@@ -296,7 +302,7 @@ def destroy_model_parallel():
 
 ### 3.2 getter 的内联断言
 
-50余个 `get_*_group` getter 共享同一个模式：`check_initialized` 布尔开关 + 内联 `assert`。以 TP 组为例（L1704–L1710）：
+50余个 `get_*_group` getter 共享同一个模式：`check_initialized` 布尔开关 + 内联 `assert`。以 TP 组为例（`parallel_state.py` L1704–L1710）：
 
 ```python
 def get_tensor_model_parallel_group(check_initialized=True):
@@ -316,7 +322,7 @@ def get_tensor_model_parallel_group(check_initialized=True):
 
 ## 4. `create_group`：唯一的 `new_group` 收口
 
-全仓库所有 `torch.distributed.new_group` 调用都收敛在一个函数里——`create_group()` L232–L266：
+全仓库所有 `torch.distributed.new_group` 调用都收敛在一个函数里——`create_group()` L232–L266：（[`create_group()` L232–L266](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L232-L266)）
 
 ```python
 def create_group(
@@ -368,7 +374,7 @@ L259 一行 `torch.distributed.new_group(**kwargs)`，所有组都在这里产�
 
 ### 4.3 进程组台账
 
-L260–L265 维护 `_global_process_group_list`（L165 声明）：
+L260–L265 维护 `_global_process_group_list`（`parallel_state.py` L165 声明）：
 
 ```python
 _global_process_group_list = None
@@ -379,7 +385,7 @@ _global_process_group_list = None
 - **首位 `None` 代表默认进程组**（world group）。默认组不是通过 `new_group` 建的，所以没法拿到对象，只能用 `None` 占位。
 - **只有本 rank 是成员的组才被登记**。所以这个列表天然是「本进程有能力修改的组」的集合。
 
-它唯一的用途是 `update_pg_timeout()`（L203–L229）批量改超时：
+它唯一的用途是 `update_pg_timeout()`（`parallel_state.py` L203–L229）批量改超时：
 
 ```python
 def update_pg_timeout(
@@ -414,10 +420,12 @@ flowchart LR
     G --> H
     H --> I["台账另一用途：<br/>update_pg_timeout 批量改超时<br/>L203-L229"]
 ```
+*图 4：`create_group` 的收口与进程组台账。据 [`parallel_state.py` L232–L266](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L232-L266) 重绘，含 L249–L258 的版本兼容分支与 L264–L265 的成员过滤。*
+
 
 ### 4.4 顺带一提：NCCL 层是per-group 配置
 
-组句柄之外，`create_group` 还会通过 `pg_options` 传一个 per-group 的 NCCL 配置。构造函数在 `get_nccl_options()`（L168–L200）：
+组句柄之外，`create_group` 还会通过 `pg_options` 传一个 per-group 的 NCCL 配置。构造函数在 `get_nccl_options()`（`parallel_state.py` L168–L200）：
 
 ```python
 nccl_options = torch.distributed.ProcessGroupNCCL.Options(
@@ -438,7 +446,7 @@ if "max_ctas" in nccl_comm_cfgs[pg_name]:
 
 ### 5.1 六个轴与一个字符串
 
-`RankGenerator`（L465–L557）是网格切分的全部逻辑。它的构造函数 L468–L517：
+`RankGenerator`（`parallel_state.py` L465–L557）是网格切分的全部逻辑。它的构造函数 L468–L517：（[`RankGenerator` L465–L557](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L465-L557)）
 
 ```python
 def __init__(
@@ -464,7 +472,7 @@ def __init__(
 
 **第一个约束在断言里**：`ep == 1 or cp == 1`。上下文并行与专家并行不能同时大于 1，所以一个 `RankGenerator` 实例里，要么 EP 轴是平凡的，要么 CP 轴是平凡的。§5.4 会看到这直接导致 dense 与 expert 各用一个实例。
 
-`world_size` 是六个轴的乘积（L491），其中 `gtp_remat` 是 GTP 的权重重 materialization 轴，默认为 1，即不切分。
+`world_size` 是六个轴的乘积（`parallel_state.py` L491），其中 `gtp_remat` 是 GTP 的权重重 materialization 轴，默认为 1，即不切分。
 
 ### 5.2 `order` 归一化
 
@@ -505,7 +513,7 @@ tp-cp-ep-dp-pp-gtp_remat
 
 ### 5.3 取组：`get_mask` + `get_ranks`
 
-`get_ranks(token)`（L534–L550）接受形如 `'tp'`、`'tp-dp'` 的 token（多个轴用连字符分隔）：
+`get_ranks(token)`（`parallel_state.py` L534–L550）接受形如 `'tp'`、`'tp-dp'` 的 token（多个轴用连字符分隔）：
 
 ```python
 def get_ranks(self, token):
@@ -521,7 +529,7 @@ def get_ranks(self, token):
     return ranks
 ```
 
-`get_mask`（L519–L532）把 token 翻译成布尔向量，位置对齐 `order` 里的每个轴：
+`get_mask`（`parallel_state.py` L519–L532）把 token 翻译成布尔向量，位置对齐 `order` 里的每个轴：
 
 ```python
 def get_mask(self, order: str, token: str):
@@ -537,11 +545,11 @@ def get_mask(self, order: str, token: str):
 
 `rank_offset` 的存在是为了支持子进程组——比如在已经划出一片 rank 之后，在其内部再起一套并行的网格。
 
-`get_gtp_ranks`（L552–L557）是 GTP 专用入口，返回 `gtp_remat` 轴对应的组，并断言请求的 size 与构造时一致。
+`get_gtp_ranks`（`parallel_state.py` L552–L557）是 GTP 专用入口，返回 `gtp_remat` 轴对应的组，并断言请求的 size 与构造时一致。
 
 ### 5.4 两套网格：dense 与 expert
 
-因为 `ep == 1 or cp == 1` 的约束，`initialize_model_parallel` 里建了两个独立实例。dense 网格（L857–L868）：
+因为 `ep == 1 or cp == 1` 的约束，`initialize_model_parallel` 里建了两个独立实例。dense 网格（`parallel_state.py` L857–L868）：
 
 ```python
 decoder_order = _inject_gtp_remat_axis(order, after="tp")
@@ -558,7 +566,7 @@ decoder_rank_generator = RankGenerator(
 )
 ```
 
-expert 网格（L886–L896）：
+expert 网格（`parallel_state.py` L886–L896）：
 
 ```python
 expert_order = _inject_gtp_remat_axis(order, after="ep")
@@ -574,7 +582,7 @@ expert_decoder_rank_generator = RankGenerator(
 )
 ```
 
-两者的差别不只是把 `ep` 和 `cp` 对调。expert 网格的 `dp` 是**单独算出来的**（L880）：
+两者的差别不只是把 `ep` 和 `cp` 对调。expert 网格的 `dp` 是**单独算出来的**（`parallel_state.py` L880）：
 
 ```python
 expert_data_parallel_size = world_size // expert_tensor_model_pipeline_parallel_size
@@ -602,7 +610,7 @@ assert decoder_rank_generator.get_ranks("pp") == expert_decoder_rank_generator.g
 
 ### 5.5 GTP 轴的注入位置
 
-`_inject_gtp_remat_axis`（L582–L597）值得单独看，因为它把一个性能考量写进了字符串处理：
+`_inject_gtp_remat_axis`（`parallel_state.py` L582–L597）值得单独看，因为它把一个性能考量写进了字符串处理：
 
 ```python
 def _inject_gtp_remat_axis(order_str: str, after: str = "tp") -> str:
@@ -654,16 +662,18 @@ flowchart TB
     MASK --> D["generate_masked_<br/>orthogonal_rank_groups<br/>L269-L375"]
     D --> E["全部组的 rank 列表<br/>与当前 rank 无关"]
 ```
+*图 5：`order` 归一化与掩码生成。据 [`parallel_state.py` L465–L557](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L465-L557) 重绘，含 L504–L511 的两条归一化规则。*
+
 
 ---
 
 ## 6. `generate_masked_orthogonal_rank_groups`：混合基数分解
 
-这是网格切分的数学核心，L269–L375。它是一个**纯整数函数**：输入 `world_size`、各轴 size 列表、一个布尔掩码，输出若干个 rank 列表。不做任何通信，不读任何全局状态，不依赖当前 rank。
+这是网格切分的数学核心，L269–L375。它是一个**纯整数函数**：输入 `world_size`、各轴 size 列表、一个布尔掩码，输出若干个 rank 列表。不做任何通信，不读任何全局状态，不依赖当前 rank。（[L269–L375](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L269-L375)）
 
 ### 6.1 那条恒等式
 
-函数的 docstring（L289–L307）把算法讲得很直接。下面是原文：
+函数的 docstring（`parallel_state.py` L289–L307）把算法讲得很直接。下面是原文：
 
 ```text
 Algorithm:
@@ -709,6 +719,8 @@ flowchart LR
     F --> R3["rank 0, 16, 32 …<br/>dp 组 0"]
     G --> R4["rank 0, 256, 512, 768<br/>pp 组 0"]
 ```
+*图 6：位序阶梯。各轴 stride 按 `order = tp-cp-ep-dp-pp-gtp_remat`、`ordered_size = [8,2,1,16,4,1]` 代入 [`parallel_state.py` L269–L375](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L269-L375) 的分解式重算，不是从图上读出来的。*
+
 
 越靠左的轴 stride 越小，组内成员的 rank 号越紧凑——这就是 §5.5 里「左端 = 最相邻」的字面含义。
 
@@ -719,7 +731,7 @@ flowchart LR
 - `mask[i] == True`：这一轴**在组内变化**——它的坐标是组内成员的区分依据
 - `mask[i] == False`：这一轴**决定组编号**——它的坐标在整个 world 里张成组之间的区分
 
-于是组大小是 `True` 位置的轴 size 之积，组数是 `world_size // 组大小`。docstring 里给的算例（L309–L319）是 `parallel_size = [tp_size, dp_size, pp_size] = [2, 3, 4]`、`mask = [False, True, False]`：
+于是组大小是 `True` 位置的轴 size 之积，组数是 `world_size // 组大小`。docstring 里给的算例（`parallel_state.py` L309–L319）是 `parallel_size = [tp_size, dp_size, pp_size] = [2, 3, 4]`、`mask = [False, True, False]`：
 
 ```text
     dp_group_index(0) = tp_rank(0) + pp_rank(0) * 2
@@ -737,9 +749,9 @@ flowchart LR
 
 ### 6.3 实现：商余分解与回加权
 
-函数体（L322–L375）是上面数学的直接编码。两个内部辅助函数：
+函数体（`parallel_state.py` L322–L375）是上面数学的直接编码。两个内部辅助函数：
 
-`prefix_product`（L322–L327）算出累积乘积作为 stride：
+`prefix_product`（`parallel_state.py` L322–L327）算出累积乘积作为 stride：
 
 ```python
 def prefix_product(a: List[int], init=1) -> List[int]:
@@ -750,14 +762,14 @@ def prefix_product(a: List[int], init=1) -> List[int]:
     return r
 ```
 
-`inner_product`（L329–L330）是逐项相乘求和：
+`inner_product`（`parallel_state.py` L329–L330）是逐项相乘求和：
 
 ```python
 def inner_product(a: List[int], b: List[int]) -> int:
     return sum([x * y for x, y in zip(a, b)])
 ```
 
-`decompose`（L332–L350）是核心——给定一个整数 index 与 shape，返回它的各位坐标：
+`decompose`（`parallel_state.py` L332–L350）是核心——给定一个整数 index 与 shape，返回它的各位坐标：
 
 ```python
 def decompose(index, shape, stride=None):
@@ -783,7 +795,7 @@ def decompose(index, shape, stride=None):
 
 那句 `assert` 是这段代码里最有价值的一行：它把「分解正确」变成了运行时的显式检查，而不是靠注释保证。任何 stride 与 shape 不匹配的输入都会在这里炸掉，而不是静默产生错误的组。
 
-主循环（L352–L375）：
+主循环（`parallel_state.py` L352–L375）：
 
 ```python
 masked_shape = [s for s, m in zip(parallel_size, mask) if m]
@@ -852,6 +864,8 @@ flowchart TB
     G4["pp 组 = 跨整行<br/>pp 组 0 = 0, 8"]
     G5["tp-dp 组 = 2×2 小矩形<br/>tp-dp 组 0 = 0, 1, 4, 5"]
 ```
+*图 7：`world_size=16` 的 rank 网格。取 `order = tp-cp-dp-pp`、四轴 size 均为 2，用 [`parallel_state.py` L269–L375](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L269-L375) 的语义重算复核；「正交」一节的不变量（任意 tp 组与任意 dp 组交集恒为 1）另用全枚举验证。*
+
 
 四种单轴组各 8 个，`tp-dp` 这类双轴组 4 个——组数总是 $$16 / \text{组大小}$$。任意 TP 组与任意 DP 组的交集恒为一个 rank，这就是「正交」这个名字的来源。
 
@@ -861,7 +875,7 @@ flowchart TB
 
 ## 7. 同序创建：为什么「相同的 PG」互不影响
 
-§4 留了一个没展开的问题：所有 rank 都执行同一句 `create_group(ranks, ...)`，建的是「同一个」组，为什么不会互相污染？
+§4 留了一个没展开的问题：所有 rank 都执行同一句 `create_group(ranks, ...)`，建的是「同一个」组，为什么不会互相污染？（[L1164–L1173](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L1164-L1173)）
 
 ### 7.1 一个 rank 是一个进程
 
@@ -883,6 +897,12 @@ else:
 
 `torch.distributed.new_group(ranks)` 的语义是：它必须在**默认组覆盖的全部进程上**被调用，调用顺序与参数必须完全一致。它的内部过程包含一次 rendezvous——所有参与的 rank 交换信息、协商出一个编号，然后各自建立本地对象。
 
+这条要求在 PyTorch 官方文档里是明确写死的（[torch.distributed 文档](https://docs.pytorch.org/docs/stable/distributed.html)，`new_group` 条目）：
+
+> This function requires that all processes in the main group (i.e. all processes that are part of the distributed job) enter this function, **even if they are not going to be members of the group**. Additionally, groups should be created in the **same order in all processes**.
+
+同一处文档还给出一条容易漏的前提：`sort_ranks` 参数为 `True`（默认）时会对 `ranks` 排序，且 **All processes must pass the identical `ranks` list**。也就是说「同参」不只是顺序相同，还要逐元素相同。
+
 因此：
 
 - 第 $$k$$ 次 `new_group` 调用在所有 rank 上必须配对成**同一组**。顺序一旦错位，第 $$k$$ 次在 rank A 上和 rank B 上协商出的是不同组成的两组，communicator错配，表现为挂死或静默算错。
@@ -890,7 +910,7 @@ else:
 
 ### 7.3 两层隔离
 
-Megatron 用两件事把上述语义收拾干净。第一层是 `create_group` 里的台账过滤（L264–L265），第二层在每个建组循环的成员判断里。以 TP 组为例（L1164–L1173）：
+Megatron 用两件事把上述语义收拾干净。第一层是 `create_group` 里的台账过滤（`parallel_state.py` L264–L265），第二层在每个建组循环的成员判断里。以 TP 组为例（`parallel_state.py` L1164–L1173）：
 
 ```python
 for ranks in decoder_rank_generator.get_ranks('tp'):
@@ -908,7 +928,7 @@ for ranks in decoder_rank_generator.get_ranks('tp'):
 读法：
 
 - `create_group` 被**所有** rank 执行，对每个候选组都走一次 `new_group`
-- 返回值只在 `rank in ranks` 时被赋给模块全局，其余 rank 直接丢弃（L1171–L1173）
+- 返回值只在 `rank in ranks` 时被赋给模块全局，其余 rank 直接丢弃（`parallel_state.py` L1171–L1173）
 - 于是「本进程持有哪些句柄」这件事由组成员关系决定，不需要额外登记
 
 于是隔离分成两层：**构建期**非成员不持有句柄；**运行期**物理链路只在成员之间建立。
@@ -933,6 +953,8 @@ flowchart TB
     B --> F
     C --> G["后续 all-reduce 只在<br/>8 个成员之间发生"]
 ```
+*图 8：非成员 rank 的句柄语义。据 [`parallel_state.py` L232–L266](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L232-L266) 与 [`parallel_state.py` L1164–L1173](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L1164-L1173) 重绘；「须同序同参调用」一条依据 PyTorch `new_group` 官方文档。*
+
 
 ### 7.4 于是那几条「洁癖」全是刚需
 
@@ -952,7 +974,7 @@ flowchart TB
 
 ## 8. 组的选择：三层机制与组内坐标
 
-§7 解决了「组怎么建」，接下来是「一次 `all_reduce` 到底该发给哪个组」。答案是：**没有人「选择」，组在建模块的时候就被钉死了**。
+§7 解决了「组怎么建」，接下来是「一次 `all_reduce` 到底该发给哪个组」。答案是：**没有人「选择」，组在建模块的时候就被钉死了**。（[`layers.py` L573–L798](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L573-L798)）
 
 ### 8.1 第一层：构造时显式注入
 
@@ -972,25 +994,35 @@ if self.tp_group is None:
 
 ### 8.2 第二层：forward 只经过 `self.tp_group`
 
-`layers.py` 里 `ColumnParallelLinear` 的 forward（L368–L376 附近）：
+`ColumnParallelLinear.forward`（`layers.py` L1158–L1267）与 `RowParallelLinear.forward`（`layers.py` L1488–L1545）里，全部集合通信都从 `self.tp_group` 取组。四个调用点：
 
 ```python
-output_parallel = copy_to_tensor_model_parallel_region(input_, self.tp_group, self.config)
-...
-output = reduce_from_tensor_model_parallel_region(output_parallel, group=self.tp_group)
+# ColumnParallelLinear.forward，L1205：f 算子，forward 恒等、backward all-reduce
+input_parallel = copy_to_tensor_model_parallel_region(input_, group=self.tp_group)
+
+# ColumnParallelLinear.forward，L1261：仅 gather_output=True 时
+output = gather_from_tensor_model_parallel_region(output_parallel, group=self.tp_group)
+
+# RowParallelLinear.forward，L1504：input_is_parallel=False 时先切分
+input_parallel = scatter_to_tensor_model_parallel_region(input_, group=self.tp_group)
+
+# RowParallelLinear.forward，L1538：g 算子，forward all-reduce、backward 恒等
+output_ = reduce_from_tensor_model_parallel_region(output_parallel, group=self.tp_group)
 ```
 
-注意计算图里**没有任何一处** `get_tensor_model_parallel_group()` 调用。`self.tp_group` 从构造一路带到 forward。
+这四处**没有任何一处**调用 `get_tensor_model_parallel_group()`。`self.tp_group` 从构造一路带到 forward。
+
+唯一存在全局回落的地方是包装函数 `linear_with_grad_accumulation_and_async_allreduce`（`layers.py` L801–L914）的 L881——而那正是 §8.1 那条「显式注入优先，为 `None` 才回落」的兜底逻辑本身。两处并不矛盾：回落只在实参为 `None` 时发生，而 `ColumnParallelLinear` / `RowParallelLinear` 都已经把 `self.tp_group` 传下去了。
 
 ### 8.3 第三层：组存进 `ctx`，反向自动同组
 
-这是整套机制里最关键、也最容易漏掉的一环。`LinearWithGradAccumulationAndAsyncCommunication.forward` 把 `tp_group` 收进 `ctx`（L612）：
+这是整套机制里最关键、也最容易漏掉的一环。`LinearWithGradAccumulationAndAsyncCommunication.forward` 把 `tp_group` 收进 `ctx`（`layers.py` L612）：
 
 ```python
 ctx.tp_group = tp_group
 ```
 
-backward 取回来用（L648 附近、L689）：
+backward 取回来用（`layers.py` L648 附近、L689）：
 
 ```python
 tp_group = ctx.tp_group
@@ -1000,19 +1032,26 @@ handle = torch.distributed.all_reduce(grad_input, group=tp_group, async_op=True)
 
 于是**反向传播自动拿到与前向同一个组对象**，不需要重新查询、不需要额外传参、也不可能选错。
 
-《分布式训练（03）》讲的 $$f$$ / $$g$$ 算子对，在这里落地成两个函数（`mappings.py` L492–L501）：
+《分布式训练（03）》讲的 $$f$$ / $$g$$ 算子对，在这里落地成 `mappings.py` L492–L501 的两个包装函数（`mappings.py` L492–L495、L498–L501）：
 
 ```python
-def copy_to_tensor_model_parallel_region(input_, group, config):
-    ...
+def copy_to_tensor_model_parallel_region(input_, group=None):
+    """Wrapper for autograd function: forward: copy, backward allreduce"""
+    group = get_tensor_model_parallel_group_if_none(group)
+    return _CopyToModelParallelRegion.apply(input_, group)
 
-def reduce_from_tensor_model_parallel_region(input_, group):
-    ...
+
+def reduce_from_tensor_model_parallel_region(input_, group=None):
+    """Wrapper for autograd function: forward: all reduce, backward copy"""
+    group = get_tensor_model_parallel_group_if_none(group)
+    return _ReduceFromModelParallelRegion.apply(input_, group)
 ```
 
-两者共用同一个 `group` 对象——`f` 的反向是 `g` 的正向，而两者的组必须是同一个。这个「同一个」由 `ctx` 保证，而不是由调用点自觉。
+这两段 docstring 本身就是 $$f$$ / $$g$$ 语义的最简明陈述：$$f$$ 在前向只做 copy、反向做 all-reduce；$$g$$ 在前向做 all-reduce、反向只做 copy。两者互为共轭，**共用同一个 `group` 对象**——而这个「同一个」由 `ctx` 保证（`ctx.tp_group`），不是靠调用点自觉。
 
-Megatron 论文的 Figure 5 给出了这对算子的规范画法，措辞与这里的实现一一对应：$$f$$ 在前向是恒等算子、在反向是 all-reduce，$$g$$ 反之；两者互为共轭（conjugate）。
+注意两个包装函数内部都调了一次 `get_tensor_model_parallel_group_if_none(group)`。这正是 §8.1 那条「显式注入优先，为 `None` 才回落」在函数库层面的体现：上游模块已经把 `self.tp_group` 传下来，走的是第一个分支；`None` 只是兜底路径。
+
+Megatron 论文的 Figure 5 给出了这对算子的规范画法，措辞与这两段 docstring 一一对应：$$f$$ 在前向是恒等算子、在反向是 all-reduce，$$g$$ 反之；两者互为共轭（conjugate）。该论文的图注写明这些图借自 Megatron 的原始论文（[arXiv:1909.08053](https://arxiv.org/abs/1909.08053)），后者才是这套共轭算子表述的出处。
 
 ### 8.4 组内坐标：`get_pg_rank` 与 `get_pg_size`
 
@@ -1061,7 +1100,7 @@ def _split_along_last_dim(input_, group):
 
 ### 8.5 `size == 1` 短路是纪律
 
-`mappings.py` 里每个集合通信辅助函数开头都有同一个短路（L27、L47、L89……）：
+`mappings.py` 里每个集合通信辅助函数开头都有同一个短路（`mappings.py` L27、L47、L89……）：
 
 ```python
 # Bypass the function if we are using only 1 GPU.
@@ -1084,6 +1123,8 @@ flowchart TB
     C --> J["group 内坐标 get_pg_rank / get_pg_size<br/>utils.py L636-L661"]
     B --> K["size == 1 短路<br/>mappings.py L27 / L47 / L89"]
 ```
+*图 9：组选择的三层机制。据 [`layers.py` L253–L263](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L253-L263)、[`layers.py` L612–L612](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L612-L612)、[`layers.py` L648–L648](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L648-L648) 与 [`utils.py` L607–L633](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/utils.py#L607-L633)、[`utils.py` L650–L661](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/utils.py#L650-L661) 重绘。*
+
 
 ---
 
@@ -1091,7 +1132,7 @@ flowchart TB
 
 ### 9.1 判据
 
-集合通信出现的位置有一个精确的判据：**张量被切开之后，数学上必须跨 rank 合并**。
+集合通信出现的位置有一个精确的判据：**张量被切开之后，数学上必须跨 rank 合并**。（[`mappings.py` L22–L37](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/mappings.py#L22-L37)）
 
 具体到张量并行那两个虚拟算子（《分布式训练（03）》已推）：
 
@@ -1130,7 +1171,7 @@ flowchart TB
 
 **同一个张量不会同时被两个组归约。** TP 组内被 all-reduce 的张量，在 PP 组内是逐 rank 完整传递的；PP 边界传来的完整张量，到 TP 层才被切开。这条纪律让 §9.2 的三档划分成立。
 
-需要「真正全局」的归约时，方法是**开一个专门的组**，而不是复用别的组。最典型的是 embedding：`default_embedding_ranks`（L560–L566）默认取 PP 组的**第一个与最后一个 stage**：
+需要「真正全局」的归约时，方法是**开一个专门的组**，而不是复用别的组。最典型的是 embedding：`default_embedding_ranks`（`parallel_state.py` L560–L566）默认取 PP 组的**第一个与最后一个 stage**：
 
 ```python
 def default_embedding_ranks(pp_ranks):
@@ -1142,7 +1183,7 @@ def default_embedding_ranks(pp_ranks):
         return [pp_ranks[0], pp_ranks[-1]]
 ```
 
-位置编码组则只取第一个 stage（L569–L572）。这两个组跨 PP stage，是「正交性」之外的必要例外。
+位置编码组则只取第一个 stage（`parallel_state.py` L569–L572）。这两个组跨 PP stage，是「正交性」之外的必要例外。
 
 ### 9.5 序列并行不减少通信量
 
@@ -1150,15 +1191,19 @@ def default_embedding_ranks(pp_ranks):
 
 所以 SP 换来的不是更少的通信量，而是**更小的激活显存**：激活在进入 LayerNorm 与 dropout 之前不再被复制到每个 TP rank，于是可以关掉 activation recompute。提速是通过省下的显存余量间接得到的，不是通信量下降的直接结果。
 
+Megatron Core 官方并行策略指南把这条写得很直白（[Parallelism Strategies Guide](https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html)，Sequence Parallelism 一节）：SP 的作用是 *Reduces activation memory by sharding sequence dimension in LayerNorm and Dropout*——落点就是 LayerNorm 与 Dropout 两处激活，收益字段只写显存。同一份文档在 Context Parallelism 一节给出了 SP 与 CP 的分界：*Unlike prior SP (sequence parallelism) which only splits the sequence of Dropout and LayerNorm activations, CP partitions the network inputs and all activations along sequence dimension*（见 [Context Parallel Package](https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/features/context_parallel.html)）。
+
+这也解释了为什么 §9.2 的表里 CP 那一行独立成档而不是 SP 的子集：**SP 只切两处激活，CP 切的是整条序列维上的全部激活**，两者的通信对象与组大小都不同。
+
 ---
 
 ## 10. 通信与计算的组织
 
-前三节讲完了「发到哪个组」「什么时候发」。这一节讲「发了之后怎么和计算摆在一起」。
+前三节讲完了「发到哪个组」「什么时候发」。这一节讲「发了之后怎么和计算摆在一起」。（[`layers.py` L831–L836](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L831-L836)）
 
 ### 10.1 流派 A：默认 stream + `async_op=True` + `CUDA_DEVICE_MAX_CONNECTIONS=1`
 
-这是传统 TP comm-overlap 的实现，也是最容易被误解的一段代码。取`LinearWithGradAccumulationAndAsyncCommunication.backward`（L630–L798）里的 `if ctx.sequence_parallel and wgrad_compute:` 分支（L667–L680）：
+这是传统 TP comm-overlap 的实现，也是最容易被误解的一段代码。取`LinearWithGradAccumulationAndAsyncCommunication.backward`（`layers.py` L630–L798）里的 `if ctx.sequence_parallel and wgrad_compute:` 分支（`layers.py` L667–L680）：
 
 ```python
 handle = dist_all_gather_func(
@@ -1181,6 +1226,14 @@ if ctx.sequence_parallel and wgrad_compute:
 
 > CUDA_DEVICE_MAX_CONNECTIONS=1. There are a few collective ...
 > CUDA_DEVICE_MAX_CONNECTIONS=1 forces the kernels to be scheduled ...
+
+这个环境变量的官方定义在 CUDA 编程指南附录 [5.2.3.2 CUDA_DEVICE_MAX_CONNECTIONS](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/environment-variables.html)：它控制并发 compute 与 copy engine 的连接数（work queue），取值 `1` 到 `32`，**默认 `8`**。文档同时说明了为什么会假依赖化：
+
+> If independent GPU tasks, namely kernels or copy operations launched from different CUDA streams, map to the same work queue, a false dependency is created which can lead to GPU work serialization, since the same underlying resource(s) are used.
+
+也就是说把连接数压到 1 是**刻意偏离官方默认（8）的做法**：牺牲掉一切 kernel 之间的并发，换来「提交顺序即执行顺序」这一条可推理的硬保证。Megatron 选 `1` 而不是 `2`，正是因为它要的不是吞吐而是**顺序可预测性**。
+
+同一份编程指南在讲高级主机编程时把「假依赖」的代价说得更直白（[3.1.6 Environment Variables](https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/advanced-host-programming.html)）：*increasing the value of the `CUDA_DEVICE_MAX_CONNECTIONS` environment variable may be necessary to reduce the possibility that independent work from different CUDA streams gets serialized due to false dependencies*——并且建议先从默认值起步，只在出现无法用其他因素解释的串化时才去动它。Megatron 反其道而行之设成 `1`，正是因为它要的正是那种「无法用其他因素解释的串化」以外的性质：确定的顺序。
 
 这个环境变量把硬件 work queue 的深度设为 1，于是 **kernel 严格按提交顺序被调度**，不能乱序发射。因此上面那段代码的执行顺序是确定的：all-gather 的 DMA 先启动 → dgrad GEMM 的 SM 占用后启动 → 两者物理上并行。`handle.wait()` 提供的是同步语义，**不是用来「启动并行」的**。
 
@@ -1205,7 +1258,7 @@ if "CUDA_DEVICE_MAX_CONNECTIONS" in os.environ:
     ), "UCC-backend requires CUDA_DEVICE_MAX_CONNECTIONS > 1"
 ```
 
-同一个变量，两条相反的要求。根因在 `initialize_model_parallel` 里那段 UCC 注释（L1188–L1192，此处位于 `pipeline_model_parallel_comm_backend == "ucc"` 分支内）：
+同一个变量，两条相反的要求。根因在 `initialize_model_parallel` 里那段 UCC 注释（`parallel_state.py` L1188–L1192，此处位于 `pipeline_model_parallel_comm_backend == "ucc"` 分支内）：
 
 > The UCC backend provides two key benefits:
 > 1) Achieves better bandwidth utilization than NCCL when using InfiniBand links.
@@ -1224,7 +1277,7 @@ _AG_STREAMS: Dict[str, torch.cuda.Stream] = {}
 _RS_STREAMS: Dict[str, torch.cuda.Stream] = {}
 ```
 
-取流函数按 key 惰性创建（L361–L374）：
+取流函数按 key 惰性创建（`generalized_tensor_parallelism.py` L361–L374）：
 
 ```python
 def get_ag_stream(chain_id: str = GTPChain.GRAPHED.value, group=None) -> torch.cuda.Stream:
@@ -1236,7 +1289,7 @@ def get_ag_stream(chain_id: str = GTPChain.GRAPHED.value, group=None) -> torch.c
 
 **每条通信链 × 每个进程组一条独立 stream**。这正面回答了「一个进程持有八个组，流怎么组织」：不同 `(chain, group)` 拿不同的 stream，依赖关系全部用 event 显式声明，不再依赖全局的提交顺序保证。
 
-AG 侧的用法（L1388–L1400）：
+AG 侧的用法（`generalized_tensor_parallelism.py` L1388–L1400）：
 
 ```python
 outer_stream = torch.cuda.current_stream()
@@ -1252,7 +1305,7 @@ with ag_ctx:
     ...
 ```
 
-四步固定下来：**记录外流 → 侧流等事件 → 在侧流上下文里发通信 → 退出上下文回到外流**。RS 侧（L1800–L1815）是镜像：等 `handle.wait()`、记录 `rs_event`、再更新 ring slot 状态。
+四步固定下来：**记录外流 → 侧流等事件 → 在侧流上下文里发通信 → 退出上下文回到外流**。RS 侧（`generalized_tensor_parallelism.py` L1800–L1815）是镜像：等 `handle.wait()`、记录 `rs_event`、再更新 ring slot 状态。
 
 两种流派的取舍：
 
@@ -1262,6 +1315,8 @@ with ag_ctx:
 | 全局约束 | 有，且与 UCC 互斥 | 无 |
 | 同步点 | `handle.wait()` | event record / wait |
 | 同组多段的顺序 | 靠提交顺序 | 靠 event 链 |
+
+还有第三个旋钮本文不展开：把通信 buffer 注册进 NCCL，让它直接收发用户 buffer 而免掉内部拷贝（[NCCL User Buffer Registration](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/bufferreg.html)）。官方文档给出的收益方向与本文关心的量一致——*accelerate collectives and greatly reduce the resource usage (e.g. #channel usage)*；同一处还立了一条使用约束值得记住：只要某个 rank 在一次集合通信里传了注册 buffer，同一 communicator 内的其他 rank 也必须传注册 buffer，混用属于未定义行为。这一档以及与之配合的开关组合属于优化工具箱那一块。
 
 ```mermaid
 flowchart TB
@@ -1283,6 +1338,8 @@ flowchart TB
     end
     SA --- SB
 ```
+*图 10：两种 stream 流派的对照。据 [`layers.py` L667–L680](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L667-L680)、[`layers.py` L831–L836](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L831-L836)、[`layers.py` L897–L909](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L897-L909) 与 [`generalized_tensor_parallelism.py` L290–L291](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/generalized_tensor_parallelism.py#L290-L291)、[`generalized_tensor_parallelism.py` L1385–L1400](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/generalized_tensor_parallelism.py#L1385-L1400) 重绘。*
+
 
 ### 10.4 CUDA graph 与 side stream 相撞
 
@@ -1327,7 +1384,7 @@ if grad_output_buffer is not None:
 
 动机很清楚：**dgrad 后面还挂着 all-reduce 或 reduce-scatter，有东西可以重叠；wgrad 后面什么都没有，裸着跑就是白等**。deferral 把 wgrad 推到更靠后的位置去蹭别的通信。它与流派 A 是同一个思想的两面——都是用调度顺序换重叠，不靠 stream。
 
-**gradient accumulation fusion。** forward 里先判 `hasattr(weight, "main_grad")`，成立才让 `_wgrad_gemm`（L554–L570）直接累加进 `main_grad`；Megatron-FSDP 走in-place 分支 `weight.get_main_grad()`。省掉一个中间 buffer 与一次显式加法。
+**gradient accumulation fusion。** forward 里先判 `hasattr(weight, "main_grad")`，成立才让 `_wgrad_gemm`（`layers.py` L554–L570）直接累加进 `main_grad`；Megatron-FSDP 走in-place 分支 `weight.get_main_grad()`。省掉一个中间 buffer 与一次显式加法。
 
 ### 10.6 一个 backward 的完整 launch 序列
 
@@ -1343,6 +1400,8 @@ TP + SP 开启、wgrad deferral 开启时：
 | ⑥ | wgrad GEMM | — | deferral 攒够了才做 |
 
 非 SP 模式不同：① 不存在，且代码里有 `assert not ctx.allreduce_dgrad`（SP 下 reduce-scatter 已经隐含了归约），⑤ 换成异步 all-reduce。
+
+这个「SP 下输入梯度走 reduce-scatter、且与权重梯度计算异步」的行为在 Megatron Core 的 API 文档里有明确声明（[core.tensor_parallel.layers](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.layers.html)，`LinearWithGradAccumulationAndAsyncCommunication`）：*In the case of sequence parallelism, the reduce scatter of the input gradients is done asynchronously with the calculation of the weight gradients*。同一处的 `sequence_parallel` 参数说明给出了前向与反向的对称描述：*in the forward pass the input is all gathered, and in the backward pass the input gradients are reduce scattered*——正是上表①与⑤ 的对应关系。
 
 ```mermaid
 flowchart TB
@@ -1361,16 +1420,18 @@ flowchart TB
     MAIN --> DMA
     I["side stream 流派：<br/>每 (chain_id, group) 一条流<br/>依赖全用 event 显式声明<br/>无全局提交顺序约束"] -.对比.- MAIN
 ```
+*图 11：一个 backward 的实际提交顺序。据 [`layers.py` L667–L680](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L667-L680)（all-gather → dgrad GEMM → wait）与 [`layers.py` L687–L703](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L687-L703)（异步 all-reduce 或 reduce-scatter）逐步对照代码得出。*
+
 
 ---
 
 ## 11. 小结与下一篇
 
-把全文收成五条：
+把全文收成五条：（[`is_initialized` L1681–L1694](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L1681-L1694)）
 
-1. **状态即全局变量。** `parallel_state.py` L29–L159 的 59 个模块级赋值是全部并行状态；`initialize_model_parallel`（L601–L1583）一次性建立所有组，是 eager 建立 + lazy 校验。
-2. **网格切分是一个不依赖 rank 的纯函数。** `RankGenerator` 只吃 `world_size`、各轴 size 与 `order` 字符串，核心是 `generate_masked_orthogonal_rank_groups`（L269–L375）的混合基数分解。「相同的 PG 互不影响」靠构建期的成员过滤与运行期的 communicator 隔离，而「同序同参」这条要求正是纯函数设计的原因。
-3. **组的选择靠三层机制，其中第三层最关键。** 构造时注入 → forward 只用 `self.tp_group` → `ctx.tp_group`（L612）让反向自动拿到同一个组。组内坐标抽象（`get_pg_rank`，L650–L661）返回组内 rank 且在无组时退化为 0，让单卡与单成员组走同一条路径。
+1. **状态即全局变量。** `parallel_state.py` L29–L159 的 59 个模块级赋值是全部并行状态；`initialize_model_parallel`（`parallel_state.py` L601–L1583）一次性建立所有组，是 eager 建立 + lazy 校验。
+2. **网格切分是一个不依赖 rank 的纯函数。** `RankGenerator` 只吃 `world_size`、各轴 size 与 `order` 字符串，核心是 `generate_masked_orthogonal_rank_groups`（`parallel_state.py` L269–L375）的混合基数分解。「相同的 PG 互不影响」靠构建期的成员过滤与运行期的 communicator 隔离，而「同序同参」这条要求正是纯函数设计的原因。
+3. **组的选择靠三层机制，其中第三层最关键。** 构造时注入 → forward 只用 `self.tp_group` → `ctx.tp_group`（`layers.py` L612）让反向自动拿到同一个组。组内坐标抽象（`get_pg_rank`，L650–L661）返回组内 rank 且在无组时退化为 0，让单卡与单成员组走同一条路径。
 4. **同步与计算的划分由三个时间尺度决定。** TP / SP / CP / EP 在层内，PP 在层间，DP 在 iteration 末尾。三档不重叠，所以多组共存不需要仲裁；正交性保证同一个张量只被一个组归约，需要真正全局归约时另开专用组。
 5. **通信与计算的组织有两个流派，全局约束互斥。** 流派 A 靠 `CUDA_DEVICE_MAX_CONNECTIONS=1` 强制提交顺序等于执行顺序，代价是全进程 kernel 串行；流派 B 按 `(chain_id, group)` 建独立 side stream，依赖全用 event，但遇上 CUDA graph 必须自己补回被裸 stream context 丢掉的依赖边。
 
@@ -1388,14 +1449,58 @@ overlap 的**开关组合决策**（`finalize_model_grads` 里八种条件组合
 
 ---
 
+## 引用关系网
+
+下图把本篇的三条核心论断与各自的支撑来源对应起来。节点上的行号是锚点，完整 permalink 见下方图注。
+
+```mermaid
+graphLR
+    subgraph CL["核心论断"]
+        C1["进程组状态是模块级全局变量<br/>不是对象，也没有生命周期"]
+        C2["同序创建所以互不影响<br/>构建期成员过滤加运行期通信域隔离"]
+        C3["SP 不减通信量<br/>收益在激活显存"]
+    end
+    subgraph SR["支撑来源"]
+        S1["parallel_state.py<br/>L29 至 L159"]
+        S2["parallel_state.py<br/>L232 至 L266"]
+        S3["parallel_state.py<br/>L1164 至 L1173"]
+        S4["layers.py<br/>L612"]
+        S5["PyTorch 文档<br/>new_group 条目"]
+        S6["arXiv 2205.05198"]
+        S7["arXiv 2104.04473"]
+        S8["Megatron Core<br/>并行策略指南"]
+        S9["CUDA 编程指南<br/>环境变量附录"]
+    end
+    S1 -->|"支撑"| C1
+    S2 -->|"支撑"| C1
+    S1 -->|"支撑"| C2
+    S3 -->|"支撑"| C2
+    S5 -->|"支撑"| C2
+    S4 -->|"支撑"| C2
+    S6 -->|"支撑"| C3
+    S7 -->|"支撑"| C3
+    S8 -->|"支撑"| C3
+```
+
+*图 12：核心论断与支撑来源的对应关系。三条论断分别是 §3、§7、§9.5 的结论。来源 permalink：`parallel_state.py` [L29–L159](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L29-L159)、[L232–L266](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L232-L266)、[L1164–L1173](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L1164-L1173)；`layers.py` [L612](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py#L612)；[PyTorch `new_group` 文档](https://docs.pytorch.org/docs/stable/distributed.html)；[arXiv:2205.05198](https://arxiv.org/abs/2205.05198)；[arXiv:2104.04473](https://arxiv.org/abs/2104.04473)；[Megatron Core 并行策略指南](https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html)；[CUDA 环境变量附录](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/environment-variables.html)。*
+
+---
+
 ## 参考
 
 1. Megatron Core 源码：`https://github.com/NVIDIA/Megatron-LM`（本文对应 commit `60e039626`，`megatron-core` 0.20.0）
-2. 本文主要引用的源文件（均锁 commit）：[`megatron/core/parallel_state.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py)（L29–L159全局变量、L232–L266 `create_group`、L269–L375 `generate_masked_orthogonal_rank_groups`、L465–L557 `RankGenerator`、L601–L1583 `initialize_model_parallel`、L2506–L2692 `destroy_model_parallel`）、[`megatron/training/initialize.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/initialize.py)（L271–L412 `_initialize_distributed`）、[`megatron/core/tensor_parallel/mappings.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/mappings.py)、[`megatron/core/tensor_parallel/layers.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py)、[`megatron/core/tensor_parallel/generalized_tensor_parallelism.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/generalized_tensor_parallelism.py)、[`megatron/core/utils.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/utils.py)
-3. Narayanan et al., *Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM*：https://arxiv.org/abs/2104.04473
-4. Korthikanti et al., *Reducing Activation Recomputation in Large Transformer Models*：https://arxiv.org/abs/2205.05198（SP 的收益在激活显存，不在通信量）
-5. 官方上下文并行文档：`docs/api-guide/core/context_parallel.html`（ring / all-gather / hybrid 三条路线）
-6. 前作：《Megatron-LM 深度剖析（00）地基》[/2026/09/28/megatron-00-foundation/]、《（02）专家并行》[/2026/10/08/megatron-02-expert-parallel/]、《分布式训练（00）总览》[/2026/08/31/dist-train-00-overview/]、《（03）张量并行》[/2026/08/31/dist-train-03-tensor-parallel/]、《（08）组合实战》[/2026/08/31/dist-train-08-combined-practice/]
+2. 本文主要引用的源文件（均锁 commit）：[`megatron/core/parallel_state.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py)（`parallel_state.py` L29–L159全局变量、L232–L266 `create_group`、L269–L375 `generate_masked_orthogonal_rank_groups`、L465–L557 `RankGenerator`、L601–L1583 `initialize_model_parallel`、L2506–L2692 `destroy_model_parallel`）、[`megatron/training/initialize.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/initialize.py)（`initialize.py` L271–L412 `_initialize_distributed`）、[`megatron/core/tensor_parallel/mappings.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/mappings.py)（`mappings.py` L492–L495、L498–L501 两个 `f` / `g` 包装函数）、[`megatron/core/tensor_parallel/layers.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/layers.py)（`layers.py` L1158–L1267 `ColumnParallelLinear.forward`、L1488–L1545 `RowParallelLinear.forward`、L573–L798 `LinearWithGradAccumulationAndAsyncCommunication`、L831–L836 与 L897–L909 `CUDA_DEVICE_MAX_CONNECTIONS`）、[`megatron/core/tensor_parallel/generalized_tensor_parallelism.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/generalized_tensor_parallelism.py)（`generalized_tensor_parallelism.py` L290–L291 与 L361–L374 side stream、L1385–L1400 event 用法）、[`megatron/core/utils.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/utils.py)（`utils.py` L607–L633、L636–L647、L650–L661）
+3. Shoeybi et al., *Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism and Reducing Activation Recomputation in Large Transformer Models*：https://arxiv.org/abs/1909.08053（$$f$$ / $$g$$ 共轭算子的原始出处）
+4. Narayanan et al., *Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM*：https://arxiv.org/abs/2104.04473（Figure 2 给出 TP 与 PP 的组合方式；Figure 5 给出 $$f$$ / $$g$$ 共轭对的规范画法，图注注明借自上一条）
+5. Korthikanti et al., *Reducing Activation Recomputation in Large Transformer Models*：https://arxiv.org/abs/2205.05198（SP 的收益在激活显存，不在通信量）
+6. PyTorch 官方文档，`torch.distributed.new_group` 条目：https://docs.pytorch.org/docs/stable/distributed.html（`new_group` 须由全部进程同序同参调用；`sort_ranks` 与 `identical ranks list` 的要求）
+7. NVIDIA CUDA 编程指南，附录 5.2.3.2 `CUDA_DEVICE_MAX_CONNECTIONS`：https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/environment-variables.html（取值 1–32、默认 8，以及 work queue 假依赖导致串行的机制）
+8. NVIDIA CUDA 编程指南，3.1.6 环境变量：https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/advanced-host-programming.html（假依赖造成跨流串化，以及「先从默认值起步、只在出现无法解释的串化时再调」的官方建议）
+9. Megatron Core 官方并行策略指南：https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html（SP 只切 LayerNorm 与 Dropout 的序列维，收益字段为激活显存）
+10. Megatron Core 官方上下文并行文档：https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/features/context_parallel.html（SP 与 CP 的分界：SP 只切 Dropout / LayerNorm 激活，CP 切网络输入与全部激活；ring / all-gather / hybrid 三条路线）
+11. Megatron Core API 文档 `core.tensor_parallel.layers`：https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.layers.html（SP 下前向 all-gather、反向 reduce-scatter，且 reduce-scatter 与权重梯度计算异步）
+12. NCCL 官方文档 User Buffer Registration：https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/bufferreg.html（零拷贝注册用户 buffer；同一 communicator 内混用注册与非注册 buffer 属未定义行为）
+13. 前作：《Megatron-LM 深度剖析（00）地基》[/2026/09/28/megatron-00-foundation/]、《（02）专家并行》[/2026/10/08/megatron-02-expert-parallel/]、《分布式训练（00）总览》[/2026/08/31/dist-train-00-overview/]、《（03）张量并行》[/2026/08/31/dist-train-03-tensor-parallel/]、《（08）组合实战》[/2026/08/31/dist-train-08-combined-practice/]
 
 ---
 
