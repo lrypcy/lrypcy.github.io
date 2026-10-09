@@ -43,16 +43,19 @@ git show 60e039626:<path> | wc -l
 
 ---
 
-## 2. 编号表（2026-10-08 定稿 · 第四次编号）
+## 2. 编号表（2026-10-11 更新 · 第五次编号）
+
+> 状态列只写**可核验的事实**：以「已在 `_posts/` + 五步门禁全过」为准。
+> 是否已 push 到远程由监工掌握，agent 侧不查博客 git。
 
 | 编号 | 主题 | 主源码 | 状态 |
 | --- | --- | --- | --- |
-| 00 | 地基：代码地图 / 配置系统 / 一次迭代控制流 | `initialize.py` `training.py` `utils.py` | 待补引用后提交 |
-| 01 | 进程组 + 通信与计算重叠 | `parallel_state.py` `mappings.py` `layers.py` | 初稿已落盘，待补引用 |
-| 02 | 专家并行 | `moe/token_dispatcher.py` 等 | **已发布** |
-| 03 | 张量并行与序列并行（TP + SP） | `tensor_parallel/layers.py` `mappings.py` `cross_entropy.py` | 待写 |
-| 04 | GTP：新一代张量并行 | `generalized_tensor_parallelism.py` `gtp_api.py` | 待写 |
-| 05 | 数据并行与优化器（三套实现） | `param_and_grad_buffer.py` `distrib_optimizer.py` `fsdp/` | 待写 |
+| 00 | 地基：代码地图 / 配置系统 / 一次迭代控制流 | `initialize.py` `training.py` `utils.py` | 已在 `_posts/`，门禁全过 |
+| 01 | 进程组 + 通信与计算重叠 | `parallel_state.py` `mappings.py` `layers.py` | 已在 `_posts/`，门禁全过 |
+| 02 | 专家并行 | `moe/token_dispatcher.py` 等 | 已在 `_posts/`，门禁全过 |
+| 03 | 张量并行与序列并行（TP + SP） | `tensor_parallel/layers.py` `mappings.py` `cross_entropy.py` | 已在 `_posts/`，门禁全过 |
+| 04 | GTP：新一代张量并行 | `generalized_tensor_parallelism.py` `gtp_api.py` | 已在 `_posts/`，**未提交**，待验收 |
+| 05 | 数据并行与优化器（三套实现） | `param_and_grad_buffer.py` `distrib_optimizer.py` `fsdp/` | 已在 `_posts/`，**12 图缺图注**待补 |
 | 06 | 流水并行调度器 | `pipeline_parallel/schedules.py` | 待写 |
 | 07 | 上下文并行与长上下文 | `dot_product_attention.py` `multi_latent_attention.py` `packed_seq_params.py` | 待写 |
 | 08 | 显存账本：重计算 / 卸载 / 分布保存 | `recompute.py` `transformer_config.py` `fine_grained_activation_offload.py` | 待写 |
@@ -61,6 +64,47 @@ git show 60e039626:<path> | wc -l
 | 11 | RL 训练栈与 Refit | `megatron/rl/` `core/resharding/` | 待写 |
 | 12 | Checkpoint 与容错 | `dist_checkpointing/` `rerun_state_machine.py` | 待写 |
 | 13 | Bridge、导出与模型家族落地 | Megatron Bridge `export/` modelopt | 待写 |
+
+### 2.1 模块 E · 典型模型落地（2026-10-11 追加 · **编号待监工批准**）
+
+追加缘由：00–13 讲的是「机制怎么切、怎么通信」，**没有一个专题讲「一个真实模型在 Megatron-Core 里长什么样」**——
+即 spec 系统怎么把 torch 层换成并行层、`TransformerConfig` 的哪些字段在模型文件里被消费、
+pipeline 切分在哪一行发生。原理层可引用已有篇目，篇目只做**落地视角**。
+
+| 编号 | 主题 | 主源码 | 状态 |
+| --- | --- | --- | --- |
+| 14 | **层栈与 spec 机制**：`ModuleSpec` / `build_module` 怎么把 torch 层换成并行层，pipeline 切分在哪一行发生 | `transformer/spec_utils.py` 144 行 `transformer_layer.py` 2254 行 `transformer_block.py` 863 行 `models/backends.py` 218 行 | 已写完（`_posts/2026-10-12-megatron-14-module-spec-and-layer-stack.md`，653 行），门禁全过，**未提交** |
+| 15 | GPT 与 Llama：dense 模型的装配全流程与改造点 | `models/gpt/gpt_model.py` 944 行 `gpt_layer_specs.py` 799 行 `models/backends.py` 218 行 | 已写完（`_posts/2026-10-13-megatron-15-gpt-and-llama-model-assembly.md`，534 行），门禁全过，**未提交** |
+| 16 | MoE 与 hybrid 模型的组合落地（Mamba / MLP-MoE 混排） | `models/hybrid/` 2057 行（`hybrid_model.py` 651 / `hybrid_layer_allocation.py` 507 / `hybrid_block.py` 476 / `hybrid_layer_specs.py` 422）`gpt/moe_module_specs.py` 128 行 | 待写 |
+| 17 | 多模态与后端家族（vision / audio / MIMO / backends） | `models/multimodal/` 2240 行 `vision/` 2575 行 `audio/` 2943 行 `mimo/` 2523 行 `models/backends.py` 218 行 | 待写（**体量最大，可选**） |
+
+**为什么 spec 机制排 14 而不是 15**：15 / 16 / 17 都要反复用到 `ModuleSpec` 的四字段语义、
+`build_module` 的参数合并顺序、以及 `TransformerLayerSubmodules` 的「默认即 Identity」约定。
+放在前面，后三篇可以直接permalink 引用 14，而不必各自重复讲一遍机制。
+
+### 2.1 优化器侧的五个孤儿：归属映射（2026-10-08 第五次定稿）
+
+`megatron/core/optimizer/` 合计约 10,000 行，05 篇只覆盖了**分片布局**这一面
+（`distrib_optimizer.py` 3189 + `param_layout.py` 106 + `emerging_optimizers.py` 580 + `qk_clip.py` 52）。
+下列五个文件在 05 写完时**提及次数为 0 或仅擦肩**（数字为 05 正文的 grep 命中数），
+按主题并进已有编号，**不新增编号**：
+
+| 孤儿文件 | 行数 | 05 里命中 | 归属 | 归入理由 |
+| --- | --- | --- | --- | --- |
+| `layer_wise_optimizer.py` | 1081 | 1（一条 assert 的参数名） | **05** §6 后补一节 | per-layer 优化器：逐层串行「all-gather → step → release」。与 §6 的 `overlap_param_gather_with_optimizer_step`（**并发**解）互补，是同一问题的**串行**解，且把重叠粒度从「整个 bucket 集合」降到「单层」。2025 版权头，v0.20 新并入 |
+| `optimizer.py` | 2054 | 16（多为路径提及） | **05** §7 前置补一节 | fp32 master weight / `main_grad` 累积路径 / `--use-precision-aware-optimizer` —— 就是分片执行框架本身。§8 只用「fp32 master weights」一句带过 |
+| `clip_grads.py` + `grad_scaler.py` | 277 + 165 | 1 / **0** | **09 低精度** | fp16 loss scaling 整套；`clip_grads` 依赖连续 buffer 才能对整块做 `torch.norm`（这是 05 §2 已经铺好的前提）。精度主题归 09 |
+| `cpu_offloading/hybrid_optimizer.py` | 477 | **0** | **08 显存账本** | offload 三档里的第三档（全部 CPU / fine-grained activation / optimizer offload） |
+| `optimizer_cuda_graph.py` | 68 | **0** | **10 融合 + CUDA Graph** | optimizer step 图化，与 `gtp_cuda_graphs.py` 同类。68 行不值得单列 |
+
+**为什么不拆成独立一篇**：`DistributedOptimizer` 的 `Range` / `param_layout.py` 必须连着
+`_ParamAndGradBuffer` 讲才成立，拆开则 05 的 §7/§8 失去依托。
+处理手法与「通信重叠并入 01」完全一致 —— **补进归属篇，不新开编号**。
+
+**执行纪律**：上表每一行都必须在**归属篇自身**里写成可独立阅读的一节，
+不许只在别篇提一句名字就算交差。
+
+---
 
 **编号变更史**（不要再改，再改要在本文件追加一条）：
 
@@ -71,6 +115,16 @@ git show 60e039626:<path> | wc -l
    按主题各自独立成篇（TP+SP→03、GTP→04、DP→05、PP→06、CP→07）。
    **通信重叠**不再单列，并入 01。理由与 EP 破先例时完全一致：
    EP 单主题 1897 行已超「一个模块一篇」承载上限；六主题合并至少 6000 行，不可读也不可审。
+5. **第五次（2026-10-08）**：优化器侧五个孤儿按主题并入 05 / 05 / 09 / 08 / 10（见 §2.1），
+   **不新增编号**。
+5. **第五次（2026-10-11）**：新增**模块 E · 典型模型落地**（14–17，17 为可选项），
+   接在 13 之后而非插队进 04–13。理由：模型落地是**横切视角**，
+   它引用 03/04/07/09/10 的机制层结论，插在中间会打断机制线的连续编号；
+   放末尾则可**反向引用**前面所有篇目，读者已具备全部前置知识。
+   同时把编号表的「状态」列口径统一为「已在 `_posts/` + 门禁全过」——
+   原表把 00/01/03/04/05 标成「待写/初稿」，与磁盘现状脱节。
+6. **第六次（2026-10-11 同日修正）**：模块 E 内部顺序调整——spec 机制由 15 提前为 **14**。
+   理由见 §2.1 表下注文：15/16/17 均依赖它，放前面可让后三篇permalink 引用而不重复讲机制。
 
 ---
 
@@ -269,6 +323,24 @@ git commit / git push                 # ❌ agent 不许做，等监工指令
 `_posts/2026-08-22-distill-rl-unified-spectrum.md`、`_posts/2026-09-30-rl-variables-in-frameworks.md`。
 
 这些是监工与其他工作线留下的未提交改动，agent 绕开。
+
+### 6.1 实时占用登记（2026-10-08 22:50 起）
+
+tmux `lrypcy_github_io:2`（session `ses_ee8b61a8cffeDoZywpXjy2JOWK`）正在同时推进
+**模块 E（14–17 篇）的编号规划**，并已回头修 00 / 02。派新 agent 前先读这张表：
+
+| 文件 | 占用方 | 状态 | 解除条件 |
+| --- | --- | --- | --- |
+| `_posts/2026-09-28-megatron-00-foundation.md` | `lrypcy_github_io:2` | 22:50 修改中 | 该 session 报完 00 收工 |
+| `_posts/2026-10-08-megatron-02-expert-parallel.md` | `lrypcy_github_io:2` | 22:49 修改中（+5 KB） | 同上 |
+| `SERIES_SPEC.md` 的**编号表与模块 E 章节** | `lrypcy_github_io:2` | 提了编号扩展方案，**待用户批准才落笔** | 用户批准模块 E 编号后 |
+| `_posts/…megatron-04-*.md` / `…megatron-05-*.md` | 监工（我）验收中 | 已写完、未提交、门禁未跑 | 门禁过 + commit |
+
+**可安全并行分配的篇目**（与上表零交集，且彼此主题不重叠）：
+**06 PP 调度器 / 07 CP 与长上下文 / 08 显存账本 / 09 低精度 / 10 融合与 CUDA Graph**。
+
+> ⚠️ **同一个文件不许两个 agent 同时写。** 上表里 04/05 与 00/02 若需同时改，
+> 一律排队，不许并行 —— 已经出过两次 agent 抢同一工作区的记录。
 
 ---
 
