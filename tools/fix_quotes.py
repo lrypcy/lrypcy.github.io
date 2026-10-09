@@ -15,9 +15,14 @@
   - Markdown 链接/图片目标 (url "title")
 
 用法：
-  python3 tools/fix_quotes.py --dry-run        # 只报告，不写盘
-  python3 tools/fix_quotes.py                  # 实际写入
-  python3 tools/fix_quotes.py path/to/a.md ... # 只处理指定文件
+  python3 tools/fix_quotes.py path/to/a.md ... # 只处理指定文件（推荐）
+  python3 tools/fix_quotes.py --dry-run        # 全仓库只报告，不写盘
+  python3 tools/fix_quotes.py --all            # 全仓库实际写入（必须显式声明）
+
+⚠️零参数会直接改全仓库。2026-10-08 事故：`--help` 被当成flag 过滤掉，
+参数列表变空 → 脚本回退到全仓库扫描并写盘，一次性转了 104 处引号，
+其中 10 处是英文源码注释 / arXiv 官方页面原文的逐字引用，转全角即篡改引文。
+所以零参数现在直接拒绝执行，必须显式给 --all。
 """
 import os
 import re
@@ -131,10 +136,15 @@ def process_file(path, apply=True):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith('-')]
-    dry = '--dry-run' in sys.argv
+    argv = sys.argv[1:]
+    args = [a for a in argv if not a.startswith('-')]
+    dry = '--dry-run' in argv
     if args:
         files = args
+    elif '--all' not in argv and not dry:
+        print('refusing to touch the whole repo without an explicit flag.')
+        print('零参数会改全仓库。要全仓库处理请显式给 --all；只想看报告请加 --dry-run。')
+        sys.exit(2)
     else:
         files = []
         for dp, dn, fn in os.walk('.'):
