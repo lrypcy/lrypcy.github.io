@@ -58,7 +58,7 @@ git show 60e039626:<path> | wc -l
 | 05 | 数据并行与优化器（三套实现） | `param_and_grad_buffer.py` `distrib_optimizer.py` `fsdp/` | 已在 `_posts/`，**12 图缺图注**待补 |
 | 06 | 流水并行调度器 | `pipeline_parallel/schedules.py` | 待写 |
 | 07 | 上下文并行与长上下文 | `dot_product_attention.py` `multi_latent_attention.py` `packed_seq_params.py` | 待写 |
-| 08 | 显存账本：重计算 / 卸载 / 分布保存 | `recompute.py` `transformer_config.py` `fine_grained_activation_offload.py` | 待写 |
+| 08 | 显存账本：重计算 / 卸载 / 分布保存 | `recompute.py` `transformer_config.py` `fine_grained_activation_offload.py` | 已写完（`_posts/2026-10-12-megatron-08-memory-ledger.md`，1458 行），门禁全过；**含 3 处 TODO 占位符**（等ipynbs commit 回填、等 06/07 落盘补前置链与上一篇链接） |
 | 09 | 低精度：FP8 全链路与 FP4 | `fp8_utils.py` `fp4_utils.py` `extensions/transformer_engine.py` | 待写 |
 | 10 | 算子融合与 CUDA Graph | `fusions/` `full_cuda_graph.py` `transformer/cuda_graphs.py` | 待写 |
 | 11 | RL 训练栈与 Refit | `megatron/rl/` `core/resharding/` | 待写 |
@@ -75,7 +75,7 @@ pipeline 切分在哪一行发生。原理层可引用已有篇目，篇目只�
 | --- | --- | --- | --- |
 | 14 | **层栈与 spec 机制**：`ModuleSpec` / `build_module` 怎么把 torch 层换成并行层，pipeline 切分在哪一行发生 | `transformer/spec_utils.py` 144 行 `transformer_layer.py` 2254 行 `transformer_block.py` 863 行 `models/backends.py` 218 行 | 已写完（`_posts/2026-10-12-megatron-14-module-spec-and-layer-stack.md`，653 行），门禁全过，**未提交** |
 | 15 | GPT 与 Llama：dense 模型的装配全流程与改造点 | `models/gpt/gpt_model.py` 944 行 `gpt_layer_specs.py` 799 行 `models/backends.py` 218 行 | 已写完（`_posts/2026-10-13-megatron-15-gpt-and-llama-model-assembly.md`，534 行），门禁全过，**未提交** |
-| 16 | MoE 与 hybrid 模型的组合落地（Mamba / MLP-MoE 混排） | `models/hybrid/` 2057 行（`hybrid_model.py` 651 / `hybrid_layer_allocation.py` 507 / `hybrid_block.py` 476 / `hybrid_layer_specs.py` 422）`gpt/moe_module_specs.py` 128 行 | 待写 |
+| 16 | MoE 与 hybrid 模型的组合落地：七个层符号与一套模式语言 | `models/hybrid/` 2057 行（`hybrid_layer_allocation.py` 507 / `hybrid_model.py` 651 / `hybrid_block.py` 476 / `hybrid_layer_specs.py` 422）`gpt/moe_module_specs.py` 128 行 | 已写完（`_posts/2026-10-14-megatron-16-hybrid-and-moe-model-assembly.md`，667 行），门禁全过，**未提交** |
 | 17 | 多模态与后端家族（vision / audio / MIMO / backends） | `models/multimodal/` 2240 行 `vision/` 2575 行 `audio/` 2943 行 `mimo/` 2523 行 `models/backends.py` 218 行 | 待写（**体量最大，可选**） |
 
 **为什么 spec 机制排 14 而不是 15**：15 / 16 / 17 都要反复用到 `ModuleSpec` 的四字段语义、
@@ -244,6 +244,46 @@ disclose, transmit, or otherwise disseminate elsewhere」。
 - 用户要求「丰富的网络引用图」→ **用「图多 + 每张图都注明出处」来满足，不是靠搬别人的图**。
   本系列的价值在源码级精度，自绘的示意图比官方截图更贴合作者的代码行号与推导。
 - 每张图下方必须有图注，指向具体 permalink / 论文 / 官方页面，**不许出现无出处的图**。
+
+### 3.5 引用密度基线（2026-10-08 监工实测，**待用户裁决**）
+
+监工把 §3.2 的密度目标逐篇跑了一遍，结果暴露**契约内部的一处张力**：
+
+- §3.2 第一条是硬规则：「每条重要论断……**至少挂 1 条外部或源码出处**」——**允许源码出处（permalink）**
+- §3.2 第二条写的是「**目标密度**：每 300 行至少 8 条**外部**引用」——只算外部
+- 但 §5 门禁第 7 项写「**外部引用密度** —— 按 §3.2 统计，低于阈值**退回**」——把「目标」升成了硬门禁
+
+同一份契约里，「目标」被门禁条款升格了。下面是实测（口径：排除 `lrypcy.github.io`
+站内互链与 `github.com/lrypcy/ipynbs` 的 A 级实验脚本 permalink）：
+
+| 篇 | 行数 | permalink | §3.1 门槛(1/150) | 倍数 | 外部唯一 | 外部出现 | §3.2 目标 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 00 | 767 | 58 | 6 | 9.7x | 6 | 6 | 21 | ❌ |
+| 01 | 1507 | 50 | 11 | 4.5x | 20 | 23 | 41 | ❌ |
+| 02 | 1948 | 115 | 13 | 8.8x | **5** | 5 | 52 | ❌ 差 10 倍 |
+| 03 | 1202 | 41 | 9 | 4.6x | 14 | 20 | 33 | ❌ |
+| 04 | 1359 | 50 | 10 | 5.0x | 13 | 29 | 37 | ✅ |
+| 05 | 1559 | 107 | 11 | 9.7x | 44 | — | 42 | ✅ |
+| 08 | 1483 | 41 | 10 | 4.1x | 35 | 66 | 40 | ✅ |
+| 14 | 654 | 52 | 5 | 10.4x | 15 | 28 | 18 | ✅ |
+| 15 | 535 | 125 | 4 | 31.2x | 11 | 16 | 15 | ✅ |
+| 16 | 668 | 52 | 5 | 10.4x | 19 | 19 | 18 | ✅ |
+
+**两个事实**：
+
+1. **十篇全部通过 §3.1 的 permalink 密度**，超出 4.1–31.2 倍。
+   §3.2 的硬规则（每条论断有出处，出处可以是源码）因此是满足的。
+2. **只有 04 之后的篇章通过 §3.2 的外部密度目标**，而 04 是监工开始逐篇跑门禁之后
+   才入库的。00/01/02/03 入库时**这道门禁根本不存在** —— 它们不是「被放过」，
+   是「没被量过」。
+
+**监工倾向（待用户裁决，暂不执行）**：把门禁口径改为
+「硬门禁 = §3.1 permalink 密度 + §3.2 每条论断有出处；外部密度记为质量信号，不作退回条件」。
+理由是 00 是导览篇、02 是纯源码走读，外部密度对它们是错配的参数；
+硬补约 100 条引用会让指标好看而内容堆 URL —— 那正是 §3.2 自己禁止的。
+
+**在用户裁决之前**，新篇仍按现行严格口径执行（本轮 05 / 08 / 16 均按严格口径补到达标）。
+00/01/02/03 作为**已知既存缺口**记在此处，不追溯返工。
 
 ---
 
