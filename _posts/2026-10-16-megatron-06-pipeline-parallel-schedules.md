@@ -718,7 +718,7 @@ A 级脚本 `bubble.py` 扫出的非交发表（`p` 为 PP 度，`m` 为每 stag
 ```
 
 > 出处：`ipynbs` `experiments/megatron/pipeline_parallel/bubble.py` 真实输出，
-> 见 [`results/bubble_stdout.txt`](https://github.com/lrypcy/ipynbs/blob/main/experiments/megatron/pipeline_parallel/results/bubble_stdout.txt)。
+> 见 [`results/bubble_stdout.txt`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/pipeline_parallel/results/bubble_stdout.txt)。
 
 固定 $$p=4, m=8$$ 时交错的效果：
 
@@ -732,7 +732,7 @@ A 级脚本 `bubble.py` 扫出的非交发表（`p` 为 PP 度，`m` 为每 stag
   16           128       2.29%        11.91x
 ```
 
-> 出处：同上，[`results/bubble_stdout.txt`](https://github.com/lrypcy/ipynbs/blob/main/experiments/megatron/pipeline_parallel/results/bubble_stdout.txt) 的表 3。
+> 出处：同上，[`results/bubble_stdout.txt`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/pipeline_parallel/results/bubble_stdout.txt) 的表 3。
 
 第 $$v$$ 行的改善倍数恰为 $$\frac{mv+p-1}{m+p-1}$$：$$v=4$$ 时
 $$32+3)/(8+3) = 35/11 = 3.18$$，与实测 `3.18x` 一致。这是 A 级对账的 A3 项。
@@ -771,7 +771,7 @@ $$p=16, m=1024$$ 时的 1.44% 是正确行为。
 ```
 
 > 出处：`ipynbs` `experiments/megatron/pipeline_parallel/gantt.py` 真实输出，
-> 见 [`results/gantt_stdout.txt`](https://github.com/lrypcy/ipynbs/blob/main/experiments/megatron/pipeline_parallel/results/gantt_stdout.txt)。
+> 见 [`results/gantt_stdout.txt`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/pipeline_parallel/results/gantt_stdout.txt)。
 
 图 8 是它的图形化版本，**左上与右下的两个空闲三角就是气泡**。
 
@@ -785,7 +785,7 @@ flowchart LR
 
 > 图 8：`p=4, m=4` 的 1F1B 时序，左上三角为 warmup 气泡、右下三角为 cooldown 气泡。
 > 出处：甘特图数据来自 `gantt.py` 的 `simulate(4, 4)`，
-> 与 [`results/gantt_stdout.txt`](https://github.com/lrypcy/ipynbs/blob/main/experiments/megatron/pipeline_parallel/results/gantt_stdout.txt) 逐字对应。
+> 与 [`results/gantt_stdout.txt`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/pipeline_parallel/results/gantt_stdout.txt) 逐字对应。
 
 对账结果：
 
@@ -1014,7 +1014,7 @@ $$L=96, h=8192, ffn=28672, V=51200$$、$$p=8$$ 下的实测：
 ```
 
 > 出处：`ipynbs` `experiments/megatron/pipeline_parallel/memory_balance.py` 真实输出，
-> 见 [`results/memory_balance_stdout.txt`](https://github.com/lrypcy/ipynbs/blob/main/experiments/megatron/pipeline_parallel/results/memory_balance_stdout.txt)。
+> 见 [`results/memory_balance_stdout.txt`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/pipeline_parallel/results/memory_balance_stdout.txt)。
 
 `max/mean` 是这里唯一重要的指标——**瓶颈是最重的那个 stage**。
 `min/mean` 只反映最轻 stage 有多闲，对能不能跑起来没有约束力。
@@ -1440,7 +1440,7 @@ MoE 的 dispatcher 机制属 [02 篇](/2026/10/08/megatron-02-expert-parallel/) 
 
 本机无 GPU，全部实验为 A 级（解析）与 C 级（CPU 微型复现），
 脚本与固化输出在 `ipynbs`
-[`experiments/megatron/pipeline_parallel/`](https://github.com/lrypcy/ipynbs/tree/main/experiments/megatron/pipeline_parallel)，
+[`experiments/megatron/pipeline_parallel/`](https://github.com/lrypcy/ipynbs/tree/9d884fa/experiments/megatron/pipeline_parallel)，
 三个脚本均无第三方依赖、输出确定性（重跑逐位一致）。
 
 | 脚本 | 级别 | 断言 |

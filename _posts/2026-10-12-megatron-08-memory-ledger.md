@@ -10,7 +10,7 @@ excerpt: "显存六项账本里，激活这一项怎么算？本文给出一套�
 ---
 
 > 源码基准：`megatron-core` **0.20.0**，commit [`60e039626`](https://github.com/NVIDIA/Megatron-LM/tree/60e039626)。本文所有行号均对该 commit 取证。
-> 配套实验：`ipynbs` 仓库 `experiments/megatron/memory_ledger/`（三个脚本 + 固化输出）。
+> 配套实验：`ipynbs` 仓库 [`experiments/megatron/memory_ledger/`](https://github.com/lrypcy/ipynbs/tree/9d884fa/experiments/megatron/memory_ledger)（三个脚本 + 固化输出，锁 commit [`9d884fa`](https://github.com/lrypcy/ipynbs/commit/9d884fa)）。
 > <!-- TODO-ipynbs-commit: 监工 push 后把下面的 commit 号回填成本文实验目录的 permalink 前缀 -->
 
 <!-- TODO-frontmatter: 06/07 落盘后补前置链 -->
@@ -1475,9 +1475,9 @@ graphLR
 
 ### 配套实验与本系列
 
-- 配套实验（`ipynbs` 仓库）：`experiments/megatron/memory_ledger/`
-  - `pareto.py` —— 逐张量保存集、11 个模块绑定、显存与重算代价双轴扫描
-  - `selective_equivalence.py` —— normal 与 output-discarding 的前向与梯度逐位对照、丢弃字节验证、RNG 恢复必要性
-  - `dsa_shapes.py` —— `split_tensor_into_1d_equal_chunks` 下标算术复刻、SP 双重摊分、非整除边界
-  - `results/stdout.txt` —— 固化输出
+- 配套实验（`ipynbs` 仓库，锁 commit [`9d884fa`](https://github.com/lrypcy/ipynbs/commit/9d884fa)）：[`experiments/megatron/memory_ledger/`](https://github.com/lrypcy/ipynbs/tree/9d884fa/experiments/megatron/memory_ledger)
+  - [`pareto.py`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/memory_ledger/pareto.py) —— 逐张量保存集、11 个模块绑定、显存与重算代价双轴扫描
+  - [`selective_equivalence.py`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/memory_ledger/selective_equivalence.py) —— normal 与 output-discarding 的前向与梯度逐位对照、丢弃字节验证、RNG 恢复必要性
+  - [`dsa_shapes.py`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/memory_ledger/dsa_shapes.py) —— `split_tensor_into_1d_equal_chunks` 下标算术复刻、SP 双重摊分、非整除边界
+  - [`results/stdout.txt`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/memory_ledger/results/stdout.txt) —— 固化输出
 14. 本系列前作：《（00）代码地图、配置系统与一次迭代的控制流全图》[/2026/09/28/megatron-00-foundation/]、《（01）进程组——网格切分、通信域与计算组织》[/2026/10/08/megatron-01-process-groups-and-comm-overlap/]、《（02）专家并行——进程组、token dispatch 全链路与负载均衡》[/2026/10/08/megatron-02-expert-parallel/]、《（03）张量并行与序列并行——f / g 算子与 RS + AG 的真实实现》[/2026/09/28/megatron-03-tensor-parallel-and-sequence-parallel/]、《（04）GTP：新一代张量并行》[/2026/10/11/megatron-04-generalized-tensor-parallelism/]、《（05）数据并行与优化器——三套实现的分野》[/2026/10/10/megatron-05-data-parallel-and-optimizers/]

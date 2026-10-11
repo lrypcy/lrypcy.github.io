@@ -10,7 +10,7 @@ excerpt: "fp8_recipe 的五个取值在源码里落到三条完全不同的路�
 ---
 
 > 源码基准：`megatron-core` **0.20.0**，commit [`60e039626`](https://github.com/NVIDIA/Megatron-LM/tree/60e039626)。本文所有行号均对该 commit 取证。
-> 配套实验：`ipynbs` 仓库 `experiments/megatron/low_precision/`（两个脚本 + 固化输出）。
+> 配套实验：`ipynbs` 仓库 [`experiments/megatron/low_precision/`](https://github.com/lrypcy/ipynbs/tree/9d884fa/experiments/megatron/low_precision)（两个脚本 + 固化输出，锁 commit [`9d884fa`](https://github.com/lrypcy/ipynbs/commit/9d884fa)）。
 > <!-- TODO-ipynbs-commit: 监工 push 后回填本篇实验目录的 permalink 前缀 -->
 
 低精度这条线在 Megatron 里的复杂度，超出「换个 dtype」很多。
@@ -1410,8 +1410,8 @@ graphLR
 
 ### 配套实验与本系列
 
-- 配套实验（`ipynbs` 仓库）：`experiments/megatron/low_precision/`
-  - `quantizers.py` —— E4M3 / E5M2 逐位枚举格点、MX block scaling、INT8 三档粒度；四组数据的 RMSE / SNR / 极小值存活率 / 粒度曲线（15 条断言）
-  - `grad_clip_equivalence.py` —— 整块与逐参数循环的 ULP 对照、两条 fallback 分支的精度与类型差、clip 系数（7 条断言）
-  - `results/stdout.txt` —— 固化输出（22 条断言全过）
+- 配套实验（`ipynbs` 仓库，锁 commit [`9d884fa`](https://github.com/lrypcy/ipynbs/commit/9d884fa)）：[`experiments/megatron/low_precision/`](https://github.com/lrypcy/ipynbs/tree/9d884fa/experiments/megatron/low_precision)
+  - [`quantizers.py`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/low_precision/quantizers.py) —— E4M3 / E5M2 逐位枚举格点、MX block scaling、INT8 三档粒度；四组数据的 RMSE / SNR / 极小值存活率 / 粒度曲线（15 条断言）
+  - [`grad_clip_equivalence.py`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/low_precision/grad_clip_equivalence.py) —— 整块与逐参数循环的 ULP 对照、两条 fallback 分支的精度与类型差、clip 系数（7 条断言）
+  - [`results/stdout.txt`](https://github.com/lrypcy/ipynbs/blob/9d884fa/experiments/megatron/low_precision/results/stdout.txt) —— 固化输出（22 条断言全过）
 - 本系列前作：《（00）代码地图、配置系统与一次迭代的控制流全图》[/2026/09/28/megatron-00-foundation/]、《（01）进程组——网格切分、通信域与计算组织》[/2026/10/08/megatron-01-process-groups-and-comm-overlap/]、《（02）专家并行》[/2026/10/08/megatron-02-expert-parallel/]、《（03）张量并行与序列并行》[/2026/10/09/megatron-03-tensor-parallel-and-sequence-parallel/]、《（04）GTP：新一代张量并行》[/2026/10/11/megatron-04-generalized-tensor-parallelism/]、《（05）数据并行与优化器——三套实现的分野》[/2026/10/10/megatron-05-data-parallel-and-optimizers/]、《（08）显存账本——重计算、卸载与分布保存》[/2026/10/12/megatron-08-memory-ledger/]、《（14）层栈与 spec 机制》[/2026/10/12/megatron-14-module-spec-and-layer-stack/]、《（15）GPT 与 Llama 装配》[/2026/10/13/megatron-15-gpt-and-llama-model-assembly/]
