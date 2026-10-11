@@ -112,8 +112,12 @@ def bare_line_refs(text):
 
 
 def density(text, lines):
-    """§5-7 外部引用密度 —— **按唯一来源**，门槛 ceil(行数/300 * 8)"""
-    urls = external_urls(text)
+    """§5-7 外部引用密度 —— **按唯一来源**，门槛 ceil(行数/300 * 8)。
+
+    先剥代码区：代码块里的 URL 是示例命令的一部分，不是引用。
+    """
+    body = strip_code(text)
+    urls = external_urls(body)
     uniq, occ = len(set(urls)), len(urls)
     need = math.ceil(lines * DENSITY_MIN / DENSITY_PER)
     ok = uniq >= need
@@ -129,14 +133,29 @@ def permalink_density(text, lines):
     return ok, f"{n} 个 / 需 {need}（1/{lines // max(n, 1)} 行）"
 
 
+def strip_code(text):
+    """剥掉围栏代码块、行内代码与 YAML front matter。
+
+    没有这一步，正则会去扫代码里的内容而误报。监工已在 12 篇上踩到：
+      - 行内代码里的美元符号 `` `$86K` `` 被当成「单 $ 公式」
+    与 tools/fix_quotes.py 的保护区逻辑保持一致。
+    """
+    out = re.sub(r"^---\n.*?\n---\n", "", text, flags=re.S)      # front matter
+    out = re.sub(r"^[ \t]*```.*?^[ \t]*```", "", out, flags=re.S | re.M)  # 围栏
+    out = re.sub(r"``[^`]*``", "", out)                          # 双反引号
+    out = re.sub(r"`[^`\n]*`", "", out)                          # 行内代码
+    return out
+
+
 def redlines(text):
-    """§5-9 红线自检（可机器判的部分）"""
+    """§5-9 红线自检（可机器判的部分）—— 先剥代码区再判"""
+    body = strip_code(text)
     res = []
-    n1 = len(re.findall(r"(我们|笔者|本人)", text))
+    n1 = len(re.findall(r"(我们|笔者|本人)", body))
     res.append(("第一人称叙述", n1 == 0, f"{n1} 处"))
-    n2 = len(re.findall(r"(本文接下来|下面我们来|让我们|接下来我们|需要注意的一点是)", text))
+    n2 = len(re.findall(r"(本文接下来|下面我们来|让我们|接下来我们|需要注意的一点是)", body))
     res.append(("元叙述", n2 == 0, f"{n2} 处"))
-    n3 = len(re.findall(r"(^|[^$])\$[^$]", text, re.M))
+    n3 = len(re.findall(r"(^|[^$])\$[^$]", body, re.M))
     res.append(("单 $ 公式", n3 == 0, f"{n3} 处"))
     return res
 
