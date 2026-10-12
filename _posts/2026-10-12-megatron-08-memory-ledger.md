@@ -82,6 +82,8 @@ excerpt: "显存六项账本里，激活这一项怎么算？本文给出一套�
 | 碎片 | allocator | — | 部分 |
 | 临时缓冲 | 调用方（通信 / bucket / 卸载） | 跨 iteration | **能** |
 
+这套口径之所以能成立，前提是「分配」在 PyTorch 与 CUDA 两侧都有确定语义：张量由 [`torch.empty`](https://docs.pytorch.org/docs/stable/generated/torch.empty.html) 这类工厂函数申请，而实际落到哪块显存由 caching allocator 决定，底层接口是 [CUDA Runtime 的内存管理一组](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__MEMORY.html)。allocator 的分段与释放策略见 [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html)。
+
 第六项是本文要强调的：**临时缓冲是六项里唯一一项设计上就打算被复用的**。这决定了它的记账方式与前五项不同 —— 前五项按峰值算，第六项按「稳态占用」算。
 
 ### 1.2 上一篇留下的那个 0
@@ -347,6 +349,8 @@ if self.recompute_modules is None:
 ```
 
 理由写在字段 docstring 里（`transformer_config.py` L528-L532）：`core_attn` 是注意力里最吃显存的部分，而它**重算起来又不贵** —— *These memory intensive activations are also less compute intensive which makes activation checkpointing more efficient for LLMs (20B+)*，并直接给了文献：*See Reducing Activation Recomputation in Large Transformer Models*（[arXiv:2205.05198](https://arxiv.org/abs/2205.05198)）。
+
+这条「注意力内部张量体积大但代价低」的判断还有一个前提：注意力实现本身已经把那些中间量控制在 O(S) 而非 O(S²)——FlashAttention 一系通过分块与在线 softmax 避免了物化完整分数矩阵（[FlashAttention](https://arxiv.org/abs/2205.14135)、[FlashAttention-2](https://arxiv.org/abs/2307.08691)）。正因为这些量是按块临时生成而非常驻，「重算它们」才便宜。
 
 那篇论文的核心论点与本节的实测一致：注意力内部那些张量（softmax 前的分数、dropout 掩码）体积大但生成代价低，所以「只重算注意力」比「重算整层」划算。Korthikanti 等人给出的结论是，选择性重算能在几乎不影响吞吐的前提下拿到接近全量重算的显存收益。
 
@@ -636,6 +640,8 @@ $$\frac{1}{\mathrm{tp}^2} = \frac{1}{64} = 0.01562500$$
 
 ---
 ## 4. offload 三档
+
+三档共同的底层前提是 host 侧有一块**页锁定**内存可做异步拷贝——普通 pageable 内存的 host↔device 传输会被驱动切成多段并隐式同步，而 pinned 内存允许真正的 DMA（[`torch.Tensor.pin_memory`](https://docs.pytorch.org/docs/stable/generated/torch.Tensor.pin_memory.html)）。这也是为什么 unload 路径的收益不只是「省显存」，还有传输方式本身的差别。
 
 ### 4.1 三档总表
 
@@ -934,6 +940,9 @@ if self.moe_paged_stash:
 ---
 
 ## 5. `hybrid_optimizer.py`：搬的是状态，不是权重
+
+状态落盘与回读的语义由 [`torch.save`](https://docs.pytorch.org/docs/stable/generated/torch.save.html) / [`torch.load`](https://docs.pytorch.org/docs/stable/generated/torch.load.html) 约定；本节关心的是「哪些张量被搬走」而非「用什么格式存」，故不再展开存档格式。
+
 
 ### 5.1 分界线怎么定
 

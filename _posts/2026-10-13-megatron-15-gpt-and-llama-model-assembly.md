@@ -57,6 +57,8 @@ mathjax: true
 | L843 | `build_schedule_plan` | fine-grained offload 的调度计划 |
 | L918 | `sharded_state_dict` | 分片 state dict |
 
+作为参照系，本篇拆的这个类对应的是 GPT 系的模型装配路径——GPT-3 的模型结构与规模设定见 [Language Models are Few-Shot Learners](https://arxiv.org/abs/2005.14165)，而 Megatron-Core 里对应的类是 `GPTModel`（官方 API 页：[`core.models.gpt.gpt_model`](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.models.gpt.gpt_model.html)）。
+
 `__init__` 到 `_preprocess` 之间有 **227 行**——这是本文件最重的一块，也是 14 篇讲过的「spec → 模块」装配在模型级的落点。剩下约 700 行几乎全是前向三段与两个 state dict 方法。
 
 ```mermaid
@@ -142,6 +144,8 @@ flowchart TB
         rotary_pos_sin = None
         rotary_pos_cos_sin = None
 ```
+
+rotary 的数学形式见 [RoFormer](https://arxiv.org/abs/2104.09864)——把位置信息编码进旋转矩阵而非加到输入上，因此它只需要 cos/sin 两组值、不需要学习参数。这一点正是下面「四个变量」的由来。
 
 **四个变量而不是一个**，是因为下游有四种消费形态：常规 `rotary_pos_emb`、拆开存的 cos/sin、以及 flashinfer 融合 rope 的 `cos_sin`。融合那条路由 [L382](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_model.py#L382) 的 `use_flash_infer_fused_rope` 决定——它读的是推理上下文上的一个属性（[L383–L384](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_model.py#L383-L384) `hasattr(inference_context, 'use_flashinfer_fused_rope') and ...`），对应 [FlashInfer](https://github.com/flashinfer-ai/flashinfer) 的 fused RoPE 实现；两者不兼容时 [L403](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_model.py#L403) 直接 `assert not self.mtp_process`（*MTP not tested with flashinfer_fused_rope*）。
 
@@ -246,6 +250,8 @@ MuP（Maximal Update Parameterization）的输出侧缩放与TP/SP 是正交的�
 
 ## 5. 两份 layer spec 的逐格对照
 
+本节涉及的三类对象在官方 API 文档里各有对应页：`BackendSpecProvider` 与两个实现见 [`core.models.backends`](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.models.backends.html)，两份 spec 的构造函数见 [`core.models.gpt.gpt_layer_specs`](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.models.gpt.gpt_layer_specs.html)。
+
 14 篇 §5 讲过 `BackendSpecProvider` 这个 `Protocol` 有 8 个方法。本篇要补的是**实际实现比 Protocol 多什么**，以及两份 spec 在同一格上做出不同选择时会怎样。
 
 ### 5.1 三份 provider 的方法数不一致
@@ -276,6 +282,8 @@ MuP（Maximal Update Parameterization）的输出侧缩放与TP/SP 是正交的�
 
 **TE 版把 LayerNorm 与列并行 Linear 融进了同一个模块**（`TELayerNormColumnParallelLinear`），local 版是两层。前者的收益是少一次 kernel launch、少一份中间激活；后者依赖 `fuse_layernorm_and_linear()` 返回 `False`（[L110](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/backends.py#L110)）。
 
+顺带一提，Llama 系的 dense MLP 用的是 SwiGLU 门控（[GLU Variants Improve Transformer](https://arxiv.org/abs/2002.05202)），它在 spec 里落在 `activation_func()` 那一格；本节的融合讨论只涉及 LayerNorm 与 Linear 的合并，与激活函数是两回事。
+
 **这不是「实现好坏」而是「后端承诺不同」**：Protocol 里 `fuse_layernorm_and_linear()` 与 `column_parallel_layer_norm_linear()` 是一对，前者回答「融不融」，后者回答「融了是哪个类」。local 后端答「不融」，于是 spec 里必须写不融的那条路径。
 
 ### 5.3 MLA 分支：连并行轴都不同
@@ -294,6 +302,8 @@ MuP（Maximal Update Parameterization）的输出侧缩放与TP/SP 是正交的�
 | `q_layernorm` / `kv_layernorm` | `IdentityOp` | 同 |
 
 **TE 版那四格是不并行的 `TELinear`，local 版那四格是列并行的。** 也就是说 **同一个 MLA 结构，在两个后端下的权重切法不同**。
+
+MLA 来自 DeepSeek 系模型而非 LLaMA 系——LLaMA 那一路走的是 RoPE + RMSNorm + SwiGLU 的组合（[LLaMA](https://arxiv.org/abs/2302.13971)），正因为如此，同一个「Llama」入口在 Megatron 里要分出 dense 与 MLA 两个分支来装配。
 
 这不是笔误，而是 MLA 本身的性质：MLA 的下投影把「头维 × 压缩维」合成一个大矩阵，TE 选择把它当单个不切分的线性层（在 attn 内部自己处理），而 local 版按输出维切。07 篇（上下文并行与 MLA）会展开这一层的语义。
 
@@ -327,6 +337,8 @@ MuP（Maximal Update Parameterization）的输出侧缩放与TP/SP 是正交的�
 | --- | --- | --- |
 | TE 版（[L318](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_layer_specs.py#L318)） | `backend.layer_norm(for_qk=True)` | **未传，取默认 `False`** |
 | local 版（[L397–L398](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_layer_specs.py#L397-L398)） | `backend.layer_norm(rms_norm=True, for_qk=True)` | **`True`**（当 `normalization == "RMSNorm"`） |
+
+RMSNorm 本身见 [Root Mean Square Layer Normalization](https://arxiv.org/abs/1910.07467)——它去掉均值中心化、只做均方根缩放，代价更小但对归一化尺度有不同假设，这一取舍正是 `rms_norm` 这个实参要表达的东西。
 
 local 版显式按 `normalization` 分支（[L396–L401](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_layer_specs.py#L396-L401)），TE 版**没有这个分支**——它只传 `for_qk`，`rms_norm` 走默认值。
 

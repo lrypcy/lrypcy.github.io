@@ -45,7 +45,7 @@ mathjax: true
 | | `transformer/transformer_block.py` | 863 | 层的列表、pipeline 偏移、逐层量化上下文 |
 | **装配** | `models/gpt/gpt_layer_specs.py` | 799 | **具体填什么**——哪一格换成 TE 的列并行层 |
 
-这三层的划分与 Megatron Core 官方开发指南的 [API 导航](https://docs.nvidia.com/megatron-core/developer-guide/latest/index.html) 一致：规范机制在 `spec_utils`，层栈在 `transformer`，具体装配在 `models/*_specs.py`。后两层的名字里都有 `spec`，因为它们既是「结构定义」也是「结构的描述者」。而 `gpt_layer_specs.py` 是唯一一处**把具体的并行层写进去**的地方。
+这三层在官方 API 文档里各有具体页可对照：[`core.transformer.spec_utils`](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.transformer.spec_utils.html)、[`core.transformer.transformer_layer`](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.transformer.transformer_layer.html)、[`core.transformer.transformer_block`](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.transformer.transformer_block.html)。这三层的划分与 Megatron Core 官方开发指南的 [API 导航](https://docs.nvidia.com/megatron-core/developer-guide/latest/index.html) 一致：规范机制在 `spec_utils`，层栈在 `transformer`，具体装配在 `models/*_specs.py`。后两层的名字里都有 `spec`，因为它们既是「结构定义」也是「结构的描述者」。而 `gpt_layer_specs.py` 是唯一一处**把具体的并行层写进去**的地方。
 
 ### 1.3 全局流程
 
@@ -127,6 +127,8 @@ def import_module(module_path: Tuple[str]):
 这个设计的收益是**声明与求值分离**：spec 可以在配置阶段被构造、比较、拷贝，而不必 import 整个 TE 与 CUDA 栈。代价就是这条 TODO。
 
 ### 2.3 `get_module` 与 `build_module` 的分工
+
+装配出来的对象最终要挂进 `torch.nn.Module` 的树里，而「递归遍历子模块」这件事本身由 PyTorch 约定：`named_modules` / `children` / `apply` 三个方法构成模块树的遍历接口，钩子注册则决定了装配途中哪些地方会被回调（[PyTorch Modules 笔记](https://docs.pytorch.org/docs/stable/notes/modules.html)）。本节讲的延迟导入之所以必要，正是因为它发生在这一层的约定之下。
 
 [`get_module` L62–L74](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/spec_utils.py#L62-L74) 只做一件事——**把 spec 解析成类**，不实例化：
 
@@ -328,7 +330,7 @@ def get_gpt_layer_with_transformer_engine_spec(*args, **kwargs) -> ModuleSpec:
 
 ### 4.3 `identity_op.py`：被当作默认值用的那个类
 
-`IdentityOp` 与 `IdentityFuncOp` 定义在 `megatron/core/transformer/identity_op.py`。它们的行为就是「原样返回输入」，但在这里承担了**两个不同角色**：
+`IdentityOp` 与 `IdentityFuncOp` 定义在 `megatron/core/transformer/identity_op.py`（官方 API 页：[`core.transformer.identity_op`](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.transformer.identity_op.html)）。它们的行为就是「原样返回输入」，但在这里承担了**两个不同角色**：
 
 | 角色 | 出现在 | 含义 |
 | --- | --- | --- |
@@ -338,6 +340,8 @@ def get_gpt_layer_with_transformer_engine_spec(*args, **kwargs) -> ModuleSpec:
 第二种角色容易与第一种混淆。判断某层是否真的用了 hyper-connection，必须检查实例类型而非字段是否被赋值。
 
 ## 5. backend provider：一个 `Protocol`，三种实现
+
+三种后端里 `transformer_engine` 那一套的官方 API 页见 [`core.extensions.transformer_engine`](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.extensions.transformer_engine.html)，其中 `TESpecProvider` 实际就实现于该模块之下。
 
 ### 5.1 为什么是 Protocol 而不是基类
 
