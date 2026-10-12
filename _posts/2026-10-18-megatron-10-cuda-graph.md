@@ -1363,7 +1363,7 @@ def convert_schedule_table_to_order(num_warmup_microbatches, num_model_chunks, s
 
 **注意输入的那张表是「virtual」维的。** 算例里 `microbatch_id` 是 `0 1 2 0 1 2 3 4 3 4`——出现了回退。这是 interleaved（VP）调度的特征：virtual microbatch 数多于真实 microbatch 数，同一个真实 microbatch 会被多个 virtual 位置以不同 chunk 组合重新访问。**图化的粒度是 virtual microbatch 级的**，而不是真实 microbatch 级。
 
-**前向与反向是分离成两张表再交错的。** 交错的形态由 warmup microbatch 数决定，这是 1F1B 调度的固有参数（1F1B 及其变体的原始提出见 [DeepSpeed](https://arxiv.org/abs/2103.00065)）。 docstring 里的 `forward` 行与 `backward` 行分开给，然后函数按 `num_warmup_microbatches` 把两张表交错起来：warmup 段先连续发前向，之后每个前向配一个反向，最后再补齐 warmup 段攒下的反向。这个交错顺序就是 1F1B 在图化后的执行序。
+**前向与反向是分离成两张表再交错的。** 交错的形态由 warmup microbatch 数决定，这是 1F1B 调度的固有参数（1F1B 调度由 [GPipe](https://arxiv.org/abs/1811.06965) 提出，3D 并行的工程化见 [Megatron-Turing NLG 530B](https://arxiv.org/abs/2201.11990)）。 docstring 里的 `forward` 行与 `backward` 行分开给，然后函数按 `num_warmup_microbatches` 把两张表交错起来：warmup 段先连续发前向，之后每个前向配一个反向，最后再补齐 warmup 段攒下的反向。这个交错顺序就是 1F1B 在图化后的执行序。
 
 **它输出的东西直接决定显存峰值。** warmup 段的连续前向意味着要同时持有多份前向激活，warmup 越大显存越高。这就是 §2 那套共享池与 buffer 复用机制存在的原因之一——图化的调度形状会主动推高激活驻留量。
 
@@ -1606,7 +1606,8 @@ graph TD
 - [Megatron-LM（原始论文）, arXiv:1909.08053](https://arxiv.org/abs/1909.08053)
 - [Reducing Activation Recomputation, arXiv:2205.05198](https://arxiv.org/abs/2205.05198)
 - [MoE Parallel Folding, arXiv:2504.14960](https://arxiv.org/abs/2504.14960)
-- [DeepSpeed, arXiv:2103.00065](https://arxiv.org/abs/2103.00065)
+- [GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism, arXiv:1811.06965](https://arxiv.org/abs/1811.06965) —— 1F1B 调度的提出
+- [Using DeepSpeed and Megatron to Train Megatron-Turing NLG 530B, arXiv:2201.11990](https://arxiv.org/abs/2201.11990) —— 3D 并行的工程化
 - [ZeRO, arXiv:1910.02054](https://arxiv.org/abs/1910.02054)
 
 **CUDA Graph 相关研究**

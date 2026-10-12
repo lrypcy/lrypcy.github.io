@@ -28,7 +28,7 @@ mathjax: true
 
 ## 1. 引言：为什么 hybrid 需要一门语言
 
-15 篇讲 dense 模型时，层类型是**隐含的**——每一层都是 `TransformerLayer`（对照 [https://docs.pytorch.org/docs/stable/nn.html#torch.nn.Module] 文档里那套「继承 `nn.Module` + 直接写 `nn.Linear`」的常规写法，两者不是同一种范式），里面必有 self-attention 与 MLP，差别只在 MLP 是 dense 还是 MoE。所以 15 篇只需要一个 0/1 的 `moe_layer_freq` 就能表达混排（[15 篇 §6.1](https://lrypcy.github.io/2026/10/13/megatron-15-gpt-and-llama-model-assembly/)）。
+15 篇讲 dense 模型时，层类型是**隐含的**——每一层都是 `TransformerLayer`（对照 [`torch.nn.Module` 文档](https://docs.pytorch.org/docs/stable/nn.html#torch.nn.Module) 里那套「继承 `nn.Module` + 直接写 `nn.Linear`」的常规写法，两者不是同一种范式），里面必有 self-attention 与 MLP，差别只在 MLP 是 dense 还是 MoE。所以 15 篇只需要一个 0/1 的 `moe_layer_freq` 就能表达混排（[15 篇 §6.1](https://lrypcy.github.io/2026/10/13/megatron-15-gpt-and-llama-model-assembly/)）。
 
 hybrid 模型打破了这个前提。一层可能是：Mamba、GDN（gated delta net）、标准 attention、DeepSeek 变体 attention、MLA、dense MLP、MoE——**七种**。而且它们的**顺序**也有讲究：Mamba 层与 attention 层在超参上常按固定比值交替（这是 hybrid 的定义特征），MoE 层通常插在 attention 之后。现实中的 hybrid 模型确实按固定比值来配——[Jamba（arXiv:2403.19887）](https://arxiv.org/abs/2403.19887) 是 Mamba 层与 Transformer 层按比例混排的实例；而 Megatron Core 官方在[并行策略指南](https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html)里把 Mamba 单独列为一种需要适配的并行场景，其取舍与序列并行/上下文并发的关系在那里说明。
 
@@ -408,7 +408,7 @@ class HybridStackSubmodules:
     mtp_block_spec: Optional[ModuleSpec] = None
 ```
 
-**七个槽位对应 §2 的七个层符号，默认值全是 `IdentityOp`。**被填进去的不是 torch 层而是 [TransformerEngine 提供的模块](https://docs.nvidia.com/deeplearning/transformer-engine/index.html)——`Linear` / `LayerNormLinear` / `LayerNormMLP` / `GroupedLinear` 这一族；其 PyTorch API 清单（含 `GroupedLinear` 与 `LayerNormMLP`）见 [TE 2.18 的 `api/pytorch` 页](https://docs.nvidia.com/deeplearning/transformer-engine/releases/release-2.18/user-guide/api/pytorch.html)，此处固定 release 号是因为 TE 的模块名在版本间会变。 第八个字段 `mtp_block_spec` 的默认是 `None`（而不是 `IdentityOp`），因为 MTP 不在这套逐层机制里——它是**段级的附加块**，对应 §3 那个 `/` 分隔的独立部分。
+**七个槽位对应 §2 的七个层符号，默认值全是 `IdentityOp`。**被填进去的不是 torch 层而是 [TransformerEngine 提供的模块](https://docs.nvidia.com/deeplearning/transformer-engine/index.html)——`Linear` / `LayerNormLinear` / `LayerNormMLP` / `GroupedLinear` 这一族；其 PyTorch API 清单（含 `GroupedLinear` 与 `LayerNormMLP`）见 [TE 2.18 的 `api/pytorch` 页](https://docs.nvidia.com/deeplearning/transformer-engine-releases/release-2.18/user-guide/api/pytorch.html)，此处固定 release 号是因为 TE 的模块名在版本间会变。 第八个字段 `mtp_block_spec` 的默认是 `None`（而不是 `IdentityOp`），因为 MTP 不在这套逐层机制里——它是**段级的附加块**，对应 §3 那个 `/` 分隔的独立部分。
 
 ### 7.2 `IdentityOp` 在两处表达了不同的东西
 
