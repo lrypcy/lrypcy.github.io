@@ -54,16 +54,16 @@ git show 60e039626:<path> | wc -l
 | 01 | 进程组 + 通信与计算重叠 | `parallel_state.py` `mappings.py` `layers.py` | 已在 `_posts/`，门禁全过 |
 | 02 | 专家并行 | `moe/token_dispatcher.py` 等 | 已在 `_posts/`，门禁全过 |
 | 03 | 张量并行与序列并行（TP + SP） | `tensor_parallel/layers.py` `mappings.py` `cross_entropy.py` | 已在 `_posts/`，门禁全过 |
-| 04 | GTP：新一代张量并行 | `generalized_tensor_parallelism.py` `gtp_api.py` | 已在 `_posts/`，**未提交**，待验收 |
-| 05 | 数据并行与优化器（三套实现） | `param_and_grad_buffer.py` `distrib_optimizer.py` `fsdp/` | 已在 `_posts/`，**12 图缺图注**待补 |
-| 06 | 流水并行调度器 | `pipeline_parallel/schedules.py` | 待写 |
-| 07 | 上下文并行与长上下文 | `dot_product_attention.py` `multi_latent_attention.py` `packed_seq_params.py` | 待写 |
-| 08 | 显存账本：重计算 / 卸载 / 分布保存 | `recompute.py` `transformer_config.py` `fine_grained_activation_offload.py` | 已写完（`_posts/2026-10-12-megatron-08-memory-ledger.md`，1458 行），门禁全过；**含 3 处 TODO 占位符**（等ipynbs commit 回填、等 06/07 落盘补前置链与上一篇链接） |
-| 09 | 低精度：FP8 全链路与 FP4 | `fp8_utils.py` `fp4_utils.py` `extensions/transformer_engine.py` | 待写 |
-| 10 | 算子融合与 CUDA Graph | `fusions/` `full_cuda_graph.py` `transformer/cuda_graphs.py` | 待写 |
-| 11 | RL 训练栈与 Refit | `megatron/rl/` `core/resharding/` | 待写 |
-| 12 | Checkpoint 与容错 | `dist_checkpointing/` `rerun_state_machine.py` | 待写 |
-| 13 | Bridge、导出与模型家族落地 | Megatron Bridge `export/` modelopt | 待写 |
+| 04 | GTP：新一代张量并行 | `generalized_tensor_parallelism.py` `gtp_api.py` | 已入库，门禁全过；**§5-7 唯一引用 13/37，缺 24**，补引中 |
+| 05 | 数据并行与优化器（三套实现） | `param_and_grad_buffer.py` `distrib_optimizer.py` `fsdp/` | 已入库，门禁全过（唯一引用 44/42，12 图） |
+| 06 | 流水并行调度器 | `pipeline_parallel/schedules.py` | 已入库，门禁全过（唯一引用 42/41） |
+| 07 | 上下文并行与长上下文 | `dot_product_attention.py` `multi_latent_attention.py` `packed_seq_params.py` | 已入库，门禁全过（唯一引用 51/37，12 图） |
+| 08 | 显存账本：重计算 / 卸载 / 分布保存 | `recompute.py` `transformer_config.py` `fine_grained_activation_offload.py` | 已入库，门禁全过；**§5-7 唯一引用 35/40，缺 5**，补引中 |
+| 09 | 低精度：FP8 全链路与 FP4 | `fp8_utils.py` `fp4_utils.py` `extensions/transformer_engine.py` | 已入库，门禁全过（唯一引用 39/38） |
+| 10 | 算子融合与 CUDA Graph | `transformer/cuda_graphs.py` `optimizer_cuda_graph.py` `gtp_cuda_graphs.py` | 已入库（1646 行），门禁全过（唯一引用 57/44）；**`fusions/` 11 模块约 3100 行另立编号，暂未分配**，见变更史第 7 条 |
+| 11 | Refit 与 resharding | `core/resharding/` | 已入库（1453 行），门禁全过（唯一引用 51/39）；**`megatron/rl/` 未展开**，见变更史第 8 条 |
+| 12 | 确定性重跑与故障注入 | `rerun_state_machine.py` `fault_injector.py` | 已入库（1306 行），门禁全过（唯一引用 37/35）；**`dist_checkpointing/` 未展开且未分配编号**，见变更史第 9 条 |
+| 13 | Bridge、导出与模型家族落地 | Megatron Bridge `export/` modelopt | 待写。**本机无 Megatron-Bridge 仓库**，锁 permalink 前置条件不满足 |
 
 ### 2.1 模块 E · 典型模型落地（2026-10-11 追加 · **编号待监工批准**）
 
@@ -125,6 +125,33 @@ pipeline 切分在哪一行发生。原理层可引用已有篇目，篇目只�
    原表把 00/01/03/04/05 标成「待写/初稿」，与磁盘现状脱节。
 6. **第六次（2026-10-11 同日修正）**：模块 E 内部顺序调整——spec 机制由 15 提前为 **14**。
    理由见 §2.1 表下注文：15/16/17 均依赖它，放前面可让后三篇permalink 引用而不重复讲机制。
+7. **第七次（2026-10-12）**：10 篇从「算子融合与 CUDA Graph」收窄为「CUDA Graph 与 optimizer step 图化」，
+   `core/fusions/` 11 个模块约 3100 行**另立编号待批准**，本篇只在 §1 一句话带过其存在。
+   理由沿用第四次拆 01 的同一条判据——**按主题独立成篇**，且 CUDA Graph 与算子融合是
+   两套正交的捕获机制（前者捕获 stream，后者捕获图里的 kernel 序列）。
+   同一条也要求 10 篇副标题落成「CUDA Graph」，正文 §2 内存池管理因此只讲图化侧。
+8. **第八次（2026-10-13）**：11 篇从「RL 训练栈与 Refit」收窄为「Refit 与 resharding」，
+   `megatron/rl/` **不属本篇，编号暂未分配**。
+   理由：`megatron/rl/` 是 RL 训练栈（server / types / runtime 等整套），
+   与 resharding（`core/resharding/` 890 行）在读者认知上不是一件事——
+   前者是「怎么把 RL rollout 接进 Megatron」，后者是「换并行布局后权重怎么搬」。
+   合并会重演第四次拆 01 的问题。**本篇只在 §6 交接口，不展开。**
+9. **第九次（2026-10-13）**：12 篇从「Checkpoint 与容错」收窄为「确定性重跑与故障注入」，
+   `rerun_state_machine.py` 1420 行 + `fault_injector.py` 233 行成篇，
+   **`dist_checkpointing/` 22 个文件 7793 行编号暂未分配**。
+   理由：存档格式（分片布局、`ShardedObject` 序列化、`--ckpt-assume-constant-structure`）
+   与重跑校验（状态机、瞬时翻转检测、故障注入）是两条线索——
+   前者关心「存下来能不能读回来」，后者关心「重跑会不会一样」。
+
+   ⚠️ **更正一条已推送的错记**：12 篇的提交信息（`b744868`）写了「`dist_checkpointing/` 归 13 篇」，
+   这是**错的**——13 篇是 Bridge / 导出 / 模型家族落地，契约从未把 dist_checkpointing 改派给它。
+   12 篇**正文本身没有问题**（§开头与 §7 都写的是「另一条线索，编号待定」），错的只是那句提交信息。
+   此条为更正记录，`b744868` 不重写历史（提交已推送，按纪律只追加不amend）。
+
+   **共同点**：第 7/8/9 条都是「本篇写不完/不属于本篇」的收窄，不是新增主题。
+   与第五次「五个孤儿并入已有编号、不新增编号」不同——这三处体量都超出单篇承载上限
+   （约 3100 / 整套 RL 栈 / 7793 行），因此**只能另立编号**，
+   而新增编号按 §2.1 需监工批准，故在批准前一律记为「暂未分配」，不得默认塞给某一篇。
 
 ---
 
