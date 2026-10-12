@@ -54,7 +54,7 @@ git show 60e039626:<path> | wc -l
 | 01 | 进程组 + 通信与计算重叠 | `parallel_state.py` `mappings.py` `layers.py` | 已在 `_posts/`，门禁全过 |
 | 02 | 专家并行 | `moe/token_dispatcher.py` 等 | 已在 `_posts/`，门禁全过 |
 | 03 | 张量并行与序列并行（TP + SP） | `tensor_parallel/layers.py` `mappings.py` `cross_entropy.py` | 已在 `_posts/`，门禁全过 |
-| 04 | GTP：新一代张量并行 | `generalized_tensor_parallelism.py` `gtp_api.py` | 已入库，门禁全过；**§5-7 唯一引用 13/37，缺 24**，补引中 |
+| 04 | GTP：新一代张量并行 | `generalized_tensor_parallelism.py` `gtp_api.py` | 已入库（1384 行），门禁全过（唯一引用 39/37，7 图） |
 | 05 | 数据并行与优化器（三套实现） | `param_and_grad_buffer.py` `distrib_optimizer.py` `fsdp/` | 已入库，门禁全过（唯一引用 44/42，12 图） |
 | 06 | 流水并行调度器 | `pipeline_parallel/schedules.py` | 已入库，门禁全过（唯一引用 42/41） |
 | 07 | 上下文并行与长上下文 | `dot_product_attention.py` `multi_latent_attention.py` `packed_seq_params.py` | 已入库，门禁全过（唯一引用 51/37，12 图） |

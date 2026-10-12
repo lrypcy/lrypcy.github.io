@@ -142,6 +142,8 @@ except ImportError:
 
 ## 3. `GTP = TP × GTP_remat`：两个正交子轴
 
+作为对照系，Megatron 的两条经典轴（TP 与 DP）的原始出处是 [Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism](https://arxiv.org/abs/1909.08053) 与其工程化论文 [Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron](https://arxiv.org/abs/2104.04473)；GTP 是在这套坐标上再添一维。
+
 这是理解 GTP 的关键一步。官方文档把它写成两条轴的乘积：
 
 > GTP splits the weight-parallel domain into two orthogonal sub-axes — `GTP = TP × GTP_remat` — so every rank stores `1/(TP × GTP_remat)` of each linear weight, together with the matching slice of its gradient and optimizer state.
@@ -191,6 +193,8 @@ flowchart TB
 ---
 
 ## 4. 切分语义：`gtp_remat_shard_dim0`
+
+把「按参数分片而不是按激活分片」这个思路追到底，可以追到 ZeRO 系列：ZeRO 提出分片优化器状态与梯度（[arXiv:1910.02054](https://arxiv.org/abs/1910.02054)），ZeRO-Offload 把分片状态挪到 CPU（[arXiv:2101.06840](https://arxiv.org/abs/2101.06840)），ZeRO-Infinity 进一步打通 CPU/NVMe/GPU 三级存储（[arXiv:2104.07857](https://arxiv.org/abs/2104.07857)）。GTP 与它们同构的地方在于「参数的分片边界不随 activation 走」，不同在于它分的是**前向要用到的权重**。
 
 三级切分落到代码上，`initialize_model_parallel` 把 `gtp_remat` 当成一个**一等正交轴**处理（`world = TP · GTP_remat · CP · DP`），并建专属进程组 `_GTP_WEIGHT_REMAT_GROUP`。真正把一个权重的第 0 维切给这个组的，是两个函数。
 
@@ -428,6 +432,8 @@ flowchart TB
 
 ### 6.1 两种 “centric” 到底指什么
 
+「不物化中间结果、用重算换显存」这条思路的最早系统化论述见 [Training Deep Nets with Sublinear Memory Cost](https://arxiv.org/abs/1604.06174)，而把注意力内的物化彻底消掉的工作见 [Attention Is All You Need](https://arxiv.org/abs/1706.03762) 所确立的架构与后续的 FlashAttention 一系（[arXiv:2205.14135](https://arxiv.org/abs/2205.14135)）。
+
 两个词的差别在**被切的对象与被恢复的对象**：
 
 | | activation-centric | weight-centric |
@@ -477,6 +483,8 @@ flowchart TB
 ---
 
 ## 7. prefetch 链：为什么权重要分链预取
+
+把通信藏进计算背后的工程化前提是「先算后用」的调度结构，这在 3D 并行的实现里有完整描述（[Using DeepSpeed and Megatron to Train Megatron-Turing NLG 530B](https://arxiv.org/abs/2201.11990)）；而 stage 之间的排队形态由 1F1B 调度决定（[GPipe](https://arxiv.org/abs/1811.06965)）。
 
 `gtp_remat_size > 1` 之后，每个权重在前向与反向各要 all-gather 一次。如果等到 GEMM 之前才发起通信，通信时间就全额暴露在关键路径上。GTP 的解法是**提前一个权重预取**：`all_gather_and_prefetch` 的 docstring 只有一句（[L1605–L1609](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/generalized_tensor_parallelism.py#L1605-L1609)）：
 
@@ -556,6 +564,8 @@ class GTPChain(str, Enum):
 
 ## 8. AG / RS 的专用 stream：两轴 key 与一个例外
 
+stream 与集合通信的配合有其通用前提：NCCL 的集合操作定义见 [Collectives](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html)、通信域的建立见 [Groups](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/groups.html)、点对点路径见 [Point-to-Point](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/p2p.html)，整体模型见 [NCCL Overview](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/overview.html)。PyTorch 侧的对应约定是 stream 与当前流的查询（[torch.cuda.current_stream](https://docs.pytorch.org/docs/stable/generated/torch.cuda.current_stream.html)、[PyTorch CUDA 笔记](https://docs.pytorch.org/docs/stable/notes/cuda.html)），以及跨 stream 复用张量时必须声明的 [record_stream](https://docs.pytorch.org/docs/stable/generated/torch.Tensor.record_stream.html)。
+
 01 篇 §10.3 讲过 GTP 的 side stream 按 `(chain_id, group)` 建独立 stream。本篇把 key 的构造讲全——`_stream_key`（[L347–L358](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/generalized_tensor_parallelism.py#L347-L358)）：
 
 ```python
@@ -626,6 +636,8 @@ flowchart TB
 ## 9. TE `DistributedWeight` 协议：接入点在哪
 
 ### 9.1 所有权划分：TE 定义协议，GTP 实现逻辑
+
+「分片权重 + 按需聚合」这套契约在 PyTorch 侧有可对照的表述：分布式张量与通信原语见 [Distributed PyTorch](https://docs.pytorch.org/docs/stable/distributed.html)，梯度缓冲区与 reducer 的生命周期见 [DistributedDataParallel 笔记](https://docs.pytorch.org/docs/stable/notes/ddp.html)，参数级分片的另一条路线见 [FullyShardedDataParallel](https://docs.pytorch.org/docs/stable/fsdp.html)。
 
 官方文档把所有权划得很清楚：
 
@@ -844,6 +856,8 @@ class GTPWeightState(Enum):
 
 ## 10. CUDA graph 侧：跨 capture 的 drain 与 ring slot
 
+捕获的语义与限制来自 CUDA 侧：stream capture 期间禁止隐式同步、kernel 参数按值捕获，这两条见 [CUDA C++ Programming Guide](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html) 的 Graph 章节；被捕获期间发生的分配由 [CUDA Runtime 的内存管理一组](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__MEMORY.html) 决定归属。
+
 GTP 的预取与 CUDA graph 捕获会正面相撞——通信是异步的，而 graph 里的执行顺序在 capture 时就冻结了。GTP 的处理分成三块。
 
 ### 10.1 跨 capture 无法互相等待
@@ -868,6 +882,8 @@ GTP 的预取与 CUDA graph 捕获会正面相撞——通信是异步的，而 
 即：把 `main_grad.add_` 放在 `rs_stream` 上紧跟 NCCL RS，于是它与 AG 的 drain **并行**而不是串行——否则 `add_` 是个吃 SM 的 kernel，会挡住跨 graph 的重叠。
 
 ### 10.2 捕获期登记：`GTPCaptureCommState`
+
+捕获期要屏蔽 autograd 图的构建，这一点与图化 warmup 的常规做法一致（[`torch.no_grad`](https://docs.pytorch.org/docs/stable/generated/torch.no_grad.html)）。
 
 `gtp_cuda_graphs.py` 的 `GTPCaptureCommState`（[L38–L86](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/gtp_cuda_graphs.py#L38-L86)）记录「一次 graph 捕获期间发出过哪些 GTP 工作与参数就绪依赖」，五个列表各带一个去重集合：`params`、`params_to_ensure_ready`、`ag_streams`、`rs_streams`、`wgrad_ring_slots`。
 
@@ -1002,15 +1018,20 @@ def _backup_grads_before_capture(runner):
 ```python
 def _restore_grads_after_capture(backup):
     """Restore the main_grad snapshots taken by '_backup_grads_before_capture'."""
+    # 原地覆写语义见 torch.Tensor.copy_：不换对象、只换内容，
     for p, saved in backup.values():
         p.main_grad.copy_(saved)
 ```
+
+恢复用的是原地覆写而非重新分配（[`torch.Tensor.copy_`](https://docs.pytorch.org/docs/stable/generated/torch.Tensor.copy_.html)），所以被恢复的 `main_grad` 对象在图捕获前后是同一个——这正是这段代码能生效的前提。
 
 调用点只有两处：备份在 [L1241](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/cuda_graphs.py#L1241)、恢复在 [L1477](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/cuda_graphs.py#L1477)。
 
 官方文档补了两点边界：备份范围**只限这一个模块触及的梯度**（*Bounded to one module's grads*），以及**反向图不需要这套机制**——*The bwd graph has no warmup, so it needs none*。这与 §10.2 那条「bwd capture 不建链」是同一个道理：只有前向图有 warmup。
 
 ## 11. native FP8：一次 `__class__` 换身
+
+三种权重的数值格式语义见 [FP8 Formats for Deep Learning](https://arxiv.org/abs/2209.05433)、[Microscaling Data Formats](https://arxiv.org/abs/2310.10537) 与 [NVFP4 预训练](https://arxiv.org/abs/2509.25149)；下表的字节比例正是在这三套定义下算出来的。
 
 低精度权重路径上有个 Python 层面的巧思。`dequantize_gtp_native_fp8`（[L734–L748](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/generalized_tensor_parallelism.py#L734-L748)）：
 
@@ -1153,6 +1174,8 @@ BF16 下聚合是大头；到 NVFP4，**归约取代聚合成了主路径**。�
 
 ## 12. 专属进程组与 wgrad 归约语义
 
+「为某一类通信单独建组」的做法在近年的 MoE 训练里有系统化的讨论（[MoE Parallel Folding](https://arxiv.org/abs/2504.14960)），而 AG 与 RS 各自的量级失衡在 DeepSeek-V3 的 EP 设计中被专门处理（[arXiv:2412.19437](https://arxiv.org/abs/2412.19437)）；把同一组 GPU 用于更长的序列则见 [Ring Attention](https://arxiv.org/abs/2310.01889)。
+
 ### 12.1 组是建在 TP 旁边的正交轴
 
 01 篇 §5 讲过 `_inject_gtp_remat_axis` 把 `gtp_remat` 轴插进 `RankGenerator` 的 order 字符串，并按「左端 = NCCL 局部性最好」的原则选位置：dense 侧插在 `tp` 之后、expert 侧插在 `ep` 之后。这里补上它的直接后果——**GTP 有自己的进程组**：
@@ -1174,6 +1197,8 @@ def get_gtp_weight_remat_group(check_initialized=True):
 组的大小是 `num-weight-shards / TP`（官方文档：*building `_GTP_WEIGHT_REMAT_GROUP` and `_EXPERT_GTP_WEIGHT_REMAT_GROUP` (sizes = `num-weight-shards / TP` and `/ ETP`)*）。所以 TP 组与 GTP 组**规模不同、成员也不同**，这正是它能省权重显存的原因。
 
 ### 12.2 梯度归约：SUM 还是 MEAN
+
+这一档的差别最终落在「梯度累加用加法还是带缩放的加法」上，即 in-place 的 [`Tensor.add_`](https://docs.pytorch.org/docs/stable/generated/torch.Tensor.add_.html) 语义与一次标量乘法之间的选择。
 
 `_prescale_wgrads_for_mean_rs`（[L1856–L1867](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/generalized_tensor_parallelism.py#L1856-L1867)）是**所有 RS 路径的唯一收口**，apidocs 的说明给出了完整语义（[generalized_tensor_parallelism apidocs](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.generalized_tensor_parallelism.html)）：
 
@@ -1331,14 +1356,14 @@ graphLR
 1. Megatron Core 源码：`https://github.com/NVIDIA/Megatron-LM`（本文对应 commit `60e039626`，`megatron-core` 0.20.0）
 2. 本文主要引用的源文件（均锁 commit）：[`megatron/core/tensor_parallel/gtp_api.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/gtp_api.py)（全文 66 行，门面与 `HAVE_GTP`）、[`megatron/core/tensor_parallel/generalized_tensor_parallelism.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/generalized_tensor_parallelism.py)（`generalized_tensor_parallelism.py` L108–L119 `GTPChain`、L183–L240 `_classify_param_chain`、L347–L374 stream key 与 `get_ag_stream`/`get_rs_stream`、L415–L443 `GTPRematConfig`、L465–L493 `configure_gtp_remat_from_recipe`、L496–L516 `classify_gtp_remat_chains`、L519–L576 切分、L734–L748 `dequantize_gtp_native_fp8`、L966–L980 `flush_link_tables`、L2126–L2136 协议方法、L2338–L2408 `wait_async_comms`）、[`megatron/core/tensor_parallel/gtp_cuda_graphs.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/gtp_cuda_graphs.py)（`gtp_cuda_graphs.py` L38–L86 `GTPCaptureCommState`、L131–L224 ring 分配、L231–L249 内存池）、[`megatron/core/parallel_state.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py)（`parallel_state.py` L582–L597 `_inject_gtp_remat_axis`、L1713–L1748 GTP 进程组 getter）、[`megatron/training/initialize.py`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/initialize.py)（`initialize.py` L368–L375 `HAVE_GTP` 断言）
 3. 本文的解析实验（C 级纯 CPU 复现 + A 级解析脚本，固定 seed 20261011）：目录 [`experiments/megatron/gtp/`](https://github.com/lrypcy/ipynbs/tree/a627f1510251538c4378393209c723d83cd38164/experiments/megatron/gtp)。切分语义部分锁 commit [`58073b2`](https://github.com/lrypcy/ipynbs/blob/58073b2a4c01e13653183c93c540b7367c0b201d/experiments/megatron/gtp/gtp_shard.py)：实现 [`gtp_shard.py`](https://github.com/lrypcy/ipynbs/blob/58073b2a4c01e13653183c93c540b7367c0b201d/experiments/megatron/gtp/gtp_shard.py)、对账脚本 [`gen_stdout.py`](https://github.com/lrypcy/ipynbs/blob/58073b2a4c01e13653183c93c540b7367c0b201d/experiments/megatron/gtp/gen_stdout.py)、固化输出 [`results/stdout.txt`](https://github.com/lrypcy/ipynbs/blob/58073b2a4c01e13653183c93c540b7367c0b201d/experiments/megatron/gtp/results/stdout.txt)。通信量部分锁 commit [`a627f15`](https://github.com/lrypcy/ipynbs/blob/a627f1510251538c4378393209c723d83cd38164/experiments/megatron/gtp/comm_volume.py)：脚本 [`comm_volume.py`](https://github.com/lrypcy/ipynbs/blob/a627f1510251538c4378393209c723d83cd38164/experiments/megatron/gtp/comm_volume.py)、固化输出 [`results/comm_volume.txt`](https://github.com/lrypcy/ipynbs/blob/a627f1510251538c4378393209c723d83cd38164/experiments/megatron/gtp/results/comm_volume.txt)。两个脚本退出码非 0 即为对账失败，可当 CI 用。
-4. Megatron Core 官方 GTP 设计文档：https://docs.nvidia.com/megatron-core/developer-guide/latest/api-guide/core/generalized_tensor_parallel.html（`GTP = TP × GTP_remat` 的两轴定义、TP / GTP_remat 行为对照表、与 ZeRO-3 同构的契约、TE 所有权划分、MXFP8 / NVFP4 的必需开关、checkpoint 可 resharding）
-5. Megatron Core API 文档 `core.tensor_parallel.generalized_tensor_parallelism`：https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.generalized_tensor_parallelism.html（`GTPShardedParam` 的职责、`_prescale_wgrads_for_mean_rs` 的 SUM / MEAN 语义、`GTPEmbeddingWeight`、`make_sharded_tensors_for_checkpoint_with_gtp_remat`）
-6. Megatron Core API 文档 `core.tensor_parallel.gtp_api`：https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.gtp_api.html（门面职责与 `__all__` 面）
-7. Megatron Core API 文档 `core.parallel_state`：https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.parallel_state.html（`gtp_remat_size` 与 `expert_gtp_remat_size` 参数说明，含 “remat is NOT activation recomputation” 的澄清；`_inject_gtp_remat_axis` 的位置约定；`with_gtp_remat` 语义）
-8. Megatron Core 官方并行策略指南：https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html（各并行策略的适用边界与推荐组合）
-9. TransformerEngine `DistributedWeight` 协议定义：https://github.com/NVIDIA/TransformerEngine/blob/main/transformer_engine/pytorch/distributed_weight.py（§9.5 的协议出处——协议由 TE 定义，GTP 只是实现方之一）
-10. TransformerEngine FP8 Primer：https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/examples/advanced/fp8_primer.html（§11 依赖的 rowwise / columnwise 两套缩放因子语义，用于理解 §11.2 中 `rowwise=False` 为何会冻住前向要读的数据）
-11. Korthikanti et al., *Reducing Activation Recomputation in Large Transformer Models*：https://arxiv.org/abs/2205.05198（**激活重计算**的原始出处——即 §1.1 里与 GTP 的权重重 materialization 相对的那个机制；本文只引其结论，不使用其图，该论文 abs 页无 CC 标识、图不可复制）
+4. Megatron Core 官方 GTP 设计文档：[`generalized_tensor_parallel`](https://docs.nvidia.com/megatron-core/developer-guide/latest/api-guide/core/generalized_tensor_parallel.html)（`GTP = TP × GTP_remat` 的两轴定义、TP / GTP_remat 行为对照表、与 ZeRO-3 同构的契约、TE 所有权划分、MXFP8 / NVFP4 的必需开关、checkpoint 可 resharding）
+5. Megatron Core API 文档 `core.tensor_parallel.generalized_tensor_parallelism`：[`core.tensor_parallel.generalized_tensor_parallelism`](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.generalized_tensor_parallelism.html)（`GTPShardedParam` 的职责、`_prescale_wgrads_for_mean_rs` 的 SUM / MEAN 语义、`GTPEmbeddingWeight`、`make_sharded_tensors_for_checkpoint_with_gtp_remat`）
+6. Megatron Core API 文档 `core.tensor_parallel.gtp_api`：[`core.tensor_parallel.gtp_api`](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.tensor_parallel.gtp_api.html)（门面职责与 `__all__` 面）
+7. Megatron Core API 文档 `core.parallel_state`：[`core.parallel_state`](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.parallel_state.html)（`gtp_remat_size` 与 `expert_gtp_remat_size` 参数说明，含 “remat is NOT activation recomputation” 的澄清；`_inject_gtp_remat_axis` 的位置约定；`with_gtp_remat` 语义）
+8. Megatron Core 官方并行策略指南：[`parallelism-guide`](https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html)（各并行策略的适用边界与推荐组合）
+9. TransformerEngine `DistributedWeight` 协议定义：[`distributed_weight.py`](https://github.com/NVIDIA/TransformerEngine/blob/main/transformer_engine/pytorch/distributed_weight.py)（§9.5 的协议出处——协议由 TE 定义，GTP 只是实现方之一）
+10. TransformerEngine FP8 Primer：[`fp8_primer`](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/examples/advanced/fp8_primer.html)（§11 依赖的 rowwise / columnwise 两套缩放因子语义，用于理解 §11.2 中 `rowwise=False` 为何会冻住前向要读的数据）
+11. Korthikanti et al., *Reducing Activation Recomputation in Large Transformer Models*：[arXiv:2205.05198](https://arxiv.org/abs/2205.05198)（**激活重计算**的原始出处——即 §1.1 里与 GTP 的权重重 materialization 相对的那个机制；本文只引其结论，不使用其图，该论文 abs 页无 CC 标识、图不可复制）
 12. 前作：《Megatron-LM 深度剖析（00）地基》[/2026/09/28/megatron-00-foundation/]、《（01）进程组》[/2026/10/08/megatron-01-process-groups-and-comm-overlap/]、《（02）专家并行》[/2026/10/08/megatron-02-expert-parallel/]、《（03）张量并行与序列并行》[/2026/10/09/megatron-03-tensor-parallel-and-sequence-parallel/]、《分布式训练（03）张量并行》[/2026/08/31/dist-train-03-tensor-parallel/]
 
 ---
