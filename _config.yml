@@ -55,6 +55,19 @@ analytics:
 # 构建排除
 exclude:
   - README.md
+  - TODO.md
+  - .agents
+  - AGENTS.md
+  # 研究计划与素材：草稿不发布（新增 deep-dive-* / 素材目录要同步加到这儿）
+  - deep-dive-diffusion-lm
+  - deep-dive-megatron
+  - deep-dive-profiling
+  - deep-dive-rl-credit-assignment
+  - deep-dive-serving-engine
+  - deep-dive-speculative-decoding
+  - deep-dive-test-time-training
+  - deep-dive-world-model-world-action-model
+  - wiki
   - tools
   - .githooks
   - Gemfile
