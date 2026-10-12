@@ -277,6 +277,15 @@ series:
     prefixes: [diffusion-survey]
     desc: 从噪声到数据：Diffusion 算法发展与应用全景。
 
+  - id: diffusion-lm
+    name: 扩散语言模型（dLLM）
+    short: 扩散语言模型
+    category: 生成模型
+    layer: 2
+    order: 6
+    prefixes: [diffusion-lm-]
+    desc: 离散扩散为主线。ELBO 如何化简成带 1/t 权重的掩码交叉熵 → 采样器与 remasking → 块扩散与 KV cache → 推理系统与加速 → 后训练与 RL → 2026 产业全景。回答「不做下一个 token 预测还能不能训出 LLM」。
+
 links:
   - { from: chip,      to: op,         label: 存储层次与执行模型决定 Kernel 怎么写 }
   - { from: chip,      to: compiler,   label: ISA 与内存层次是后端代码生成的靶子 }
@@ -305,6 +314,7 @@ links:
   - { from: mdp-grpo,  to: wam,        label: WAM 用 RL 训练动作模型 }
   - { from: embodied,  to: wam,        label: 世界模型驱动具身决策 }
   - { from: flow,      to: wam,        label: 生成式世界模型（Cosmos / DreamZero） }
+  - { from: flow,      to: diffusion-lm, label: 连续域的概率路径走向离散域的掩码扩散 }
   - { from: op,        to: perf-analysis, label: op 系列讲 profiling 工具链，本系列讲这些工具报出来的数字怎么算、哪些不可比 }
   - { from: dist-train,to: perf-analysis, label: 并行训练的度量口径与时间归因 }
   - { from: megatron,  to: perf-analysis, label: Megatron 原生 OTel 观测栈与内置 Timer 是本系列的源码级素材 }
