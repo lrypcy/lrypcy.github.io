@@ -117,24 +117,82 @@ $$
 
 ## 3. ELBO：下界是怎么推出来的，以及它到底有多紧
 
-### 3.1 推导
+### 3.1 推导：分四步
 
-目标是最大化 $$\log p_\theta(x)$$。在积分里乘除 $$q_\phi(z\mid x)$$ 后用 Jensen 不等式：
+**第 0 步：目标是对的，但算不出来。**
+
+训练想做的是极大似然——让真实数据在这个生成模型下的概率尽量高，即最大化 $$\log p_\theta(x)$$。麻烦在于
 
 $$
-\begin{aligned}
+p_\theta(x)=\int p_\theta(x\mid z)p(z)\,dz
+$$
+
+是一个 $$d$$ 维积分，而 $$p_\theta(x\mid z)$$ 是一个神经网络：这个积分既没有闭式解，也没法在几十上百维的 $$z$$ 上做数值积分。同一个分母还堵死了后验 $$p_\theta(z\mid x)$$。
+
+所以不是目标错了，是**目标不可计算**。下面三步做的就是把它换成一个可计算的下界，并说清代价是什么。
+
+**第 1 步：把积分改写成对 $$q_\phi$$ 的期望。**
+
+引入任意一个在 $$z$$ 上积分为 1 的概率密度 $$q_\phi(z\mid x)$$，在积分里乘进去再除出来——这一步不改变积分的值，只换了个写法：
+
+$$
+p_\theta(x)=\int p_\theta(x,z)\,dz
+=\int q_\phi(z\mid x)\,
+\frac{p_\theta(x,z)}{q_\phi(z\mid x)}\,dz
+=\mathbb E_{q_\phi(z\mid x)}\!
+\left[
+\frac{p_\theta(x,z)}{q_\phi(z\mid x)}
+\right]
+$$
+
+写法变了，但**括号里的比值现在是可以算的**：分子 $$p_\theta(x,z)$$ 是解码器输出与先验的乘积，分母是编码器的输出。只要能对 $$q_\phi$$ 采样（第 4 节的重参数化正是为此），就能用蒙特卡洛估这个期望。
+
+**第 2 步：用 Jensen 不等式把 $$\log$$ 挪进期望里。**
+
+要的是 $$\log p_\theta(x)$$，而现在 $$\log$$ 还压在积分（也就是期望）外面。Jensen 不等式说的是：对**凹函数** $$f$$ 和随机变量 $$X$$，有
+
+$$
+f\left(\mathbb E[X]\right)\geq \mathbb E\left[f(X)\right]
+$$
+
+取 $$f=\log$$（它是凹的）、$$X=\dfrac{p_\theta(x,z)}{q_\phi(z\mid x)}$$、期望在 $$q_\phi$$ 下取，代进去就是
+
+$$
 \log p_\theta(x)
-&=\log\int q_\phi(z\mid x)
-\frac{p_\theta(x,z)}{q_\phi(z\mid x)}\,dz\\
-&\geq
-\mathbb E_{q_\phi(z\mid x)}
+=\log \mathbb E_{q_\phi(z\mid x)}\!
+\left[
+\frac{p_\theta(x,z)}{q_\phi(z\mid x)}
+\right]
+\;\geq\;
+\mathbb E_{q_\phi(z\mid x)}\!
 \left[
 \log\frac{p_\theta(x,z)}{q_\phi(z\mid x)}
 \right]
+$$
+
+> **Jensen 在这里为什么合法**：$$\log$$ 是凹函数，且 $$q_\phi(\cdot\mid x)$$ 非负、积分为 1，是一个合法的概率密度，所以「在 $$q_\phi$$ 下取期望」满足 Jensen 的前提。第 1 步特意乘除一个**概率密度**而不是随便一个函数，就是为了这一步能成立。
+
+**第 3 步：拆开联合分布，得到 ELBO 的两项。**
+
+把 $$p_\theta(x,z)=p_\theta(x\mid z)p(z)$$ 代入，并把 $$\log$$ 里的除法拆成减法：
+
+$$
+\begin{aligned}
+&\mathbb E_{q_\phi(z\mid x)}
+\left[
+\log\frac{p_\theta(x,z)}{q_\phi(z\mid x)}
+\right]\\[2pt]
+&=\mathbb E_{q_\phi(z\mid x)}
+\left[
+\log p_\theta(x\mid z)+\log p(z)-\log q_\phi(z\mid x)
+\right]\\[2pt]
+&=\mathbb E_{q_\phi(z\mid x)}\left[\log p_\theta(x\mid z)\right]
+-\mathbb E_{q_\phi(z\mid x)}
+\left[\log\frac{q_\phi(z\mid x)}{p(z)}\right]
 \end{aligned}
 $$
 
-再用 $$p_\theta(x,z)=p_\theta(x\mid z)p(z)$$ 拆开，得到
+后一项正是 KL 散度的定义，于是
 
 $$
 \boxed{
@@ -148,7 +206,7 @@ $$
 }
 $$
 
-也就是「重建对数似然 − KL 正则项」。训练时最小化负 ELBO：
+也就是「重建对数似然 − KL 正则项」。它的两项各自都**只需要采样就能估**：第一项就是从 $$q_\phi$$ 采几个 $$z$$ 送进解码器算对数似然，第二项在高斯情形有闭式解（第 5 节）。训练时最小化负 ELBO：
 
 $$
 \mathcal L_{\mathrm{VAE}}
@@ -156,9 +214,9 @@ $$
 +\underbrace{D_{\mathrm{KL}}\left(q_\phi(z\mid x)\Vert p(z)\right)}_{\text{KL 项}}
 $$
 
-### 3.2 它是下界，而且间隙可以精确写出来
+**第 4 步：这个下界差了多少？正好是「近似后验 vs 真实后验」的 KL。**
 
-Jensen 只给出了「≥」，但间隙到底是多少是有闭式的。从 $$\log p_\theta(x)$$ 里减掉 ELBO，剩下的正好是近似后验与真实后验的 KL：
+Jensen 只给了「≥」，但间隙是有闭式的。从 $$\log p_\theta(x)$$ 里减掉 ELBO：
 
 $$
 \log p_\theta(x)=
@@ -167,9 +225,52 @@ $$
 \left(q_\phi(z\mid x)\Vert p_\theta(z\mid x)\right)
 $$
 
-因为 KL 非负，ELBO 是下界；而当且仅当 $$q_\phi$$ 恰好等于真实后验时，间隙为 0。**最大化 ELBO 同时在做两件事**：抬高对数似然，以及把近似后验推向真实后验。
+因为 KL 非负，ELBO 是下界；**当且仅当 $$q_\phi$$ 恰好等于真实后验时，间隙为 0**。这句话有两个直接推论：
 
-这不是一句修辞，是可验的。在一个 $$p(z)=\mathcal N(0,1)$$、$$p(x\mid z)=\mathcal N(z,\sigma_x^2)$$ 的一维 toy 上，边际与后验都有解析解，于是可以逐点核对：
+- ELBO 是**贴着天花板的**，不是松垮的界——只要 $$q_\phi$$ 的族足够表达真实后验，下界就能收紧。
+- **最大化 ELBO 同时在做两件事**：抬高 $$\log p_\theta(x)$$，以及把 $$q_\phi$$ 推向真实后验。这也是为什么 VAE 的编码器可以被当成一个「推断网络」。
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 215" role="img" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
+<rect x="0" y="0" width="680" height="215" fill="#ffffff"/>
+<line x1="50" y1="54" x2="650" y2="54" stroke="#9ca3af" stroke-width="1.6" stroke-dasharray="6 4"/>
+<text x="50" y="44" font-size="12.5" font-weight="600" fill="#111827">log pθ(x)（与 q 无关，是天花板）</text>
+<line x1="50" y1="168" x2="650" y2="168" stroke="#374151" stroke-width="1.4"/>
+<rect x="102.0" y="54" width="96" height="62" fill="#dc2626" opacity="0.13"/>
+<line x1="102.0" y1="116" x2="198.0" y2="116" stroke="#dc2626" stroke-width="1.2"/>
+<text x="208.0" y="89.0" font-size="11.5" fill="#dc2626">间隙</text>
+<rect x="102.0" y="116" width="96" height="52" fill="#2563eb" opacity="0.22" stroke="#2563eb" stroke-width="1.4"/>
+<text x="150" y="188" font-size="12" text-anchor="middle" fill="#111827">q₁</text>
+<text x="150" y="146.0" font-size="11.5" text-anchor="middle" fill="#2563eb">ELBO</text>
+<rect x="302.0" y="54" width="96" height="38" fill="#dc2626" opacity="0.13"/>
+<line x1="302.0" y1="92" x2="398.0" y2="92" stroke="#dc2626" stroke-width="1.2"/>
+<text x="408.0" y="77.0" font-size="11.5" fill="#dc2626">间隙</text>
+<rect x="302.0" y="92" width="96" height="76" fill="#2563eb" opacity="0.22" stroke="#2563eb" stroke-width="1.4"/>
+<text x="350" y="188" font-size="12" text-anchor="middle" fill="#111827">q₂</text>
+<text x="608.0" y="48" font-size="11.5" fill="#047857">间隙 = 0</text>
+<rect x="502.0" y="54" width="96" height="114" fill="#2563eb" opacity="0.22" stroke="#2563eb" stroke-width="1.4"/>
+<text x="550" y="188" font-size="12" text-anchor="middle" fill="#111827">q* = 真后验</text>
+<text x="50" y="212" font-size="11.5" fill="#4b5563">同一个 x：换不同的 q 只会抬高或压低 ELBO（蓝），天花板 log pθ(x) 不动；中间那截就是 D_KL(q||pθ(z|x))。</text>
+</svg>
+
+### 3.2 下界有多紧：一个能算出真值的 toy
+
+上一节的结论听起来仍然像修辞——$$\log p_\theta(x)$$ 本身算不出来，怎么知道下界贴不贴得住？选一个边际与后验都有闭式解的一维 toy 就能逐点核对。取
+
+$$
+p(z)=\mathcal N(0,1),\qquad
+p(x\mid z)=\mathcal N(z,\sigma_x^2)
+$$
+
+此时边际 $$p(x)=\mathcal N(0,\,1+\sigma_x^2)$$ 与真实后验
+
+$$
+p(z\mid x)=\mathcal N\!\left(
+\frac{x}{1+\sigma_x^2},\,
+\frac{\sigma_x^2}{1+\sigma_x^2}
+\right)
+$$
+
+都能直接算出真值，于是可以把「ELBO + 间隙 = $$\log p(x)$$」这个等式逐项验一遍：
 
 | 检查项 | 结果 |
 |---|---:|
