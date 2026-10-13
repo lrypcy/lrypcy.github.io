@@ -142,9 +142,16 @@ console.log("\n[3] 数据完整性（喂给 SVG / 预览页的取值必须是浏
   const noDesc = data.nodes.filter((n) => !n.desc);
   check("每个节点都有 desc（悬停卡片要显示）", noDesc.length === 0, noDesc.map((n) => n.id).join(", "));
 
-  // 图例上的数字应与 site.categories[c].size 一致，各分类之和 = 全站文章数
+  // 图例上的数字应与 site.categories[c].size 一致。
+  // 图例上的数字应与 site.categories[c].size 一致。每篇文章默认只属一个分类，此时各分类之和
+  // = 全站文章数；桥梁文章可以跨两个分类（两边图例各记一次），所以按「文章 × 已配置分类」的
+  // 配对数比对。注意别再拿 postCount 直接比：yml 未配置的分类不计入图例，
+  // 而跨分类文章又会被数两次，两个偏差可能刚好抵消掉（历史上就抵消过一次）。
   const sum = data.cats.reduce((a, c) => a + c.count, 0);
-  check(`图例各分类之和等于全站文章数（${sum} = ${data.postCount}）`, sum === data.postCount);
+  check(`图例各分类之和等于「文章 × 已配置分类」配对数（${sum} = ${data.configuredSlots}，跨分类 ${data.crossListed} 篇）`,
+    sum === data.configuredSlots);
+  check("没有一篇文章的分类是空的（否则它不在任何图例里）",
+    data.uncategorized.length === 0, data.uncategorized.join(", "));
   const zero = data.cats.filter((c) => c.count === 0);
   check("没有显示为 0 篇的分类图例", zero.length === 0, zero.map((c) => c.name).join(", "));
 }

@@ -106,6 +106,9 @@ export function matchPosts(series, posts) {
    这里按 front matter 的 categories 复刻一遍（含 `- A` 列表与 `[A, B]` 行内两种写法）。 */
 export function countPostsByCategory(posts) {
   const counter = {};
+  const perFile = new Map();           // 文件名 → 它写的分类列表（可能 0 个或多个）
+  let slots = 0;                      // Σ 每篇文章的分类个数（跨分类文章会被数多次）
+  let multi = 0;                      // 被写了两个及以上分类的文章数
   posts.forEach((f) => {
     const raw = fs.readFileSync(path.join(POSTS_DIR, f), "utf8");
     const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
@@ -117,9 +120,31 @@ export function countPostsByCategory(posts) {
     const names = inline
       ? inline[1].split(",").map((s) => parseScalar(s)).filter(Boolean)
       : [...block.matchAll(/^\s*-\s*(.+?)\s*$/gm)].map((mm) => parseScalar(mm[1]));
-    names.forEach((c) => { counter[c] = (counter[c] || 0) + 1; });
+    const names2 = [...block.matchAll(/^\s*-\s*(.+?)\s*$/gm)].map((mm) => parseScalar(mm[1]));
+    perFile.set(f, names2);
+    names2.forEach((c) => { counter[c] = (counter[c] || 0) + 1; });
+    slots += names2.length;
+    if (names2.length > 1) { multi++; }
   });
-  return counter;
+  return { counter, slots, multi, perFile };
+}
+
+/* 按 yml 里配置过的分类过滤一遍：
+   - configuredSlots：只数「文章 × 已配置分类」的配对数（图例上显示的就是这些数字）
+   - uncategorized  ：一个分类都没写的文章（会在图例里凭空消失）
+   - unknownCats    ：写了但 yml 没配置的分类名（首页走兜底样式） */
+export function auditCategories(perFile, knownNames) {
+  const known = new Set(knownNames);
+  let configuredSlots = 0;
+  const uncategorized = [];
+  const unknownCats = new Set();
+  perFile.forEach((names, file) => {
+    if (!names.length) { uncategorized.push(file); return; }
+    names.forEach((n) => {
+      if (known.has(n)) { configuredSlots++; } else { unknownCats.add(n); }
+    });
+  });
+  return { configuredSlots, uncategorized, unknownCats: [...unknownCats] };
 }
 
 /* 与 index.html 输出到 #kg-data 的结构一致（node:false 的系列不进图谱） */
@@ -128,7 +153,8 @@ export function buildKgData() {
   const posts = listPosts();
   const colorOf = {};
   yml.categories.forEach((c) => { colorOf[c.name] = c.color; });
-  const catCount = countPostsByCategory(posts);
+  const cc = countPostsByCategory(posts);
+  const catCount = cc.counter;
 
   const nodes = [];
   yml.series.forEach((s) => {
@@ -145,5 +171,7 @@ export function buildKgData() {
     name: c.name, color: c.color, icon: c.icon, count: catCount[c.name] || 0
   }));
 
-  return { nodes, links: yml.links, cats, yml, postCount: posts.length, catCount };
+  return { nodes, links: yml.links, cats, yml, postCount: posts.length, catCount,
+           catSlots: cc.slots, crossListed: cc.multi, perFile: cc.perFile,
+           ...auditCategories(cc.perFile, yml.categories.map((c) => c.name)) };
 }
