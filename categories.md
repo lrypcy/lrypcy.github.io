@@ -3,44 +3,48 @@ layout: page
 title: 分类
 ---
 {% assign graph = site.data.knowledge_graph %}
+{% capture known %}{% for sec in site.data.catalog.sections %}{% for c in sec.categories %};{{ c }};{% endfor %}{% endfor %}{% endcapture %}
 <p class="page-desc">共 {{ site.categories | size }} 个分类、{{ site.posts | size }} 篇文章。<b>点击任意分类</b>，文章列表会在下方展开（按系列归拢）；再点一次可收起。</p>
 
-  <!-- 分类卡片：按文章数降序（构建时自动排序） -->
-  {% assign goods = '' | split: ',' %}
-  {% for c in graph.categories %}
-    {% assign cnt = site.categories[c.name].size | default: 0 %}
-    {% assign nn = cnt | prepend: '00' | slice: -2, 2 %}
-    {% assign item = nn | append: ':' | append: c.name %}
-    {% assign item_arr = item | split: '|' %}
-    {% assign goods = goods | concat: item_arr %}
-  {% endfor %}
-  {% assign goods = goods | sort | reverse %}
-
-  <div class="category-grid" id="cat-nav">
-    {% for item in goods %}
-      {% assign parts = item | split: ':' %}
-      {% assign cname = parts[1] %}
-      {% assign cnt = parts[0] | plus: 0 %}
-      {% assign icon = '📁' %}{% assign color = '#94a3b8' %}
-      {% for c in graph.categories %}{% if c.name == cname %}{% assign icon = c.icon %}{% assign color = c.color %}{% endif %}{% endfor %}
+  <!-- 分类卡片：按 _data/catalog.yml 的 AI-Infra 分层排布（与左侧目录同一套顺序） -->
+  <div id="cat-nav">
+    {% for sec in site.data.catalog.sections %}
+    <h3 class="cat-sec-title">{{ sec.name }}<em>{{ sec.hint }}</em></h3>
+    <div class="category-grid">
+      {% for cname in sec.categories %}
+      {%- assign cnt = site.categories[cname].size | default: 0 -%}
+      {%- if cnt > 0 -%}
+      {%- assign icon = '📁' -%}{%- assign color = '#94a3b8' -%}
+      {%- for c in graph.categories -%}{%- if c.name == cname -%}{%- assign icon = c.icon -%}{%- assign color = c.color -%}{%- endif -%}{%- endfor -%}
       <a class="category-card cat-nav-card" href="#{{ cname | url_encode }}" data-cat="{{ cname }}" style="--cat-color: {{ color }}">
         <span class="category-card-icon">{{ icon }}</span>
         <h3 class="category-card-name">{{ cname }}</h3>
         <span class="category-card-count">{{ cnt }} 篇</span>
       </a>
+      {%- endif -%}
+      {% endfor %}
+    </div>
     {% endfor %}
-    {% for cat in site.categories %}
-    {%- assign cname = cat[0] -%}
-    {%- assign is_known = false -%}
-    {%- for c in graph.categories -%}{%- if c.name == cname -%}{%- assign is_known = true -%}{%- endif -%}{%- endfor -%}
-    {%- unless is_known -%}
+
+    <!-- 兜底：站点里有、但没写进 catalog.yml 的分类 -->
+    {%- assign extra = 0 -%}
+    {%- for cat in site.categories -%}{%- assign k = cat[0] | prepend: ';' | append: ';' -%}{%- unless known contains k -%}{%- assign extra = extra | plus: 1 -%}{%- endunless -%}{%- endfor -%}
+    {%- if extra > 0 -%}
+    <h3 class="cat-sec-title">其他分类<em>未纳入分层</em></h3>
+    <div class="category-grid">
+      {% for cat in site.categories %}
+      {%- assign cname = cat[0] -%}
+      {%- assign k = cname | prepend: ';' | append: ';' -%}
+      {%- unless known contains k -%}
       <a class="category-card cat-nav-card" href="#{{ cname | url_encode }}" data-cat="{{ cname }}" style="--cat-color: #94a3b8">
         <span class="category-card-icon">📌</span>
         <h3 class="category-card-name">{{ cname }}</h3>
         <span class="category-card-count">{{ cat[1] | size }} 篇</span>
       </a>
-    {%- endunless -%}
-    {% endfor %}
+      {%- endunless -%}
+      {% endfor %}
+    </div>
+    {%- endif -%}
   </div>
 
   <!-- 分类详情：默认不显示，点击卡片后才展开 -->
@@ -65,19 +69,19 @@ title: 分类
 
         {% for s in graph.series %}
         {% if s.category == c.name %}
-        {%- capture slist -%}{% for p in site.posts %}{% assign pp = p.relative_path | default: p.path %}{% assign hit = false %}{% for pre in s.prefixes %}{% if pp contains pre %}{% assign hit = true %}{% endif %}{% endfor %}{% if hit and s.exclude %}{% for ex in s.exclude %}{% if pp contains ex %}{% assign hit = false %}{% endif %}{% endfor %}{% endif %}{% if hit %}{{ p.date | date: "%Y-%m-%d" }}@@{{ p.url }}@@{{ p.title }}||{% endif %}{% endfor %}{%- endcapture -%}
+        {%- capture slist -%}{% for p in site.posts %}{% assign pp = p.relative_path | default: p.path %}{% assign hit = false %}{% for pre in s.prefixes %}{% if pp contains pre %}{% assign hit = true %}{% endif %}{% endfor %}{% if hit and s.exclude %}{% for ex in s.exclude %}{% if pp contains ex %}{% assign hit = false %}{% endif %}{% endfor %}{% endif %}{% if hit %}{% assign pdate = p.date | date: "%Y-%m-%d" %}{% include post-sortkey.html title=p.title date=pdate url=p.url %}||{% endif %}{% endfor %}{%- endcapture -%}
         {%- assign sitems = slist | split: '||' | sort -%}
         {%- assign scount = 0 -%}{% for it in sitems %}{% unless it == '' %}{% assign scount = scount | plus: 1 %}{% endunless %}{% endfor %}
         <div class="series-block" id="cat-series-{{ s.id }}">
           <div class="series-head">
             <span class="series-dot" style="background: {{ c.color }}"></span>
-            <h4>{{ s.name }}</h4>
+            <h4>{{ s.name }}</h3>
             <span class="series-count">{{ scount }} 篇</span>
           </div>
           <p class="series-desc">{{ s.desc }}</p>
           <ol class="series-posts">
             {% for it in sitems %}{% unless it == '' %}{% assign f = it | split: '@@' %}
-            <li><a href="{{ f[1] }}">{{ f[2] }}</a><time>{{ f[0] }}</time></li>
+            <li><a href="{{ f[3] }}">{{ f[2] }}</a><time>{{ f[1] }}</time></li>
             {% endunless %}{% endfor %}
           </ol>
           {% if scount > 8 %}<button class="series-toggle" type="button">展开全部 {{ scount }} 篇 ↓</button>{% endif %}
@@ -89,7 +93,7 @@ title: 分类
         <div class="series-block series-orphan">
           <div class="series-head">
             <span class="series-dot" style="background: #94a3b8"></span>
-            <h4>未归系列的文章</h4>
+            <h4>未归系列的文章</h3>
             <span class="series-count">{{ orphans }} 篇</span>
           </div>
           <ol class="series-posts">
@@ -116,7 +120,7 @@ title: 分类
         <div class="series-block">
           <div class="series-head">
             <span class="series-dot" style="background: #94a3b8"></span>
-            <h4>全部文章</h4>
+            <h4>全部文章</h3>
             <span class="series-count">{{ cat[1] | size }} 篇</span>
           </div>
           <ol class="series-posts">

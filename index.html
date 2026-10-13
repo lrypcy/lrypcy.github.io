@@ -89,7 +89,7 @@ title: 首页
 <!-- ============ 分类 × 系列 ============ -->
 <section class="home-section">
   <h2 class="section-title"><span class="section-mark">✦</span> 分类 × 系列</h2>
-  <p class="section-desc">按分类浏览全部文章，每个分类下按「系列」归拢，系列内按发布顺序排列——这是本站的完整阅读地图。</p>
+  <p class="section-desc">按分类浏览全部文章，每个分类下按「系列」归拢，系列内按篇序号排列（00 → 01 → …，即阅读顺序）——这是本站的完整阅读地图。</p>
 
   <div class="cat-tabs" id="cat-tabs">
     <button class="cat-tab is-active" type="button" data-cat="__all__">全部<em>{{ site.posts | size }}</em></button>
@@ -127,7 +127,7 @@ title: 首页
 
       {% for s in graph.series %}
       {% if s.category == c.name %}
-      {%- capture slist -%}{% for p in site.posts %}{% assign pp = p.relative_path | default: p.path %}{% assign hit = false %}{% for pre in s.prefixes %}{% if pp contains pre %}{% assign hit = true %}{% endif %}{% endfor %}{% if hit and s.exclude %}{% for ex in s.exclude %}{% if pp contains ex %}{% assign hit = false %}{% endif %}{% endfor %}{% endif %}{% if hit %}{{ p.date | date: "%Y-%m-%d" }}@@{{ p.url }}@@{{ p.title }}||{% endif %}{% endfor %}{%- endcapture -%}
+      {%- capture slist -%}{% for p in site.posts %}{% assign pp = p.relative_path | default: p.path %}{% assign hit = false %}{% for pre in s.prefixes %}{% if pp contains pre %}{% assign hit = true %}{% endif %}{% endfor %}{% if hit and s.exclude %}{% for ex in s.exclude %}{% if pp contains ex %}{% assign hit = false %}{% endif %}{% endfor %}{% endif %}{% if hit %}{% assign pdate = p.date | date: "%Y-%m-%d" %}{% include post-sortkey.html title=p.title date=pdate url=p.url %}||{% endif %}{% endfor %}{%- endcapture -%}
       {%- assign sitems = slist | split: '||' | sort -%}
       {%- assign scount = 0 -%}{% for it in sitems %}{% unless it == '' %}{% assign scount = scount | plus: 1 %}{% endunless %}{% endfor %}
       <div class="series-block" id="series-{{ s.id }}" data-series="{{ s.id }}">
@@ -139,7 +139,7 @@ title: 首页
         <p class="series-desc">{{ s.desc }}</p>
         <ol class="series-posts">
           {% for it in sitems %}{% unless it == '' %}{% assign f = it | split: '@@' %}
-          <li><a href="{{ f[1] }}">{{ f[2] }}</a><time>{{ f[0] }}</time></li>
+          <li><a href="{{ f[3] }}">{{ f[2] }}</a><time>{{ f[1] }}</time></li>
           {% endunless %}{% endfor %}
         </ol>
         {% if scount > 6 %}<button class="series-toggle" type="button">展开全部 {{ scount }} 篇 ↓</button>{% endif %}

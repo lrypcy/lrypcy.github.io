@@ -1,0 +1,30 @@
+{%- comment -%}
+  输出一篇文章的排序键：序号@@日期@@标题@@URL
+  系列内要按「篇序号」排（大模型量化算法（00）…（25）、Megatron（00）…（16）），
+  不能只按发布日期——十几篇同一天发的时候，日期排序会把顺序彻底打乱。
+  序号规则（按优先级）：
+    1. 「扩展篇 E<n>」副刊：序号写在标题里而不是括号里，单独认一遍，键为 E01/E02…，
+       这样副刊整组排在主线（00-25）之后，且 E1..E4 之间不乱；
+    2. 标题第一处（…）的内容：汉字数字转阿拉伯，不足两位补零；
+    3. 都没有 → zz，排在同组最后。
+  参数：include.title / include.date（YYYY-MM-DD）/ include.url
+{%- endcomment -%}
+{%- assign ti = include.title -%}
+{%- assign num = '' -%}
+
+{%- assign ext = ti | split: '扩展篇' -%}
+{%- if ext.size > 1 -%}
+{%- assign en = ext[1] | split: '：' | first | replace: '）', '' | replace: 'E', '' | strip -%}
+{%- assign en = en | replace: '零', '0' | replace: '一', '1' | replace: '二', '2' | replace: '三', '3' | replace: '四', '4' | replace: '五', '5' | replace: '六', '6' | replace: '七', '7' | replace: '八', '8' | replace: '九', '9' -%}
+{%- if en.size < 2 -%}{%- assign key = en | prepend: 'E0' -%}{%- else -%}{%- assign key = en | prepend: 'E' -%}{%- endif -%}
+{%- else -%}
+{%- assign seg = ti | split: '（' -%}
+{%- if seg.size > 1 -%}{%- assign num = seg[1] | split: '）' | first -%}{%- endif -%}
+{%- if num == '' -%}
+{%- comment -%} 无括号序号（如「建模之一 / 之二」）：把整条标题的汉字数字转成阿拉伯再排，前缀相同的自然按序 {%- endcomment -%}
+{%- assign tn = ti | replace: '零', '0' | replace: '一', '1' | replace: '二', '2' | replace: '三', '3' | replace: '四', '4' | replace: '五', '5' | replace: '六', '6' | replace: '七', '7' | replace: '八', '8' | replace: '九', '9' | replace: '十', '10' -%}
+{%- assign key = tn | prepend: 'zz' -%}{%- else -%}
+{%- assign n = num | replace: '零', '0' | replace: '一', '1' | replace: '二', '2' | replace: '三', '3' | replace: '四', '4' | replace: '五', '5' | replace: '六', '6' | replace: '七', '7' | replace: '八', '8' | replace: '九', '9' | replace: '十', '10' -%}
+{%- assign key = n -%}{%- if n.size < 2 -%}{%- assign key = n | prepend: '0' -%}{%- endif -%}
+{%- endif -%}
+{%- endif -%}{{ key }}@@{{ include.date }}@@{{ ti }}@@{{ include.url }}{%- comment -%} 去掉结尾换行，否则会粘进 url {%- endcomment -%}

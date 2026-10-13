@@ -1,0 +1,42 @@
+{%- comment -%}
+  左侧目录（全站目录）：按 _data/catalog.yml 的 AI-Infra 分层列出全部分类，
+  每个分类展开后是按系列归拢的文章列表。
+  文章页额外在最上方插入「本文目录」（由 assets/js/post 的 buildToc 填充）。
+{%- endcomment -%}
+
+{% capture known %}{% for sec in site.data.catalog.sections %}{% for c in sec.categories %};{{ c }};{% endfor %}{% endfor %}{% endcapture %}
+<aside class="rail" id="rail" aria-label="全站目录">
+  <div class="rail-head">
+    <span class="rail-head-title">目录</span>
+    <button class="rail-btn" id="railCollapse" type="button" title="收起目录" aria-label="收起目录">«</button>
+  </div>
+
+  {%- if page.layout == 'post' -%}
+  <div class="rail-card rail-post-toc" id="railPostToc"></div>
+  {%- endif -%}
+
+  <div class="rail-scroll" id="railScroll">
+    {%- for sec in site.data.catalog.sections -%}
+    <section class="rail-sec">
+      <h4 class="rail-sec-title">{{ sec.name }}<em>{{ sec.hint }}</em></h4>
+      {%- for cname in sec.categories -%}
+        {%- if site.categories[cname].size > 0 -%}{% include rail-cat.html cname=cname %}{%- endif -%}
+      {%- endfor -%}
+    </section>
+    {%- endfor -%}
+
+    {%- comment -%} 兜底：站点里有、但没写进 catalog.yml 的分类 {%- endcomment -%}
+    {%- assign extra = 0 -%}
+    {%- for cat in site.categories -%}{%- assign k = cat[0] | prepend: ';' | append: ';' -%}{%- unless known contains k -%}{%- assign extra = extra | plus: 1 -%}{%- endunless -%}{%- endfor -%}
+    {%- if extra > 0 -%}
+    <section class="rail-sec">
+      <h4 class="rail-sec-title">其他分类<em>未纳入分层</em></h4>
+      {%- for cat in site.categories -%}{%- assign k = cat[0] | prepend: ';' | append: ';' -%}{%- unless known contains k -%}
+        {%- assign cname = cat[0] -%}{% include rail-cat.html cname=cname %}
+      {%- endunless -%}{%- endfor -%}
+    </section>
+    {%- endif -%}
+  </div>
+
+  <a class="rail-foot" href="/categories/">全部分类与系列 →</a>
+</aside>

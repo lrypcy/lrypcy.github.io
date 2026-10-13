@@ -1,0 +1,94 @@
+{%- comment -%}
+  左侧目录里的一个分类节点（被 _includes/rail.html 反复 include）
+  参数：include.cname —— 分类名，必须与文章 front matter 的 categories 一致
+  结构：<details> 分类 → 系列分组 → 文章链接
+{%- endcomment -%}
+
+{%- assign cname = include.cname -%}
+{%- assign ps = site.categories[cname] -%}
+{%- assign icon = '📁' -%}
+{%- assign color = '#3b82f6' -%}
+{%- for c in site.data.knowledge_graph.categories -%}
+  {%- if c.name == cname -%}{%- assign icon = c.icon -%}{%- assign color = c.color -%}{%- endif -%}
+{%- endfor -%}
+
+{%- comment -%} 当前文章所属的分类：默认展开 {%- endcomment -%}
+{%- assign cur = false -%}
+{%- if page.categories -%}
+  {%- for pc in page.categories -%}{%- if pc == cname -%}{%- assign cur = true -%}{%- endif -%}{%- endfor -%}
+{%- endif -%}
+
+{%- comment -%} 已被系列认领的文章（用于算散篇） {%- endcomment -%}
+{%- capture claimed -%}
+{%- for s in site.data.knowledge_graph.series -%}
+  {%- if s.category == cname -%}
+    {%- for p in ps -%}
+      {%- assign pp = p.relative_path | default: p.path -%}
+      {%- assign hit = false -%}
+      {%- for pre in s.prefixes -%}{%- if pp contains pre -%}{%- assign hit = true -%}{%- endif -%}{%- endfor -%}
+      {%- if hit -%};{{ p.url }};{%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- endcapture -%}
+
+<details class="rail-cat" data-cat="{{ cname }}" style="--cat-color: {{ color }}"{% if cur %} data-current="1" open{% endif %}>
+  <summary class="rail-cat-sum">
+    <span class="rail-cat-arrow" aria-hidden="true">›</span>
+    <span class="rail-cat-icon" aria-hidden="true">{{ icon }}</span>
+    <span class="rail-cat-name">{{ cname }}</span>
+    <span class="rail-cat-count">{{ ps | size }}</span>
+  </summary>
+  <div class="rail-cat-body">
+
+    {%- for s in site.data.knowledge_graph.series -%}
+    {%- if s.category == cname -%}
+      {%- capture slist -%}
+      {%- for p in ps -%}
+        {%- assign pp = p.relative_path | default: p.path -%}
+        {%- assign hit = false -%}
+        {%- for pre in s.prefixes -%}{%- if pp contains pre -%}{%- assign hit = true -%}{%- endif -%}{%- endfor -%}
+        {%- if hit and s.exclude -%}{%- for ex in s.exclude -%}{%- if pp contains ex -%}{%- assign hit = false -%}{%- endif -%}{%- endfor -%}{%- endif -%}
+        {%- if hit -%}{%- assign pdate = p.date | date: "%Y-%m-%d" -%}{% include post-sortkey.html title=p.title date=pdate url=p.url %}||{%- endif -%}
+      {%- endfor -%}
+      {%- endcapture -%}
+      {%- assign sitems = slist | split: '||' | sort -%}
+      {%- assign scount = 0 -%}
+      {%- for it in sitems -%}{%- unless it == '' -%}{%- assign scount = scount | plus: 1 -%}{%- endunless -%}{%- endfor -%}
+      {%- if scount > 0 -%}
+      <div class="rail-series">
+        <div class="rail-series-head">
+          <span class="rail-series-dot" aria-hidden="true"></span>
+          <span class="rail-series-name">{{ s.name }}</span>
+          <span class="rail-series-count">{{ scount }}</span>
+        </div>
+        <ol class="rail-posts">
+      {%- for it in sitems -%}{%- unless it == '' -%}
+      {%- assign f = it | split: '@@' -%}
+          <li><a href="{{ f[3] }}"{% if page.url == f[3] %} class="is-current" aria-current="page"{% endif %}>{{ f[2] }}</a></li>
+      {%- endunless -%}{%- endfor -%}
+        </ol>
+      </div>
+      {%- endif -%}
+    {%- endif -%}
+    {%- endfor -%}
+
+    {%- assign orphans = 0 -%}
+    {%- for p in ps -%}{%- assign k = p.url | prepend: ';' | append: ';' -%}{%- unless claimed contains k -%}{%- assign orphans = orphans | plus: 1 -%}{%- endunless -%}{%- endfor -%}
+    {%- if orphans > 0 -%}
+    <div class="rail-series">
+      <div class="rail-series-head">
+        <span class="rail-series-dot rail-series-dot-plain" aria-hidden="true"></span>
+        <span class="rail-series-name">散篇</span>
+        <span class="rail-series-count">{{ orphans }}</span>
+      </div>
+      <ol class="rail-posts">
+        {%- for p in ps -%}{%- assign k = p.url | prepend: ';' | append: ';' -%}{%- unless claimed contains k -%}
+        <li><a href="{{ p.url }}"{% if page.url == p.url %} class="is-current" aria-current="page"{% endif %}>{{ p.title }}</a></li>
+        {%- endunless -%}{%- endfor -%}
+      </ol>
+    </div>
+    {%- endif -%}
+
+  </div>
+</details>

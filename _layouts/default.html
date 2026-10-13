@@ -20,6 +20,7 @@
   })();
   </script>
   <script src="/assets/js/main.js" defer></script>
+  <script src="/assets/js/rail.js" defer></script>
   <script src="/assets/js/zoom.js" defer></script>
 </head>
 
@@ -47,6 +48,8 @@
   </header>
 
   <main class="layout-grid{% if page.layout == 'post' %} layout-post{% endif %}">
+    {% include rail.html %}
+
     <div class="layout-main">
       {{ content }}
     </div>
@@ -141,6 +144,13 @@
 
   {% include mathjax.html %}
   <script src="/assets/js/search.js" defer></script>
+  {%- comment -%} 选中正文 → 引用到评论区（仅文章页且评论区存在时加载） {%- endcomment -%}
+  {% if page.layout == 'post' and page.comments != false %}
+  {%- assign quote_giscus_id = site.giscus.category_id | default: "" -%}
+  {%- if quote_giscus_id != "" and quote_giscus_id != "__GISCUS_CATEGORY_ID__" -%}
+  <script src="/assets/js/quote-comment.js" defer></script>
+  {%- endif -%}
+  {% endif %}
   {% if page.url == '/' or page.url == '/index.html' %}
   <script src="/assets/js/kg-layout.js" defer></script>
   <script src="/assets/js/knowledge-graph.js" defer></script>

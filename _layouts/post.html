@@ -69,11 +69,61 @@ layout: default
     var hs = body.querySelectorAll('h2');
     if (hs.length < 3) return;
 
-    if (window.innerWidth >= 992) {
+    // 宽屏且有左侧目录时，本文目录放进左栏；否则退回悬浮目录 / 右侧栏
+    var railBox = document.getElementById('railPostToc');
+    if (railBox && railBox.offsetWidth > 0) {
+      buildRailToc(hs, railBox);
+    } else if (window.innerWidth >= 992) {
       buildFloatingToc(hs);
     } else {
       buildSidebarToc(hs, body);
     }
+  }
+
+  function buildRailToc(hs, box) {
+    hs.forEach(function (h) {
+      if (!h.id) { h.id = 'sec-' + Math.random().toString(36).slice(2, 8); }
+    });
+
+    var title = document.createElement('div');
+    title.className = 'rail-toc-title';
+    title.textContent = '本文目录';
+    var ol = document.createElement('ol');
+    ol.className = 'rail-posts';
+    var links = [];
+    hs.forEach(function (h) {
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = '#' + h.id;
+      a.textContent = h.textContent;
+      li.appendChild(a);
+      ol.appendChild(li);
+      links.push(a);
+    });
+    box.appendChild(title);
+    box.appendChild(ol);
+
+    ol.addEventListener('click', function (e) {
+      var a = e.target.closest('a');
+      if (!a) { return; }
+      var target = document.getElementById(a.getAttribute('href').slice(1));
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+
+    function onScroll() {
+      var y = window.scrollY + 110;
+      var idx = -1;
+      for (var i = 0; i < hs.length; i++) {
+        if (hs[i].getBoundingClientRect().top + window.scrollY <= y) { idx = i; }
+        else { break; }
+      }
+      links.forEach(function (a, j) { a.classList.toggle('active', j === idx); });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
   }
 
   function buildFloatingToc(hs) {
