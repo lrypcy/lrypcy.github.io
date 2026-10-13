@@ -820,6 +820,8 @@ html.hide-sidebar .sidebar { display: none; }
 }
 .post-body pre code { background: none; padding: 0; color: inherit; }
 .post-body img { max-width: 100%; border-radius: 10px; margin: 10px 0; }
+/* 正文里内联的 SVG（<img> 外链之外的直接内嵌）：跟随容器宽度等比缩放 */
+.post-body > svg, .post-body p > svg { display: block; max-width: 100%; height: auto; margin: 10px 0; }
 
 /* ========== 24th.top 风格优化：导航/品牌/menu ========== */
 /* 覆盖 NexT 旧 header-inner（原 padding 100px 0 70px 导致导航超高） */
