@@ -189,6 +189,15 @@ series:
     prefixes: [flow-matching-]
     desc: 4 篇。建模三讲（概率路径与边际向量场、score 与 SDE 扩展、条件生成与离散域潜空间）+ 应用篇（SD3 到蛋白质设计）。
 
+  - id: vae
+    name: 变分自编码器与潜空间表示
+    short: VAE 与潜空间
+    category: 生成模型
+    layer: 1
+    order: 7
+    prefixes: [vae-]
+    desc: ELBO 的推导与紧度恒等式、重参数化技巧、高斯 KL 闭式解 → 模糊与后验坍塌的成因 → β-VAE / 层次 VAE / VQ-VAE / VQGAN 四条演进路线 → 连续 VAE 作为 Latent Diffusion 的压缩表示层。回答「潜空间凭什么能被采样、又为什么会失效」。
+
   # ---------- layer 2：前沿专题 ----------
   - id: rl-estimation
     name: RL 符号、估计量与信用分配
@@ -315,6 +324,8 @@ links:
   - { from: embodied,  to: wam,        label: 世界模型驱动具身决策 }
   - { from: flow,      to: wam,        label: 生成式世界模型（Cosmos / DreamZero） }
   - { from: flow,      to: diffusion-lm, label: 连续域的概率路径走向离散域的掩码扩散 }
+  - { from: vae,       to: flow,         label: 连续 VAE 的潜空间是扩散与 Flow 生成的场所 }
+  - { from: vae,       to: diffusion-lm, label: VQ 路线把视觉内容离散成可自回归预测的 Token }
   - { from: op,        to: perf-analysis, label: op 系列讲 profiling 工具链，本系列讲这些工具报出来的数字怎么算、哪些不可比 }
   - { from: dist-train,to: perf-analysis, label: 并行训练的度量口径与时间归因 }
   - { from: megatron,  to: perf-analysis, label: Megatron 原生 OTel 观测栈与内置 Timer 是本系列的源码级素材 }
@@ -332,5 +343,5 @@ paths:
     desc: 硬件与算子打底 → 具身全景 → 世界模型这条 2025–2026 新主线
     steps: [chip, op, embodied, wam]
   - name: 生成模型与扩散
-    desc: 从扩散全景到 Flow Matching，再到生成式策略与世界模型
-    steps: [diffusion, flow, wam]
+    desc: 潜空间表示打底 → 扩散全景到 Flow Matching，再到生成式策略与世界模型
+    steps: [vae, diffusion, flow, wam]
