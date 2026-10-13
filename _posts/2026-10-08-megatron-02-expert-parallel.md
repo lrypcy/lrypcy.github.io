@@ -154,6 +154,8 @@ flowchart TB
     E -->|"EP 组 = dense 网格里同尺寸的 DP 组"| D
 ```
 
+*图 1：dense 侧与 expert 侧两套 rank generator 的轴对照。`ep=1, cp=cp` 与 `ep=EP, cp=1` 互斥——`RankGenerator.__init__` 的断言写明 *Both EP and CP > 1 in not allow in one rank generator*，且 CP 只进默认表、EP 只进 expert 表。数据出处：[`parallel_state.py` L465 `RankGenerator`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L465)、[L859 `decoder_rank_generator`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L859)、[L887 `expert_decoder_rank_generator`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L887)。*
+
 ### 2.2 EP 组就是 dense 网格的 DP 组
 
 这是整节最关键的一条。取一个具体配置走一遍（全部为解析推导，可手算复核）：
@@ -512,7 +514,21 @@ $$S_g(x) = \sum_{\text{e} \in \text{group} g} \operatorname{Top}_{\lfloor k/k_g 
 
 $$\text{dispatch 涉及的目标 rank 数} = \min(k_g \cdot N_{\mathrm{ep}},\ N_{\mathrm{ep}})$$
 
-这直接决定 EP 组的实际带宽压力。`moe_router_topk_limited_devices` 是这条路径的旧开关，docstring 标了 DEPRECATED（L759-L762），已被 `moe_router_num_groups` + `moe_router_group_topk` 取代。
+这直接决定 EP 组的实际带宽压力。`moe_router_topk_limited_devices` 是这条路径的旧开关，字段声明的 docstring 就标了 DEPRECATED（[transformer_config.py L759–L762](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/transformer_config.py#L759-L762)）：*Number of EP ranks to consider for each token in group-limited routing, **DEPRECATED and replaced by moe_router_num_groups and moe_router_group_topk***。
+
+它至今仍能生效，靠的是一层向后兼容映射（[L2668–L2674](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/transformer_config.py#L2668-L2674)）：
+
+```python
+        elif self.moe_router_topk_limited_devices:
+            warnings.warn(
+                "moe_router_topk_limited_devices is deprecated. Use moe_router_group_topk and "
+                "moe_router_num_groups instead."
+            )
+            self.moe_router_group_topk = self.moe_router_topk_limited_devices
+            self.moe_router_num_groups = self.expert_model_parallel_size
+```
+
+即 `limited_devices = N` 被翻译成 `group_topk = N` 且 `num_groups = N_ep`——**默认就把组数设成 EP 组大小**，正是上面那段「设成 $$N_{\mathrm{ep}}$$」的隐含默认值。而若两个新字段都设了又同时设旧字段，则直接 `raise ValueError`（[L2650–L2653](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/transformer_config.py#L2650-L2653)），不给含糊的兼容路径。
 
 ---
 
@@ -787,6 +803,8 @@ flowchart TB
     C1 --> ADD["+ shared_expert_output"] --> OUT["output"]
 ```
 
+*图 2：前向被切成三段 `fwd_execution_map`——`route` / `expert_compute` / `postprocess`，段间用 `intermediate_tensors` 传递。分段判据用 `"route" in self.fwd_execution_map`，对 list 与 str 都成立。数据出处：[`token_dispatcher.py` L375 `MoEAlltoAllTokenDispatcher`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/token_dispatcher.py#L375)（`token_dispatcher.py` 共 2085 行）。*
+
 `"route" in self.fwd_execution_map` 这个判断同时兼容 list 与 str——因为 `"route" in "route"`（子串判断）也成立。partial CUDA graph 模式把 `fwd_execution_map` 改成单个字符串时不用改任何一行判断逻辑（§10.3）。
 
 `preprocess` 之前还插了一个 latent 投影（[L488-L490](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/moe_layer.py#L488-L490)）：
@@ -813,7 +831,7 @@ permute 是 dispatch 前后的两次重排，§8 的所有通信量都由它决�
 
 ### 7.1 为什么不用 masked_select
 
-`permute`（[moe_utils.py L344-L494](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/moe_utils.py#L344-L494)）的 dropless 分支（L467-L486）：
+`permute`（[moe_utils.py L344–L494](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/moe_utils.py#L344-L494)）的 dropless 分支（[L467–L486](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/moe_utils.py#L467-L486)）：
 
 ```python
 routing_map_for_inverse = routing_map
@@ -951,6 +969,8 @@ sequenceDiagram
     RS->>EP: "⑥ token_combine A2A(EP)（splits 反转）"
     EP->>L: "⑦ combine_postprocess unpermute"
 ```
+
+*图 3：一次 MoE 前向的完整通信序列——本地 permute → EP 组 A2A → TP 组 AllGather → 本地 Grouped GEMM → TP 组 ReduceScatter → EP 组 A2A。对应 `MoEAlltoAllTokenDispatcher` 的方法顺序：[L501 `preprocess`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/token_dispatcher.py#L501)、[L624 `dispatch_preprocess`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/token_dispatcher.py#L624)、[L682 `token_dispatch`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/token_dispatcher.py#L682)、[L728 `dispatch_postprocess`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/token_dispatcher.py#L728)、[L796 `combine_preprocess`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/token_dispatcher.py#L796)、[L837 `token_combine`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/token_dispatcher.py#L837)、[L876 `combine_postprocess`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/moe/token_dispatcher.py#L876)。*
 
 ### 8.1 preprocess：一次 tp_ep AllGather 算出全部 splits
 
@@ -1478,7 +1498,7 @@ def build_transformer_layer_callables(layer: TransformerLayer):
 # with another microbatch's computation and expose the communication.
 ```
 
-`fine_grained_callables.py` 顶部按后端分派子函数（L52-L61 附近）：
+`fine_grained_callables.py` 顶部按后端分派子函数（[L52–L61](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/fine_grained_callables.py#L52-L61)）：
 
 ```python
 is_moe = isinstance(layer.mlp, MoELayer)
@@ -1878,6 +1898,37 @@ $$\text{budget} = \left\lceil \frac{T_{\ell}^{\max} \cdot k'}{1} \right\rceil \c
 - **`moe_expert_capacity_factor` 与 `moe_expert_rank_capacity_factor` 语义完全不同**，前者管丢 token，后者管静态 shape。
 
 下一篇是 **01 并行体系源码层**：进程组怎么把 world_size 切成 TP×CP×PP×DP（`parallel_state.py::initialize_model_parallel` 近千行）、TP+SP 的真实实现（`f` / `g` 算子换成 RS+AG 的代码分支）、GTP 到底改了什么、三套数据并行怎么分叉、1F1B 调度器里那些不在论文上的细节，以及 CP 的三条路线。
+
+---
+
+## 引用关系网
+
+```mermaid
+graphLR
+    subgraph CL["核心论断"]
+        C1["EP 不是新轴<br/>而是把 dense 网格的 DP 维度<br/>重新解释成 EP"]
+        C2["专家权重按连续块切<br/>permute 用 argsort<br/>而非 masked_select"]
+        C3["前向被切成三段<br/>route / expert_compute / postprocess<br/>通信点可被单独捕获"]
+        C4["重叠与 CUDA graph<br/>是两个互斥方向"]
+    end
+    subgraph SR["支撑来源"]
+        S1["RankGenerator<br/>两套表加 PP 相等断言"]
+        S2["MoEAlltoAllTokenDispatcher<br/>token_dispatcher.py 2085 行"]
+        S3["MoEFlexTokenDispatcher<br/>统一 TP 乘 EP 通信域"]
+        S4["permute 与 dropless 分支<br/>moe_utils.py 1762 行"]
+        S5["moe_router_group_topk<br/>与旧开关的向后兼容映射"]
+        S6["官方并行策略指南"]
+    end
+    S1 -->|"支撑"| C1
+    S5 -->|"支撑"| C1
+    S4 -->|"支撑"| C2
+    S2 -->|"支撑"| C3
+    S3 -->|"支撑"| C3
+    S2 -->|"支撑"| C4
+    S6 -->|"支撑"| C4
+```
+
+*图 4：四条核心论断与支撑来源，分别落在 §2、§7、§6 与 §8、§11。完整 permalink 见各图注与参考节。*
 
 ---
 

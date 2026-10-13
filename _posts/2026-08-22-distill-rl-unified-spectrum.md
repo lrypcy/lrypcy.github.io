@@ -3,6 +3,7 @@ title: "蒸馏与 RL 的统一损失光谱：SFT、OPD、RLVR 是同一个损失
 date: 2026-08-22 22:30:00 +0800
 categories:
   - 强化学习
+  - 模型蒸馏
 tags: [opd, distillation, rlvr, grpo, sft, policy-gradient, post-training]
 layout: post
 mathjax: true

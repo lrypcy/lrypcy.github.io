@@ -183,6 +183,8 @@ flowchart TD
     READ --> NOTE["想动态改配置 改对象 改 argv 无效"]
 ```
 
+*图 1：配置在 `parse_args` 阶段被固化成单个对象，之后所有子系统只读它。两个 dataclass 不是并列关系而是继承关系 `TransformerConfig(ModelParallelConfig)`。数据出处：[`model_parallel_config.py` L46 `ModelParallelConfig`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/model_parallel_config.py#L46)（全文 575 行）、[`transformer_config.py` L54 `TransformerConfig`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/transformer_config.py#L54)（全文 3311 行）。*
+
 两个 dataclass 不是并列的两套开关，而是**一套开关的两层**：`ModelParallelConfig` 定义「怎么切、怎么通信」，`TransformerConfig` 再叠加「模型长什么样」，最后 `pretrain()` 全程只持有一个 `TransformerConfig` 实例。
 
 ### 3.3 一个容易忽略的顺序约束
@@ -202,6 +204,8 @@ flowchart LR
     end
     T6 --> A1
 ```
+
+*图 2：配置固化发生在 `initialize_megatron` 的早期，而 `train_step` 循环内只读不写——所以循环内改 argv 无效。数据出处：[`training.py` L2994 `train_step`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/training.py#L2994)。*
 
 这条约束有个实际后果：**任何想按 step 动态调整重计算策略的尝试，都必须去改 config 对象**（或重进 `train_step`），改环境变量或 argv 不会有任何效果。这也是第 07 篇要处理的「重计算策略运行时切换」必须动 dataclass 的原因。
 
@@ -631,6 +635,8 @@ flowchart TD
     MBM -.->|"这一段 N-1 个 microbatch 都在 no_sync 内"| LAST
 ```
 
+*图 3：一次 `train_step` 的控制流。`no_sync` 区间内前 N-1 个 microbatch 只本地累加，最后一个离开时才真正触发梯度归约，再交给 `finalize_model_grads` 与 `optimizer.step`。数据出处：[`training.py` L2994 `train_step`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/training.py#L2994)（[L3025 `zero_grad_buffer`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/training.py#L3025)）、[`finalize_model_grads.py` L560 `finalize_model_grads`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/distributed/finalize_model_grads.py#L560)、[`common_utils.py` L294 `logical_and_across_model_parallel_group`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/utils/common_utils.py#L294)。*
+
 `no_sync` 的作用是让前 N-1 个 microbatch 的梯度**只在本地累加**，把梯度归约推迟到最后一个 microbatch 之后统一触发一次。这样 N 次前向反向只付一次通信代价，而不是 N 次。代价是那 N-1 个 microbatch 期间累积的梯度没有任何同步保护，且显存里要同时 hold 住它们的中间结果——这是第 06 篇 microbatch 数讨论的起点。
 
 ---
@@ -745,6 +751,8 @@ graphLR
     L1 -->|"支撑 重计算确有代价但不在此函数内"| CLAIM
     L2 -->|"支撑 吞吐字段口径来源"| CLAIM
 ```
+
+*图 4：核心论断「dense 与 hybrid 两分支等价，且都不含重计算」与六条源码证据。数据出处：[`training.py` L1332 `is_hybrid_model` 分叉](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/training.py#L1332)、[L1009 `transformer_flops`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/training.py#L1009)（dense 侧）、[L964 `hybrid_flops`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/training.py#L964)（hybrid 侧）、[L840 `mlp_layer_flops`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/training.py#L840) 与 [L862 `attn_layer_flops`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/training/training.py#L862)（两分支共用的层内公式）。「不含重计算」一条经核：L802–L1390 全区间 `recompute` 出现 0 次。*
 
 这张图想说明的是：核心论断**不依赖任何单一证据**。就算读者不接受某一层，只要接受源码分支结构（S1-S6）或实测复现（E1-E2）中的任一条，论断就站得住。反过来说，如果这三条链里出现反例，论断就该被推翻——所以它们是可证伪的，不是修辞。
 

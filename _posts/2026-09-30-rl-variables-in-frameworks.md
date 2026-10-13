@@ -47,10 +47,6 @@ mathjax: true
 | veRL | `v0.9.1` | [`1876b06d`](https://github.com/verl-project/verl/verl/trainer/ppo/tree/1876b06d) | 2026-09-20 | `verl/trainer/ppo/core_algos.py` **2549 行** |
 | TRL | `v1.13.0` | [`3d9261f1`](https://github.com/huggingface/trl/trl/trainer/tree/3d9261f1) | 2026-09-09 | `trl/trainer/grpo_trainer.py` **3497 行** |
 
-本文所有行号都锁定在这两个 commit 上，并给出**可点击的 permalink**（`blob/<commit>/<path>#L<起始>-L<结束>`）。锁定 commit 而不是引用 `main`，是因为这两个文件的改动速度很快——同一篇文章在两个月内，veRL 的文件从 2200 行长到 2549 行（**+349**），TRL 从 2549 行长到 3497 行（**+948**），行号整体漂移了几百到近千行。
-
-> 顺带一个教训：不要用浏览器打开大文件去「目测行号」。对一个 2000+ 行的文件，直接读取工具给出的行号定位并不可靠；可信的做法是 `git show <commit>:<path>` 落到本地再精确提取（本文所有行号都是这么核对的）。
-
 ---
 
 ## 1. 为什么这些变量值得单独解剖
