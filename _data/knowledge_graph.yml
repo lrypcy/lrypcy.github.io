@@ -198,6 +198,17 @@ series:
     prefixes: [vae-]
     desc: ELBO 的推导与紧度恒等式、重参数化技巧、高斯 KL 闭式解 → 模糊与后验坍塌的成因 → β-VAE / 层次 VAE / VQ-VAE / VQGAN 四条演进路线 → 连续 VAE 作为 Latent Diffusion 的压缩表示层。回答「潜空间凭什么能被采样、又为什么会失效」。
 
+  - id: dit
+    name: 扩散 Transformer
+    short: DiT
+    category: 生成模型
+    layer: 1
+    order: 8
+    prefixes: [dit-]
+    # exclude 必须有：前缀是子串匹配，rl-credit-assignment-* 里的 "credit-a" 会命中 "dit-"
+    exclude: [credit-assignment]
+    desc: 去噪函数的主干网络。Patchify 与 token 预算、AdaLN-Zero 的恒等初始化、ε/x₀/v 三种参数化的互换恒等式与误差放大、FLOPs 闭式记账与注意力二次项的临界 token 数、时间步的贝叶斯必要性、条件注入三条路径的表达力上限，到 PixArt / SD3 MMDiT / Flux / Sora 的演进。回答「把 U-Net 换成 Transformer 换来了什么」。
+
   # ---------- layer 2：前沿专题 ----------
   - id: rl-estimation
     name: RL 符号、估计量与信用分配
@@ -325,6 +336,8 @@ links:
   - { from: flow,      to: wam,        label: 生成式世界模型（Cosmos / DreamZero） }
   - { from: flow,      to: diffusion-lm, label: 连续域的概率路径走向离散域的掩码扩散 }
   - { from: vae,       to: flow,         label: 连续 VAE 的潜空间是扩散与 Flow 生成的场所 }
+  - { from: vae,       to: dit,          label: DiT 吃的是 VAE 压出来的 latent（f=8 时 32×32×4） }
+  - { from: flow,      to: dit,          label: rectified flow / 速度场是现代 DiT 的训练目标 }
   - { from: vae,       to: diffusion-lm, label: VQ 路线把视觉内容离散成可自回归预测的 Token }
   - { from: op,        to: perf-analysis, label: op 系列讲 profiling 工具链，本系列讲这些工具报出来的数字怎么算、哪些不可比 }
   - { from: dist-train,to: perf-analysis, label: 并行训练的度量口径与时间归因 }
@@ -343,5 +356,5 @@ paths:
     desc: 硬件与算子打底 → 具身全景 → 世界模型这条 2025–2026 新主线
     steps: [chip, op, embodied, wam]
   - name: 生成模型与扩散
-    desc: 潜空间表示打底 → 扩散全景到 Flow Matching，再到生成式策略与世界模型
-    steps: [vae, diffusion, flow, wam]
+    desc: 潜空间表示打底 → 扩散全景到 Flow Matching → 去噪函数的主干架构，再到生成式策略与世界模型
+    steps: [vae, flow, dit, wam]
