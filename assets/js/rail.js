@@ -43,9 +43,17 @@
   function applyCollapsed() {
     document.documentElement.classList.toggle('rail-off', pref.collapsed);
     if (!btn) { return; }
-    btn.textContent = pref.collapsed ? '»' : '«';
+    var icon = btn.querySelector('.rail-toggle-icon');
+    var text = btn.querySelector('.rail-toggle-text');
+    if (icon) { icon.textContent = pref.collapsed ? '»' : '«'; }
+    if (text) { text.textContent = pref.collapsed ? '展开' : '收起'; }
     btn.title = pref.collapsed ? '展开目录' : '收起目录';
-    btn.setAttribute('aria-label', btn.title);
+    btn.setAttribute('aria-expanded', pref.collapsed ? 'false' : 'true');
+    // 目录宽度变了，让文章页的悬浮章节线重新定位（见 _layouts/post.html）
+    if (window.PCYToc && window.PCYToc.reposition) {
+      if (window.requestAnimationFrame) { window.requestAnimationFrame(window.PCYToc.reposition); }
+      else { window.PCYToc.reposition(); }
+    }
   }
   if (btn) {
     btn.addEventListener('click', function () {

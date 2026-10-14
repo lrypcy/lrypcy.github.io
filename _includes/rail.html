@@ -8,12 +8,10 @@
 <aside class="rail" id="rail" aria-label="全站目录">
   <div class="rail-head">
     <span class="rail-head-title">目录</span>
-    <button class="rail-btn" id="railCollapse" type="button" title="收起目录" aria-label="收起目录">«</button>
+    <button class="rail-toggle" id="railCollapse" type="button" aria-expanded="true" aria-controls="railScroll" title="收起目录">
+      <span class="rail-toggle-icon" aria-hidden="true">«</span><span class="rail-toggle-text">收起</span>
+    </button>
   </div>
-
-  {%- if page.layout == 'post' -%}
-  <div class="rail-card rail-post-toc" id="railPostToc"></div>
-  {%- endif -%}
 
   <div class="rail-scroll" id="railScroll">
     {%- for sec in site.data.catalog.sections -%}
