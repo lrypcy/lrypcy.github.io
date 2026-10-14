@@ -216,11 +216,44 @@ $$
 
 **第 4 步：这个下界差了多少？正好是「近似后验 vs 真实后验」的 KL。**
 
-Jensen 只给了「≥」，但间隙是有闭式的。从 $$\log p_\theta(x)$$ 里减掉 ELBO：
+Jensen 只给了「≥」，但间隙是有闭式的，而且**绕开 Jensen、直接从 KL 的定义出发反而更短**。为简洁起见，下面把 $$q_\phi(z\mid x)$$ 记作 $$q$$、把 $$p_\theta(z\mid x)$$ 记作 $$p(z\mid x)$$。
+
+按 KL 的定义展开：
+
+$$
+D_{\mathrm{KL}}\left(q_\phi(z\mid x)\Vert p_\theta(z\mid x)\right)
+=\mathbb E_{q}\left[\log\frac{q_\phi(z\mid x)}{p_\theta(z\mid x)}\right]
+=\mathbb E_q\left[\log q_\phi(z\mid x)\right]
+-\mathbb E_q\left[\log p_\theta(z\mid x)\right]
+$$
+
+用贝叶斯公式把真实后验换掉：
+
+$$
+p_\theta(z\mid x)=\frac{p_\theta(x,z)}{p_\theta(x)}
+\quad\Longrightarrow\quad
+\log p_\theta(z\mid x)=\log p_\theta(x,z)-\log p_\theta(x)
+$$
+
+代回 KL 的展开式：
+
+$$
+\begin{aligned}
+D_{\mathrm{KL}}\left(q_\phi(z\mid x)\Vert p_\theta(z\mid x)\right)
+&=\mathbb E_q\left[\log q_\phi(z\mid x)\right]\\
+&\quad-\mathbb E_q\left[\log p_\theta(x,z)\right]
++\log p_\theta(x)
+\end{aligned}
+$$
+
+最后一步的关键：**$$\log p_\theta(x)$$ 不依赖随机变量 $$z$$**，所以 $$\mathbb E_q\left[\log p_\theta(x)\right]=\log p_\theta(x)$$，可以原样提出期望。把前两项挪到等式左边，左边剩下的正好就是第 3 步那个 ELBO：
 
 $$
 \log p_\theta(x)=
-\mathcal L_{\mathrm{ELBO}}
+\underbrace{
+\mathbb E_{q_\phi(z\mid x)}
+\left[\log\frac{p_\theta(x,z)}{q_\phi(z\mid x)}\right]
+}_{\mathcal L_{\mathrm{ELBO}}}
 +D_{\mathrm{KL}}
 \left(q_\phi(z\mid x)\Vert p_\theta(z\mid x)\right)
 $$
@@ -229,6 +262,8 @@ $$
 
 - ELBO 是**贴着天花板的**，不是松垮的界——只要 $$q_\phi$$ 的族足够表达真实后验，下界就能收紧。
 - **最大化 ELBO 同时在做两件事**：抬高 $$\log p_\theta(x)$$，以及把 $$q_\phi$$ 推向真实后验。这也是为什么 VAE 的编码器可以被当成一个「推断网络」。
+
+> **这里的 KL 和第 3 步里的 KL 不是同一个量**：这里比的是「近似后验 vs 真实后验」，第 3 步 ELBO 里比的是「近似后验 vs 先验」。两者通过上面这条恒等式联系，但含义与用途完全不同，3.4 节专门对照。
 
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 215" role="img" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
 <rect x="0" y="0" width="680" height="215" fill="#ffffff"/>
@@ -278,7 +313,7 @@ $$
 | 网格上 $$\log p(x)-\mathcal L_{\mathrm{ELBO}}$$ 的最小值（4001×4001 个点） | **2.96e-07**，恒 ≥ 0 |
 | 网格搜索出的最优 $$q$$ 与解析真后验的差距 | $$\lvert\Delta\mu\rvert=1.7\times10^{-4}$$，$$\lvert\Delta\sigma\rvert=3.2\times10^{-4}$$ |
 
-> **为什么值得把这条恒等式写下来**：它说明「ELBO  tighter」和「推断更准」是同一件事的两面。训练时看到的 ELBO 上不去，除了模型容量问题，也可能是 $$q_\phi$$ 这个族根本表达不了真实后验（比如真实后验是多峰的，而 $$q_\phi$$ 被限制成单峰对角高斯）。
+> **为什么值得把这条恒等式写下来**：它说明「ELBO 更紧」和「推断更准」是同一件事的两面。训练时看到的 ELBO 上不去，除了模型容量问题，也可能是 $$q_\phi$$ 这个族根本表达不了真实后验（比如真实后验是多峰的，而 $$q_\phi$$ 被限制成单峰对角高斯）。
 
 ### 3.3 KL 项真正压下去的是什么
 
@@ -300,6 +335,17 @@ $$
 - KL 项**同时**惩罚了两样东西：潜变量携带的关于输入的信息量（$$\mathcal I_q$$），以及聚合后验与先验的整体形状差异。
 - 单纯让每个样本的 $$q_\phi(z\mid x)$$ 接近 $$\mathcal N(0,I)$$，并不等于让聚合后验也变成 $$\mathcal N(0,I)$$。后者才能在推理时真正「随便采都能用」，也是 $$\beta$$-VAE 之后大量先验改进工作（VampPrior、层次先验）的靶子。
 
+### 3.4 两个 KL 不是同一个东西
+
+整篇文章里会出现两个 KL，长得像但靶子完全不同，混用是读 VAE 文献时最常见的错误之一：
+
+| KL 散度 | 比较对象 | 出现位置 | 作用 |
+|---|---|---|---|
+| $$D_{\mathrm{KL}}\left(q_\phi(z\mid x)\Vert p_\theta(z\mid x)\right)$$ | 近似后验 **vs 真实后验** | 3.1 第 4 步的恒等式 | 衡量**下界松不松**。它不可计算（含真实后验），只用来证明 ELBO 是下界并给出间隙 |
+| $$D_{\mathrm{KL}}\left(q_\phi(z\mid x)\Vert p(z)\right)$$ | 近似后验 **vs 先验** | ELBO 的第二项 | VAE **实际优化**的正则项。它在高斯情形有闭式解，不需要采样 |
+
+两者的联系就是那条恒等式：$$\log p_\theta(x)$$ 是固定的，所以**把能算的那个 KL 压小 ≠ 把不能算的那个 KL 压小**——真正让 ELBO 逼近 $$\log p_\theta(x)$$ 的是让 $$q_\phi$$ 变准，而不只是让 $$q_\phi$$ 靠近先验。这正是第 7 节后验坍塌的反面：把「vs 先验」的 KL 压到 0，反而说明「vs 真实后验」的 KL 大到了极点。
+
 ---
 
 ## 4. 重参数化：凭什么随机节点能参与反向传播
@@ -319,12 +365,34 @@ $$
 \epsilon\sim\mathcal N(0,I)
 $$
 
-随机性从「依赖参数的采样」转移到了「与参数完全无关的 $$\epsilon$$」上。固定住 $$\epsilon$$，$$z$$ 就是 $$\mu$$ 与 $$\sigma$$ 的确定性可微函数，梯度直接走：
+随机性从「依赖参数的采样」转移到了「与参数完全无关的 $$\epsilon$$」上。为什么这样改写不改变分布：$$\mathbb E[z]=\mu$$、$$\operatorname{Var}(z)=\sigma^2$$，而 $$z$$ 又是 $$\epsilon$$ 的线性变换（高斯的线性变换仍是高斯），所以
+
+$$
+\mu+\sigma\odot\epsilon\ \sim\ \mathcal N(\mu,\ \sigma^2)
+$$
+
+与直接采样得到的 $$z$$ **分布完全相同**。变的只是表达式：随机性被隔离进 $$\epsilon$$，剩下的全是确定性可微运算。
+
+固定住 $$\epsilon$$，$$z$$ 就是 $$\mu$$ 与 $$\sigma$$ 的确定性可微函数，梯度直接走：
 
 $$
 \frac{\partial z}{\partial\mu}=1,\qquad
 \frac{\partial z}{\partial\sigma}=\epsilon
 $$
+
+再往下走一步——$$\mu$$ 与 $$\sigma$$ 本身是 Encoder 的输出，所以 loss $$J$$ 对 Encoder 参数 $$\phi$$ 的完整链式是
+
+$$
+\frac{\partial J}{\partial\phi}
+=
+\frac{\partial J}{\partial z}
+\left(
+\frac{\partial\mu_\phi(x)}{\partial\phi}
++\epsilon\odot\frac{\partial\sigma_\phi(x)}{\partial\phi}
+\right)
+$$
+
+其中 $$\frac{\partial J}{\partial z}$$ 由解码器那一侧的反传给出，$$\epsilon$$ 当成**本次前向里固定下来的常数**——反向传播不需要对随机数发生器求导。
 
 ```mermaid
 flowchart LR
@@ -340,9 +408,34 @@ flowchart LR
     BP --> ENC
 ```
 
-注意这里用的是「固定住 $$\epsilon$$ 后求梯度」，训练中每个 batch 仍然要重新采样 $$\epsilon$$。所以它属于**随机梯度估计**，不是把随机性消除了。
+注意这里用的是「固定住 $$\epsilon$$ 后求梯度」，训练中每个 batch 仍然要重新采样 $$\epsilon$$。所以它属于**随机梯度估计**，不是把随机性消除了——每次前向 $$z$$ 依然是随机的，只是梯度路径变成了确定性的。
 
-### 4.2 它省下的是方差，不是偏差
+### 4.2 为什么 Encoder 输出 $$\log\sigma^2$$ 而不是 $$\sigma$$
+
+几乎所有实现里 Encoder 都输出一对 $$(\mu_\phi(x),\ \ell_\phi(x))$$，其中 $$\ell=\log\sigma^2$$，重参数化写成
+
+$$
+\boxed{
+z=\mu_\phi(x)+\exp\!\left(\tfrac12\,\ell_\phi(x)\right)\odot\epsilon
+},\qquad
+\epsilon\sim\mathcal N(0,I)
+$$
+
+两个理由：
+
+- **方差恒正。** $$\ell$$ 可以取任意实数（网络最后一层无需约束），经过 $$\exp$$ 后 $$\sigma^2=e^{\ell}>0$$ 自动成立。直接让网络回归 $$\sigma$$ 就得额外加 softplus / 取绝对值，还会引入「贴着 0」的边界问题。
+- **优化更平滑。** 网络预测一个无约束的实数，比预测一个必须为正的量更容易收敛；而且 $$\log\sigma^2$$ 的尺度与 KL 闭式解里的项对齐（第 5 节会看到 KL 的表达式本身就是 $$\mu^2+e^{\ell}-1-\ell$$ 的形式）。
+
+多维对角高斯下就是逐元素版本：
+
+$$
+\boldsymbol\epsilon\sim\mathcal N(\mathbf 0,I),\qquad
+\mathbf z=\boldsymbol\mu+\exp\!\left(\tfrac12\boldsymbol\ell\right)\odot\boldsymbol\epsilon
+$$
+
+指数与乘法都是逐元素的。
+
+### 4.3 它省下的是方差，不是偏差
 
 替代方案是 score-function 估计器（也就是 REINFORCE）：
 
@@ -364,7 +457,7 @@ $$
 
 两个估计器都无偏（样本均值贴着真梯度），但 REINFORCE 的方差高出 7.6 ~ 56.2 倍。这是重参数化能被规模化的直接原因：**它换来的是同一条梯度、更小的噪声**，而不是一个更准的方向。
 
-### 4.3 实现上真正会踩的坑
+### 4.4 实现上真正会踩的坑
 
 ```python
 def reparameterize(mu, logvar):
