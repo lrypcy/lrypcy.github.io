@@ -6,7 +6,7 @@ categories:
 tags: [vae, elbo, variational-inference, reparameterization, kl-divergence, posterior-collapse, vq-vae, vqgan, latent-diffusion, beta-vae, nvae]
 layout: post
 mathjax: true
-excerpt: "VAE 的全部难点集中在三处：为什么要用变分推断绕开那道算不出来的积分、重参数化凭什么能把随机节点塞进反向传播、以及 KL 项为什么既是可采样性的来源又是后验坍塌的来源。本文从 ELBO 的推导一路写到 VQ-VAE / VQGAN 与 Latent Diffusion，并用 numpy 实跑五组检查：KL 闭式解的收敛、ELBO 紧度恒等式在 1600 万网格点上处处成立、重参数化梯度方差比 REINFORCE 低 7.6~56 倍、MSE 最优解以锐度 0.50 换最低期望误差、以及 β 从 0.25 升到 64 时活跃潜维度从 8 掉到 0。"
+excerpt: "VAE 的全部难点集中在三处：为什么要用变分推断绕开那道算不出来的积分、重参数化凭什么能把随机节点塞进反向传播、以及 KL 项为什么既是可采样性的来源又是后验坍塌的来源。本文从 ELBO 的推导一路写到离散化路线（VQ-VAE / VQGAN）的定位与 Latent Diffusion 里的表示层，并用 numpy 实跑五组检查：KL 闭式解的收敛、ELBO 紧度恒等式在 1600 万网格点上处处成立、重参数化梯度方差比 REINFORCE 低 7.6~56 倍、MSE 最优解以锐度 0.50 换最低期望误差、以及 β 从 0.25 升到 64 时活跃潜维度从 8 掉到 0。"
 ---
 
 > **系列导航** ｜ 本系列承接 [Flow Matching 建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/) 与 [扩散语言模型（01）](/2026/10/12/diffusion-lm-01-discrete-diffusion-elbo/) 里被当作既定前提的「潜空间」这一层，把它自己讲透：潜空间从哪来、凭什么能被采样、以及它为什么会失效。
@@ -682,38 +682,23 @@ k^\ast=\arg\min_k\lVert z_e(x)-e_k\rVert_2^2,\qquad
 z_q(x)=e_{k^\ast}
 $$
 
-连续表示就此变成离散索引 $$k^\ast$$——一个视觉 Token ID。训练目标由三块组成：
-
-$$
-\begin{aligned}
-\mathcal L_{\mathrm{VQ}}={}&
--\log p_\theta(x\mid z_q)\\
-&+\lVert\operatorname{sg}[z_e]-e\rVert_2^2\\
-&+\beta\lVert z_e-\operatorname{sg}[e]\rVert_2^2
-\end{aligned}
-$$
-
-其中 $$\operatorname{sg}$$ 是 stop-gradient。三块的分工是：重建项负责质量，码本损失把码本向量拉向 Encoder 输出，commitment loss 防止 Encoder 输出远离选中的码本向量。最近邻量化本身不可微，梯度靠 straight-through estimator 穿过。
+连续表示就此变成离散索引 $$k^\ast$$——一个视觉 Token ID。
 
 与连续 VAE 的关键差别在于：离散编码之上可以再学一个**离散序列的先验**（原论文用 PixelCNN），于是图像 / 视频 / 音频都被统一成了「可被自回归模型预测的 Token 序列」。这是 VQ-VAE 能接进 Transformer 世界的原因。
+
+代价落在量化这一步上：$$\arg\min$$ 不可微，梯度只能靠 straight-through estimator 穿过，因此训练目标要在重建项之外再引入码本损失与 commitment loss。**量化层内部那本账**——码本怎么更新、为什么会发生码本坍塌、LFQ 与 FSQ 凭什么能不要码本——是本系列 02 的主题，本节只把它当作「连续 → 离散」这条路的入口。
 
 原始论文：van den Oord et al., *Neural Discrete Representation Learning*, 2017 [9](https://arxiv.org/abs/1711.00937)。
 
 ### 8.4 VQGAN：给离散潜空间补上感知与对抗目标
 
-VQ-VAE 的重建在像素层面可以很好，但不一定保住人眼最在意的纹理。VQGAN 在离散量化之上叠加感知损失与判别器：
+VQ-VAE 的重建在像素层面可以很好，但不一定保住人眼最在意的纹理。VQGAN 在离散量化之上叠加感知损失（LPIPS）与 PatchGAN 判别器，并用一个按梯度范数比值自适应的权重把两者拼起来。
 
-$$
-\mathcal L =
-\mathcal L_{\mathrm{recon}}
-+\lambda_{\mathrm{perceptual}}\mathcal L_{\mathrm{perceptual}}
-+\lambda_{\mathrm{GAN}}\mathcal L_{\mathrm{GAN}}
-+\mathcal L_{\mathrm{codebook}}
-$$
-
-这正是第 6.3 节那条路：把目标从「条件均值」换成「感知与对抗」，输出就不再被迫取平均。但它仍然属于离散量化路线，与现代扩散模型用的连续潜空间 VAE 不是同一种编码机制。
+这正是第 6.3 节那条路：把目标从「条件均值」换成「感知与对抗」，输出就不再被迫取平均。但它仍然属于离散量化路线，与现代扩散模型用的连续潜空间 VAE 不是同一种编码机制。自适应权重的具体形式、以及训练中码本重置怎么救回死掉的码本，都放在 02。
 
 原始论文：Esser et al., *Taming Transformers for High-Resolution Image Synthesis*, CVPR 2021 [10](https://arxiv.org/abs/2012.09841)。
+
+四条的取舍其实能压成一句话：**要接扩散就用连续 VAE，要把视觉内容变成可被自回归预测的 Token 就用离散量化**。更细的判据——码本维度 $$d$$ 与大小 $$K$$ 怎么定、commitment 系数与 EMA 衰减取多少、训练时要盯哪几个指标——属于量化层的工程细节，见本系列 02。
 
 ---
 
@@ -770,21 +755,7 @@ LDM 论文系统地扫过 $$f\in\{1,2,4,8,16,32\}$$，原文的结论是 $$f=4$$
 
 ---
 
-## 10. 连续 VAE 与 VQ-VAE 怎么选
-
-| 目标 | 优先考虑 |
-|---|---|
-| 为图像 / 视频扩散模型提供压缩潜空间 | 连续 VAE |
-| 把视觉内容编码成可预测的离散 Token | VQ-VAE / VQGAN |
-| 学习可解释的潜在因子 | $$\beta$$-VAE 等变分表示学习方法 |
-| 极高分辨率生成 | 压缩率合适的 Autoencoder + 潜空间生成器 |
-| 连续时间 / 连续状态建模 | 连续潜变量模型通常更自然，但不是唯一方案 |
-
-这不是绝对边界。连续与离散都可以用于多种生成任务，最终取决于表示质量、生成器架构、训练稳定性与推理成本。
-
----
-
-## 11. 训练 VAE 时该监控什么
+## 10. 训练 VAE 时该监控什么
 
 不要只看总 loss。至少看这五项：
 
@@ -800,14 +771,14 @@ LDM 论文系统地扫过 $$f\in\{1,2,4,8,16,32\}$$，原文的结论是 $$f=4$$
 
 ---
 
-## 12. 小结
+## 11. 小结
 
 - **概率建模层**：VAE 用 $$z$$、$$p(z)$$、$$p_\theta(x\mid z)$$ 描述数据的产生过程，把「生成」还原成「从先验采样 + 条件生成」两步。
 - **可优化的推断层**：ELBO 把算不出来的对数似然换成「重建似然 − KL」，且紧度恒等式精确成立；重参数化让随机潜变量能参与端到端梯度训练，代价是方差比 REINFORCE 低一个量级。
 - **现代系统里的表示层**：连续 VAE 为扩散模型提供压缩潜空间（LDM 实测 $$f=4,8$$ 最优），VQ-VAE / VQGAN 把视觉内容变成离散 Token 以接进 Transformer。
 - **两个必须记住的边界**：KL 项同时惩罚互信息与聚合后验偏差，所以它既是可采样性的来源，也是后验坍塌的来源；MSE 的最优解是条件均值，所以「糊」是目标函数的性质，不是架构的缺陷。
 
-下一步最有价值的主题是 VAE 的压缩率、重建损失、潜空间分布与扩散生成质量之间的关系——它直接决定实际系统的训练成本、推理效率与最终画质。
+本系列下一篇把量化层摊开：码本怎么更新、为什么会发生码本坍塌、LFQ 与 FSQ 凭什么能不要码本。再往后，最有价值的主题是 VAE 的压缩率、重建损失、潜空间分布与扩散生成质量之间的关系——它直接决定实际系统的训练成本、推理效率与最终画质。
 
 ---
 

@@ -66,6 +66,7 @@ exclude:
   - deep-dive-serving-engine
   - deep-dive-speculative-decoding
   - deep-dive-test-time-training
+  - deep-dive-vae
   - deep-dive-world-model-world-action-model
   - wiki
   - tools
