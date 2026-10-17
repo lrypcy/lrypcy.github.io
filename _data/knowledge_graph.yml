@@ -61,6 +61,14 @@ categories:
     icon: "📊"
     color: "#9333ea"
     desc: 从 nvidia-smi 到 Nsight Compute 的 NVIDIA 性能剖析工具链
+  - name: 推理服务
+    icon: "🚀"
+    color: "#0f766e"
+    desc: vLLM / SGLang 源码级对比：KV 缓存组织、调度与重叠、进程与故障边界，以及投机解码这条加速主线
+  - name: 系统实现
+    icon: "🔬"
+    color: "#475569"
+    desc: 框架内部实现的源码级走读：采样的 fast path、logprob 的五条路径与确定性复现
   - name: 深度学习
     icon: "🧠"
     color: "#0284c7"
@@ -123,6 +131,15 @@ series:
     prefixes: [profiling-]
     exclude: [nv-gpu-profiling, op-]
     desc: 3 篇。00 度量口径（MFU/HFU 分母、Timer 语义、goodput 边界）→ 01 训练栈 profiling（OTel / Perfetto / nsys 三层观测面、overlap 双分母、α-β 判据、掉队卡诊断）→ 02 推理服务 profiling（ITL 与 TPOT 的分母差、goodput 与峰值吞吐、closed/open loop、到达分布、前缀缓存陷阱）。承接 op 系列的工具链与 dist-train / Megatron 的栈知识，回答「这些数字是怎么算出来的、哪些彼此不可比」。
+
+  - id: serving
+    name: 推理引擎深度对比
+    short: 推理引擎
+    category: 推理服务
+    layer: 0
+    order: 6
+    prefixes: [serving-]
+    desc: 01 架构分歧的根（KV 缓存组织 / 调度重叠 / 进程与语言边界三条独立设计路线）→ 02 调度与批处理 → 03/04 支持矩阵 → 05 PD 分离 → 06 benchmark 交叉验证 → 07 选型手册 → 08 前缀命中率。取证基准 vLLM v0.31.0（commit db9527a4）/ SGLang v0.5.21（commit e00930c5），全部行号锁 commit 可点开核验；本机无 GPU，全系列不跑性能 benchmark，性能数字按可信度分级。
 
   # ---------- layer 1：核心算法 ----------
   - id: posem
@@ -208,6 +225,15 @@ series:
     # exclude 必须有：前缀是子串匹配，rl-credit-assignment-* 里的 "credit-a" 会命中 "dit-"
     exclude: [credit-assignment]
     desc: 去噪函数的主干网络。Patchify 与 token 预算、AdaLN-Zero 的恒等初始化、ε/x₀/v 三种参数化的互换恒等式与误差放大、FLOPs 闭式记账与注意力二次项的临界 token 数、时间步的贝叶斯必要性、条件注入三条路径的表达力上限，到 PixArt / SD3 MMDiT / Flux / Sora 的演进。回答「把 U-Net 换成 Transformer 换来了什么」。
+
+  - id: specdec
+    name: 投机解码
+    short: 投机解码
+    category: 推理服务
+    layer: 1
+    order: 9
+    prefixes: [specdec-]
+    desc: 01 综述与演化 → 02 收益模型（α / γ / c 三个数决定加速比，天花板 1/(1-α) 与最优草稿长度）→ 03 EAGLE 家族（草稿从哪来的收敛史）→ 04 引擎支持矩阵 → 05 生产部署陷阱 → 06 业界实践 → 07 评测数字怎么读 → 08 未来方向。采样无偏性的证明归《PyTorch 采样实现深读》，本系列只讲收益与工程。
 
   # ---------- layer 2：前沿专题 ----------
   - id: rl-estimation
@@ -315,6 +341,15 @@ series:
     prefixes: [flex-attention-]
     desc: 1 篇长文。score_mod / mask_mod 的可编程边界、online softmax 为什么能吃下任意逐点修正、BlockMask 的两笔账、反向如何用 joint graph 自动生成、PagedAttention 与 FlexDecoding，以及 2026 年 FA4 / Apple Silicon / 确定性反向三条新边界。回答「五花八门的注意力变体能不能只写几行 Python」。
 
+  - id: sampling
+    name: PyTorch 采样实现深读
+    short: 采样实现
+    category: 系统实现
+    layer: 2
+    order: 8
+    prefixes: [pytorch-sampling-internals]
+    desc: 1 篇长文。`torch.multinomial` 的 fast path 如何吃掉两种用法 → LLM 采样栈的 logits 塑形 → 投机解码里采样正确性变成一道数学题 → logprob 的五条路径为什么给出不同的数 → RL 里采样器与打分器的口径必须对齐 → 重参数化与 Gumbel-Softmax → VLA 的连续动作 → RNG 与确定性复现。回答「同一个 logprob，为什么五个地方算出来不一样」。
+
 links:
   - { from: chip,      to: op,         label: 存储层次与执行模型决定 Kernel 怎么写 }
   - { from: chip,      to: compiler,   label: ISA 与内存层次是后端代码生成的靶子 }
@@ -355,11 +390,18 @@ links:
   - { from: op,        to: flex-attention, label: FlashAttention 的融合与分块是 FlexAttention 的地基 }
   - { from: chip,      to: transcendental, label: SFU / MUFU 的吞吐是超越函数的物理上界 }
   - { from: op,        to: transcendental, label: Softmax / RoPE 的指令级实现与数值陷阱 }
+  - { from: perf-analysis, to: serving,    label: TTFT / TPOT / goodput 的口径是评测引擎的前提 }
+  - { from: quant,     to: serving,        label: 量化格式的落地面就是引擎的支持矩阵 }
+  - { from: megatron,  to: serving,        label: 训练与推理之间的 refit / resharding 是两端的接缝 }
+  - { from: op,        to: serving,        label: attention backend 与融合 Kernel 决定引擎的能力边界 }
+  - { from: serving,   to: specdec,        label: 投机解码是引擎的一个子系统，脱离引擎谈它没有意义 }
+  - { from: sampling,  to: specdec,        label: 拒绝采样的无偏性是投机解码正确性的那道门 }
+  - { from: sampling,  to: serving,        label: 采样与 logprob 口径贯穿引擎的解码路径 }
 
 paths:
   - name: AI Infra 工程师主线
-    desc: 先懂硬件，再懂编译与算子，接着学会度量与归因，最后落到训练系统与量化部署
-    steps: [chip, compiler, op, dist-train, perf-analysis, quant]
+    desc: 先懂硬件，再懂编译与算子，接着学会度量与归因，然后落到训练系统与量化，最后走到推理引擎与投机解码
+    steps: [chip, compiler, op, dist-train, perf-analysis, quant, serving, specdec]
   - name: 大模型算法与后训练
     desc: 位置编码打底 → 策略优化 → 蒸馏与量化，覆盖 post-training 全链路
     steps: [posem, mdp-grpo, distill, quant]
