@@ -306,6 +306,15 @@ series:
     prefixes: [diffusion-lm-]
     desc: 离散扩散为主线。ELBO 如何化简成带 1/t 权重的掩码交叉熵 → 采样器与 remasking → 块扩散与 KV cache → 推理系统与加速 → 后训练与 RL → 2026 产业全景。回答「不做下一个 token 预测还能不能训出 LLM」。
 
+  - id: flex-attention
+    name: FlexAttention：注意力变体的编译器
+    short: FlexAttention
+    category: 编译器技术
+    layer: 2
+    order: 7
+    prefixes: [flex-attention-]
+    desc: 1 篇长文。score_mod / mask_mod 的可编程边界、online softmax 为什么能吃下任意逐点修正、BlockMask 的两笔账、反向如何用 joint graph 自动生成、PagedAttention 与 FlexDecoding，以及 2026 年 FA4 / Apple Silicon / 确定性反向三条新边界。回答「五花八门的注意力变体能不能只写几行 Python」。
+
 links:
   - { from: chip,      to: op,         label: 存储层次与执行模型决定 Kernel 怎么写 }
   - { from: chip,      to: compiler,   label: ISA 与内存层次是后端代码生成的靶子 }
@@ -342,6 +351,8 @@ links:
   - { from: op,        to: perf-analysis, label: op 系列讲 profiling 工具链，本系列讲这些工具报出来的数字怎么算、哪些不可比 }
   - { from: dist-train,to: perf-analysis, label: 并行训练的度量口径与时间归因 }
   - { from: megatron,  to: perf-analysis, label: Megatron 原生 OTel 观测栈与内置 Timer 是本系列的源码级素材 }
+  - { from: compiler,  to: flex-attention, label: torch.compile / Inductor 把 score_mod 注入手写 Triton 模板 }
+  - { from: op,        to: flex-attention, label: FlashAttention 的融合与分块是 FlexAttention 的地基 }
   - { from: chip,      to: transcendental, label: SFU / MUFU 的吞吐是超越函数的物理上界 }
   - { from: op,        to: transcendental, label: Softmax / RoPE 的指令级实现与数值陷阱 }
 
