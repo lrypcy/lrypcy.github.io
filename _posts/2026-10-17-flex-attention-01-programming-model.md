@@ -6,7 +6,7 @@ categories:
 tags: [flexattention, attention, flash-attention, triton, torch-compile, torch-inductor, score-mod, mask-mod, blockmask, block-sparse, online-softmax, paged-attention, software-lottery]
 layout: post
 mathjax: true
-excerpt: "FlexAttention 的全部内容可以压缩成一句话：把「五花八门的注意力变体」压平成「softmax 之前的一个逐点修正函数」，然后由编译器把它塞回手写 FlashAttention 模板里。本文把这句话拆开：为什么任意逐点 score_mod 能和 online softmax 的重标定循环共存、为什么 -inf 掩码必须单列成 mask_mod、BlockMask 是怎么把一份掩码压成两个索引向量的、反向传播是怎么用 AOTAutograd 的 joint graph 自动出来的、表达力边界上到底卡住了哪三类东西。配套 numpy 实验把六个变体的 online 与一次性计算比对到 1.776e-15，并把「最大挤出/写下来/index conversion」这几笔账算成具体字节。"
+excerpt: "FlexAttention 的全部内容可以压缩成一句话：把「五花八门的注意力变体」压平成「softmax 之前的一个逐点修正函数」，然后由编译器把它塞回手写 FlashAttention 模板里。本文把这句话拆开：为什么任意逐点 score_mod 能和 online softmax 的重标定循环共存、为什么 -inf 掩码必须单列成 mask_mod、BlockMask 是怎么把一份掩码压成两个索引向量的、反向传播是怎么用 AOTAutograd 的 joint graph 自动出来的、表达力边界上到底卡住了哪三类东西。配套 numpy 实验把六个变体的 online 与一次性计算比对到 1.776e-15，并把稀疏度损失、元数据字节数、页表索引转换这三笔账算成具体数字。"
 ---
 
 > **系列导航** ｜ 本系列承接 [编译器知识体系深度解析](/2026/08/25/compiler-01-lexing-parsing/)（torch.compile / Triton 工程三件套落在哪一层）与 [算子开发与优化](/2026/08/26/op-01-roofline/)（单算子为什么写成那样），把两者交界处补齐：**当一个「算子的变体空间」大到手写不完的时候，编译器该怎么介入**。
