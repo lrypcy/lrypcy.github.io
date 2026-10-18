@@ -73,6 +73,7 @@
 > （368 行），配套 lab 在 ipynbs `experiments/cluster-scheduling/03-checkpoint-cost-model/`。
 > 新分类「集群与容错」+ 系列 `fault-tolerance` 已入 `_data/knowledge_graph.yml`。
 > **本篇只覆盖 checkpoint 成本模型**，调度语义 / 多租户 / 弹性训练均未动（见下方子问题）。
+
 **核心问题**：一个千卡训练任务从提交到跑完，集群这一层到底做了什么？失败之后怎么续？
 
 **待查证的子问题**
@@ -86,8 +87,8 @@
 - [x] checkpoint 策略：写频次的成本模型 —— **已在 01 篇做完**（闭式最优 $$I^\* = \sqrt{2wM}$$，
       写开销与重算开销在最优处相等；异步写压低 $$w$$、分层检查点把重算上限降到 $$i/2$$；
       周期故障最坏相位损失翻倍）。
-      异步写 / 分层写（显存 → host → 并行 FS）的取舍。**注意**：`megatron-12` 的变更史第 9 条记着
-      `dist_checkpointing/` 未展开且未分配编号 —— 那是 Megatron 源码向，本文是集群策略向，别合并
+      **边界**：`megatron-12` 的变更史第 9 条记着 `dist_checkpointing/` 未展开且未分配编号 ——
+      那是 Megatron 源码向，本文是集群策略向，别合并
 - [ ] 弹性训练：resize 世界大小时，优化器状态 / 数据分片 / LR 怎么重配？
       与 `megatron-11` refit & resharding 的边界在哪（它是权重搬运，这里是作业级伸缩）
 - [ ] 多租户隔离：配额、优先级抢占、GPU 共享（MPS / MIG / 时间片）各自的隔离强度与性能代价
