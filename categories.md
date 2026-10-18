@@ -4,7 +4,9 @@ title: 分类
 ---
 {% assign graph = site.data.knowledge_graph %}
 {% capture known %}{% for sec in site.data.catalog.sections %}{% for c in sec.categories %};{{ c }};{% endfor %}{% endfor %}{% endcapture %}
-<p class="page-desc">共 {{ site.categories | size }} 个分类、{{ site.posts | size }} 篇文章。<b>点击任意分类</b>，文章列表会在下方展开（按系列归拢），地址栏带上 <code>?cat=</code> 参数，可直接分享；再点一次可收起。</p>
+<!-- 浏览态：全站分类一览（进入单分类页时整体隐藏） -->
+<div id="cat-home">
+<p class="page-desc">共 {{ site.categories | size }} 个分类、{{ site.posts | size }} 篇文章。<b>点击任意分类</b>，进入按系列归拢的独立页面，地址栏带上 <code>?cat=</code> 参数，可直接分享。</p>
 
   <!-- 分类卡片：按 _data/catalog.yml 的 AI-Infra 分层排布（与左侧目录同一套顺序） -->
   <div id="cat-nav">
@@ -46,12 +48,12 @@ title: 分类
     </div>
     {%- endif -%}
   </div>
+</div>
 
-  <!-- 分类详情：默认不显示，点击卡片后才展开 -->
+  <!-- 单分类独立页：URL 带 ?cat= / #分类名 时出现，上方分类卡片整块隐藏 -->
   <div class="cat-detail" id="cat-detail" hidden>
     <div class="cat-detail-bar">
       <button class="cat-back-btn" id="cat-back" type="button">← 返回全部分类</button>
-      <span class="cat-detail-tip">直接点其他分类也可切换</span>
     </div>
 
     <div id="cat-panels">
@@ -151,6 +153,12 @@ title: 分类
   var back   = document.getElementById('cat-back');
   if (!cards.length || !panels.length || !wrap) { return; }
 
+  var home = document.getElementById('cat-home');
+  var h1 = document.querySelector('.layout-main .post-title');
+  var baseH1 = h1 ? h1.textContent : '';
+  var siteTitle = {{ site.title | jsonify }};
+  function setDocTitle(t) { document.title = (t || baseH1) + ' | ' + siteTitle; }
+
   // URL 参数优先 ?cat=，旧式 #分类名 锚点链接继续兼容
   function currentCat() {
     var v = null;
@@ -176,6 +184,10 @@ title: 分类
     if (!hit) { close(); return; }
     cards.forEach(function (c) { c.classList.toggle('is-active', c.getAttribute('data-cat') === cat); });
     wrap.hidden = false;
+    // 单分类页：上方分类卡片整块让位
+    if (home) { home.hidden = true; }
+    if (h1) { h1.textContent = baseH1 + '：' + cat; }
+    setDocTitle(baseH1 + '：' + cat);
     if (scroll && wrap.scrollIntoView) { wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     setUrl(cat);
   }
@@ -184,16 +196,16 @@ title: 分类
     wrap.hidden = true;
     panels.forEach(function (p) { p.hidden = true; });
     cards.forEach(function (c) { c.classList.remove('is-active'); });
+    if (home) { home.hidden = false; }
+    if (h1) { h1.textContent = baseH1; }
+    setDocTitle(baseH1);
     setUrl(null);
   }
 
   cards.forEach(function (c) {
     c.addEventListener('click', function (e) {
       e.preventDefault();
-      var cat = c.getAttribute('data-cat');
-      // 再点一次同一个分类 = 收起
-      if (!wrap.hidden && c.classList.contains('is-active')) { close(); return; }
-      open(cat, true);
+      open(c.getAttribute('data-cat'), true);
     });
   });
 

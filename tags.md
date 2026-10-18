@@ -11,30 +11,31 @@ title: 标签
 {% endfor %}
 {% assign colors = "#3b82f6,#6366f1,#8b5cf6,#a855f7,#ec4899,#e11d48,#ea580c,#d97706,#16a34a,#0d9488,#0891b2,#1d4ed8" | split: "," %}
 
-<p class="page-desc">共 {{ site.tags | size }} 个标签、{{ site.posts | size }} 篇文章。<b>点击任意标签</b>，下方只列出该标签下的文章，地址栏会带上 <code>?tag=</code> 参数，复制即可分享；再点一次或点「返回全部标签」恢复完整列表。</p>
+  <!-- 浏览态：全站标签一览（进入单标签页时整体隐藏） -->
+  <div id="tag-nav">
+    <p class="page-desc">共 {{ site.tags | size }} 个标签、{{ site.posts | size }} 篇文章。<b>点击任意标签</b>，进入只列该标签文章的独立页面，地址栏带上 <code>?tag=</code> 参数，复制即可分享。</p>
 
-  <!-- 标签云导航：链接带 ?tag= 参数 -->
-  <div class="tag-cloud">
-    {% for tag in site.tags %}
-      {% assign tag_size = tag[1] | size %}
-      {% assign span = tag_max | minus: tag_min %}
-      {% if span > 0 %}
-        {% assign ratio = tag_size | minus: tag_min | times: 100 | divided_by: span %}
-      {% else %}
-        {% assign ratio = 50 %}
-      {% endif %}
-      {% assign font_pct = ratio | plus: 100 %}
-      {% assign color_idx = forloop.index0 | modulo: 12 %}
-      {% assign color = colors[color_idx] %}
-      <a class="tag-item" href="/tags/?tag={{ tag[0] | url_encode }}" data-tag="{{ tag[0] }}" style="font-size: {{ font_pct }}%; color: {{ color }};" title="{{ tag_size }} 篇文章">{{ tag[0] }}</a>
-    {% endfor %}
+    <div class="tag-cloud">
+      {% for tag in site.tags %}
+        {% assign tag_size = tag[1] | size %}
+        {% assign span = tag_max | minus: tag_min %}
+        {% if span > 0 %}
+          {% assign ratio = tag_size | minus: tag_min | times: 100 | divided_by: span %}
+        {% else %}
+          {% assign ratio = 50 %}
+        {% endif %}
+        {% assign font_pct = ratio | plus: 100 %}
+        {% assign color_idx = forloop.index0 | modulo: 12 %}
+        {% assign color = colors[color_idx] %}
+        <a class="tag-item" href="/tags/?tag={{ tag[0] | url_encode }}" data-tag="{{ tag[0] }}" style="font-size: {{ font_pct }}%; color: {{ color }};" title="{{ tag_size }} 篇文章">{{ tag[0] }}</a>
+      {% endfor %}
+    </div>
   </div>
 
-  <!-- 过滤提示条：仅当 URL 带 ?tag= / #tag 参数时出现 -->
+  <!-- 单标签独立页：URL 带 ?tag= / #tag 时出现 -->
   <div class="tag-filter-bar" id="tag-filter-bar" hidden>
     <button class="tag-back-btn" id="tag-back" type="button">← 返回全部标签</button>
-    <span class="tag-filter-current">当前标签：<b id="tag-filter-name"></b><em id="tag-filter-count"></em></span>
-    <span class="tag-filter-tip">直接点其他标签也可切换</span>
+    <span class="tag-filter-current"><b id="tag-filter-name"></b><em id="tag-filter-count"></em></span>
   </div>
 
   <!-- 按标签分组：JS 按 URL 参数只保留命中的一组 -->
@@ -52,6 +53,7 @@ title: 标签
 <script>
 (function () {
   var cloud = document.querySelector('.tag-cloud');
+  var nav = document.getElementById('tag-nav');
   var groups = [].slice.call(document.querySelectorAll('.tag-group'));
   var bar = document.getElementById('tag-filter-bar');
   var back = document.getElementById('tag-back');
@@ -86,25 +88,29 @@ title: 标签
   function apply(tag, scroll) {
     var g = tag ? groupOf(tag) : null;
     if (tag && !g) { tag = null; g = null; }
-    // 无过滤条件时 g 为 null，此时全部展开
-    groups.forEach(function (el) { el.hidden = !!g && (el !== g); });
+    // 无过滤条件时 g 为 null，此时全部展开；有 g 时只有一个分组可见（独立页模式）
+    groups.forEach(function (el) {
+      el.hidden = !!g && (el !== g);
+      el.classList.toggle('is-solo', !!g && el === g);
+    });
     var items = cloud ? cloud.querySelectorAll('.tag-item') : [];
     [].slice.call(items).forEach(function (a) {
       a.classList.toggle('is-active', !!g && a.getAttribute('data-tag') === tag);
     });
+    // 单标签页：上方标签云整块让位，只留返回按钮 + 文章列表
+    if (nav) { nav.hidden = !!g; }
+    if (bar) { bar.hidden = !g; }
+
     if (g) {
-      if (bar) { bar.hidden = false; }
       if (nameEl) { nameEl.textContent = tag; }
       if (countEl) { countEl.textContent = '（' + g.querySelectorAll('li').length + ' 篇）'; }
       if (h1) { h1.textContent = baseH1 + '：' + tag; }
       setDocTitle(baseH1 + '：' + tag);
-      if (scroll && g.scrollIntoView) { g.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     } else {
-      if (bar) { bar.hidden = true; }
       if (h1) { h1.textContent = baseH1; }
       setDocTitle(baseH1);
-      if (scroll) { window.scrollTo({ top: 0, behavior: 'smooth' }); }
     }
+    if (scroll) { window.scrollTo({ top: 0, behavior: 'smooth' }); }
   }
 
   function setUrl(tag) {
@@ -118,10 +124,8 @@ title: 标签
       if (!a) { return; }
       e.preventDefault();
       var tag = a.getAttribute('data-tag');
-      var on = a.classList.contains('is-active');
-      // 再点一次当前标签 = 收起，恢复全部
-      apply(on ? null : tag, true);
-      setUrl(on ? null : tag);
+      apply(tag, true);
+      setUrl(tag);
     });
   }
 

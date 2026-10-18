@@ -1911,7 +1911,6 @@ html.rail-off .rail-head-title { display: none; }
   transition: var(--transition);
 }
 .cat-back-btn:hover { background: var(--primary); color: #fff; }
-.cat-detail-tip { font-size: 12px; color: var(--text-light); }
 
 /* ---------- 标签页：按 ?tag= 参数只显示一个标签的文章 ---------- */
 .tag-filter-bar {
@@ -1939,8 +1938,11 @@ html.rail-off .rail-head-title { display: none; }
 .tag-filter-current { font-size: 13px; color: var(--text-light); }
 .tag-filter-current b { color: var(--text); font-size: 15px; }
 .tag-filter-current em { font-style: normal; margin-left: 6px; }
-.tag-filter-tip { font-size: 12px; color: var(--text-light); }
 .tag-group[hidden] { display: none; }
+/* 单标签 / 单分类的独立页：上方导航整块让位，组内标题由 h1 承担 */
+#tag-nav[hidden], #cat-home[hidden] { display: none; }
+.tag-group.is-solo h3 { display: none; }
+.tag-group.is-solo ul { margin-top: 0; }
 .tag-item.is-active {
   background: var(--primary-soft);
   border-color: var(--primary);
