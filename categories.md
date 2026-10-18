@@ -4,7 +4,7 @@ title: 分类
 ---
 {% assign graph = site.data.knowledge_graph %}
 {% capture known %}{% for sec in site.data.catalog.sections %}{% for c in sec.categories %};{{ c }};{% endfor %}{% endfor %}{% endcapture %}
-<p class="page-desc">共 {{ site.categories | size }} 个分类、{{ site.posts | size }} 篇文章。<b>点击任意分类</b>，文章列表会在下方展开（按系列归拢）；再点一次可收起。</p>
+<p class="page-desc">共 {{ site.categories | size }} 个分类、{{ site.posts | size }} 篇文章。<b>点击任意分类</b>，文章列表会在下方展开（按系列归拢），地址栏带上 <code>?cat=</code> 参数，可直接分享；再点一次可收起。</p>
 
   <!-- 分类卡片：按 _data/catalog.yml 的 AI-Infra 分层排布（与左侧目录同一套顺序） -->
   <div id="cat-nav">
@@ -16,7 +16,7 @@ title: 分类
       {%- if cnt > 0 -%}
       {%- assign icon = '📁' -%}{%- assign color = '#94a3b8' -%}
       {%- for c in graph.categories -%}{%- if c.name == cname -%}{%- assign icon = c.icon -%}{%- assign color = c.color -%}{%- endif -%}{%- endfor -%}
-      <a class="category-card cat-nav-card" href="#{{ cname | url_encode }}" data-cat="{{ cname }}" style="--cat-color: {{ color }}">
+      <a class="category-card cat-nav-card" href="/categories/?cat={{ cname | url_encode }}" data-cat="{{ cname }}" style="--cat-color: {{ color }}">
         <span class="category-card-icon">{{ icon }}</span>
         <h3 class="category-card-name">{{ cname }}</h3>
         <span class="category-card-count">{{ cnt }} 篇</span>
@@ -36,7 +36,7 @@ title: 分类
       {%- assign cname = cat[0] -%}
       {%- assign k = cname | prepend: ';' | append: ';' -%}
       {%- unless known contains k -%}
-      <a class="category-card cat-nav-card" href="#{{ cname | url_encode }}" data-cat="{{ cname }}" style="--cat-color: #94a3b8">
+      <a class="category-card cat-nav-card" href="/categories/?cat={{ cname | url_encode }}" data-cat="{{ cname }}" style="--cat-color: #94a3b8">
         <span class="category-card-icon">📌</span>
         <h3 class="category-card-name">{{ cname }}</h3>
         <span class="category-card-count">{{ cat[1] | size }} 篇</span>
@@ -151,10 +151,19 @@ title: 分类
   var back   = document.getElementById('cat-back');
   if (!cards.length || !panels.length || !wrap) { return; }
 
+  // URL 参数优先 ?cat=，旧式 #分类名 锚点链接继续兼容
   function currentCat() {
+    var v = null;
+    try { v = new URLSearchParams(location.search).get('cat'); } catch (e) {}
+    if (v) { return v; }
     var raw = location.hash.replace(/^#/, '');
     if (!raw) { return null; }
     try { return decodeURIComponent(raw.replace(/\+/g, ' ')); } catch (e) { return null; }
+  }
+
+  function setUrl(cat) {
+    var url = location.pathname + (cat ? '?cat=' + encodeURIComponent(cat) : '');
+    if (history.replaceState) { history.replaceState(null, '', url); }
   }
 
   function open(cat, scroll) {
@@ -168,16 +177,14 @@ title: 分类
     cards.forEach(function (c) { c.classList.toggle('is-active', c.getAttribute('data-cat') === cat); });
     wrap.hidden = false;
     if (scroll && wrap.scrollIntoView) { wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-    if (history.replaceState) { history.replaceState(null, '', '#' + encodeURIComponent(cat)); }
+    setUrl(cat);
   }
 
   function close() {
     wrap.hidden = true;
     panels.forEach(function (p) { p.hidden = true; });
     cards.forEach(function (c) { c.classList.remove('is-active'); });
-    if (history.replaceState) {
-      history.replaceState(null, '', location.pathname + location.search);
-    }
+    setUrl(null);
   }
 
   cards.forEach(function (c) {
@@ -193,6 +200,11 @@ title: 分类
   if (back) { back.addEventListener('click', close); }
 
   window.addEventListener('hashchange', function () {
+    var cat = currentCat();
+    if (cat) { open(cat, false); } else { close(); }
+  });
+
+  window.addEventListener('popstate', function () {
     var cat = currentCat();
     if (cat) { open(cat, false); } else { close(); }
   });

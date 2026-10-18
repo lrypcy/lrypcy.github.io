@@ -79,7 +79,7 @@
         <h3 class="sidebar-title">分类</h3>
         <ul class="sidebar-list">
           {% for category in site.categories %}
-          <li><a href="/categories/#{{ category[0] | url_encode }}">{{ category[0] }} ({{ category[1] | size }})</a></li>
+          <li><a href="/categories/?cat={{ category[0] | url_encode }}">{{ category[0] }} ({{ category[1] | size }})</a></li>
           {% endfor %}
         </ul>
       </div>
@@ -104,7 +104,7 @@
             {% assign color_idx = forloop.index0 | modulo: 12 %}
             {% assign color = colors[color_idx] %}
             {% if tag_count > 9 %}{% assign font_pct = 120 %}{% elsif tag_count > 5 %}{% assign font_pct = 110 %}{% elsif tag_count > 2 %}{% assign font_pct = 104 %}{% else %}{% assign font_pct = 100 %}{% endif %}
-            <a class="tag-item" href="/tags/#{{ tag_name | url_encode }}" style="font-size: {{ font_pct }}%; color: {{ color }};" title="{{ tag_count }} 篇文章">{{ tag_name }}</a>
+            <a class="tag-item" href="/tags/?tag={{ tag_name | url_encode }}" style="font-size: {{ font_pct }}%; color: {{ color }};" title="{{ tag_count }} 篇文章">{{ tag_name }}</a>
           {% endfor %}
         </div>
       </div>

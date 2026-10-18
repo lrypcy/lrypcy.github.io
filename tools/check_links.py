@@ -19,7 +19,9 @@ megatron 链接日期整个写错——两类错四步校验全部静默通过�
    → 白名单；
 3. `/assets/…` `/css/…` → 白名单前缀（静态资源目录）；
 4. `http(s)://` 外链 → 不检查（沙箱出不去，线上也可能变）；
-5. 其余 `/…` 一律报错（含锚点的先剥掉 `#…` 再判）。
+5. 其余 `/…` 一律报错（含查询串的先剥掉 `?…`，含锚点的再剥掉 `#…` 再判；
+   `/tags/?tag=量化`、`/categories/?cat=xxx` 这类「带参数只为过滤」的链接按 `/tags/`
+   判定，别再误报成坏链）。
 
 用法
 ----
@@ -83,6 +85,8 @@ def post_permalinks() -> set[str]:
 def resolve(target: str, permalinks: set[str], pages: set[str]) -> bool:
     if target.startswith(("http://", "https://", "mailto:", "//")):
         return True
+    if "?" in target:
+        target = target.split("?", 1)[0]  # 查询参数：/tags/?tag=x（分类/标签按参数过滤）
     if "#" in target:
         target = target.split("#", 1)[0]
         if target == "":
