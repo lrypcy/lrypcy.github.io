@@ -77,7 +77,7 @@ title: 分类
         <div class="series-block" id="cat-series-{{ s.id }}">
           <div class="series-head">
             <span class="series-dot" style="background: {{ c.color }}"></span>
-            <h4>{{ s.name }}</h3>
+            <h4>{{ s.name }}</h4>
             <span class="series-count">{{ scount }} 篇</span>
           </div>
           <p class="series-desc">{{ s.desc }}</p>
@@ -95,7 +95,7 @@ title: 分类
         <div class="series-block series-orphan">
           <div class="series-head">
             <span class="series-dot" style="background: #94a3b8"></span>
-            <h4>未归系列的文章</h3>
+            <h4>未归系列的文章</h4>
             <span class="series-count">{{ orphans }} 篇</span>
           </div>
           <ol class="series-posts">
@@ -122,7 +122,7 @@ title: 分类
         <div class="series-block">
           <div class="series-head">
             <span class="series-dot" style="background: #94a3b8"></span>
-            <h4>全部文章</h3>
+            <h4>全部文章</h4>
             <span class="series-count">{{ cat[1] | size }} 篇</span>
           </div>
           <ol class="series-posts">
