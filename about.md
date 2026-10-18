@@ -74,6 +74,6 @@ permalink: /about/
   <div class="about-wechat-info">
     <h3>🧑‍💻 AI infra 交流群</h3>
     <p>量化、编译器、算子、分布式训练、RL——聊得来的都在群里，欢迎来吹水与切磋。</p>
-    <p class="about-wechat-tip">⚠️ 微信群二维码 <b>7 天有效</b>。如果二维码已过期，可以加我微信<b>备注「lrypcy」</b>，看到后我会手动拉你进群。</p>
+    <p class="about-wechat-tip">⚠️ 微信群二维码 <b>7 天有效</b>。如果二维码已过期，可以加我微信<b>「lrypcy」</b>，看到后我会手动拉你进群。</p>
   </div>
 </div>
