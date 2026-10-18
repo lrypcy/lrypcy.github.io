@@ -41,6 +41,10 @@ categories:
     icon: "🖥️"
     color: "#0d9488"
     desc: 给 AI 编译器工程师的芯片课：从晶体管到 Tensor Core、脉动阵列与互连
+  - name: 数据与存储
+    icon: "📦"
+    color: "#0369a1"
+    desc: 数据切分的正确性、加载流水线的吞吐与长尾、shard 划分的统计含义
   - name: 分布式训练
     icon: "🚂"
     color: "#4f46e5"
@@ -104,12 +108,21 @@ series:
     prefixes: [op-]
     desc: 14 讲。Roofline 上界预判 → 硬件执行模型 → CUDA/Triton/Ascend C → Profiling 工具链 → 优化技术体系 → GEMM/Attention/卷积案例 → 国产 NPU 与编译器集成。
 
+  - id: data-pipeline
+    name: 数据 pipeline
+    short: 数据 pipeline
+    category: 数据与存储
+    layer: 0
+    order: 3
+    prefixes: [data-pipeline-]
+    desc: 多讲。切分正确性（「不重不漏」的唯一定义粒度、分布偏斜、shard 是 cluster 不是样本）→ 加载流水线（worker 数的阶跃收益、独立长尾 vs 成片抖动、盈余与 prefetch 的真实作用）。
+
   - id: dist-train
     name: 分布式训练全景
     short: 分布式训练
     category: 分布式训练
     layer: 0
-    order: 3
+    order: 4
     prefixes: [dist-train-]
     desc: 9 讲。DP → ZeRO/FSDP → TP → PP → SP → EP，加上集合通信数学与 2D/3D 并行组合实战。
 
@@ -118,7 +131,7 @@ series:
     short: Megatron 源码
     category: 分布式训练
     layer: 0
-    order: 4
+    order: 5
     prefixes: [megatron-]
     desc: 14 篇。00 地基（代码地图与配置系统、一次迭代控制流）→ 01 进程组与通信/计算重叠 → 02 专家并行（进程组双表、token dispatch 全链路、负载均衡）→ 03–07 并行源码层（TP+SP / GTP / DP 与优化器三套实现 / PP 调度器 / CP 与长上下文）→ 08–10 优化工具箱（显存账本与重计算 / FP8 与 FP4 / 算子融合与 CUDA Graph）→ 11–13 延伸（原生 RL 与 Refit / Checkpoint 与容错 / Bridge 与导出）。承接 dist-train 系列的并行原理，只做源码层，补上 2026 新特性（GTP、MLA/DSA、MFSDP v2、Dynamic CP、full CUDA graph、原生 RL 栈）。实测与调优已外迁至性能剖析系列。
 
@@ -127,7 +140,7 @@ series:
     short: 性能剖析
     category: 性能分析
     layer: 0
-    order: 5
+    order: 6
     prefixes: [profiling-]
     exclude: [nv-gpu-profiling, op-]
     desc: 3 篇。00 度量口径（MFU/HFU 分母、Timer 语义、goodput 边界）→ 01 训练栈 profiling（OTel / Perfetto / nsys 三层观测面、overlap 双分母、α-β 判据、掉队卡诊断）→ 02 推理服务 profiling（ITL 与 TPOT 的分母差、goodput 与峰值吞吐、closed/open loop、到达分布、前缀缓存陷阱）。承接 op 系列的工具链与 dist-train / Megatron 的栈知识，回答「这些数字是怎么算出来的、哪些彼此不可比」。
@@ -354,6 +367,7 @@ links:
   - { from: chip,      to: op,         label: 存储层次与执行模型决定 Kernel 怎么写 }
   - { from: chip,      to: compiler,   label: ISA 与内存层次是后端代码生成的靶子 }
   - { from: chip,      to: dist-train, label: NVLink/RDMA 拓扑决定通信上界 }
+  - { from: data-pipeline, to: dist-train, label: 数据切分与加载是数据并行的前置 }
   - { from: compiler,  to: op,         label: torch.compile / Triton 生成 Kernel }
   - { from: op,        to: dist-train, label: 通信与融合 Kernel }
   - { from: compiler,  to: dist-train, label: 图切分与并行 Pass }
