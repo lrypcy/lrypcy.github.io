@@ -1949,6 +1949,53 @@ html.rail-off .rail-head-title { display: none; }
   color: var(--primary);
 }
 
+/* ---------- 单标签 / 单分类独立页：撤掉一切内容框，文章直接铺排 ---------- */
+/* .is-filtered 由 tags.md / categories.md 的 JS 打在 body 上，只在带 ?tag= / ?cat= 时出现 */
+body.is-filtered .post-block.page {
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+body.is-filtered .post-block.page > .post-title { margin-bottom: 4px; }
+
+/* 分类面板：去掉左侧色条与卡片底，只留标题行 */
+body.is-filtered .cat-panel {
+  border-left-width: 0;
+  border-radius: 0;
+  background: none;
+  padding: 0;
+}
+body.is-filtered .cat-panel-head { margin-bottom: 24px; }
+body.is-filtered .cat-panel-head h3 { font-size: 17px; }
+body.is-filtered .cat-panel-head p { margin-top: 4px; }
+
+/* 系列块：去掉灰底卡片，系列名当小标题用，文章之间只用一条细线分隔 */
+body.is-filtered .series-block {
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  padding: 16px 0 0;
+  margin-bottom: 30px;
+  transition: none;
+}
+body.is-filtered .series-block:hover,
+body.is-filtered .series-block.is-flash { border-color: var(--border); box-shadow: none; }
+body.is-filtered .series-orphan { border-top-style: dashed; }
+body.is-filtered .series-head h4 { font-size: 16.5px; }
+body.is-filtered .series-desc { margin: 4px 0 8px; }
+body.is-filtered .series-posts { margin-left: 0; }
+body.is-filtered .series-posts li { padding: 9px 0; font-size: 15px; border-top-color: #eff4f9; }
+body.is-filtered .series-posts li time { font-size: 12.5px; }
+body.is-filtered .series-toggle { margin-left: 0; }
+
+/* 标签分组：列表同样直接铺排 */
+body.is-filtered .tag-group { margin-top: 0; }
+body.is-filtered .tag-group li { padding: 9px 0; }
+body.is-filtered .tag-group li a { font-size: 15px; }
+
 /* ---------- 学习路线 ---------- */
 .road-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .road-card {

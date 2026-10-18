@@ -186,6 +186,8 @@ title: 分类
     wrap.hidden = false;
     // 单分类页：上方分类卡片整块让位
     if (home) { home.hidden = true; }
+    // 独立页撤掉卡片外框，文章直接铺排（见 .is-filtered 规则）
+    document.body.classList.add('is-filtered');
     if (h1) { h1.textContent = baseH1 + '：' + cat; }
     setDocTitle(baseH1 + '：' + cat);
     if (scroll && wrap.scrollIntoView) { wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
@@ -197,6 +199,7 @@ title: 分类
     panels.forEach(function (p) { p.hidden = true; });
     cards.forEach(function (c) { c.classList.remove('is-active'); });
     if (home) { home.hidden = false; }
+    document.body.classList.remove('is-filtered');
     if (h1) { h1.textContent = baseH1; }
     setDocTitle(baseH1);
     setUrl(null);

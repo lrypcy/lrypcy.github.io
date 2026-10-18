@@ -100,6 +100,8 @@ title: 标签
     // 单标签页：上方标签云整块让位，只留返回按钮 + 文章列表
     if (nav) { nav.hidden = !!g; }
     if (bar) { bar.hidden = !g; }
+    // 独立页撤掉卡片外框，文章直接铺排（见 .is-filtered 规则）
+    document.body.classList.toggle('is-filtered', !!g);
 
     if (g) {
       if (nameEl) { nameEl.textContent = tag; }
