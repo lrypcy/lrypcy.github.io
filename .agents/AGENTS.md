@@ -18,7 +18,7 @@
 
 | 文件 | 看什么 |
 | --- | --- |
-| `.agents/WRITING.md` | **写作规范**：骨架、语言视角、引用与源码锁定、元叙述不入正文、符号、实验数字、四步校验。动笔前读 |
+| `.agents/WRITING.md` | **写作规范**：骨架、语言视角、引用与源码锁定、元叙述不入正文、符号、实验数字、五步校验。动笔前读 |
 | `.agents/AGENTS.md`（本文件） | 工程约定：目录、代码示例归属、环境坑、提交门禁、红线 |
 | `.workbuddy/memory/topics/*.md` | 子系统与踩坑细节：`analytics`、`knowledge-graph`、`series-boundaries`、`writing-checks` |
 
@@ -41,7 +41,7 @@
 
 1. 写新长文：先读 `.workbuddy/memory/topics/series-boundaries.md`（系列边界 + 已核正事实）
 2. 写公式：先读 user-level skill `kramdown-math-render-fix`
-3. 写完：跑 `WRITING.md` §8 的四步校验，**全过才可提交**
+3. 写完：跑 `WRITING.md` §8 的五步校验，**全过才可提交**
 4. 改 `_data/knowledge_graph.yml` 或 `assets/js/kg-layout.js`：
    `node tools/kg_layout_check.mjs`（pre-commit 已挂，失败阻断提交）
 5. 改访问统计：跑 `node --test tools/analytics/test/*.test.mjs`（**必须带 glob**）+

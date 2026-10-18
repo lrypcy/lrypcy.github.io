@@ -9,7 +9,7 @@ mathjax: true
 excerpt: "FlexAttention 的全部内容可以压缩成一句话：把「五花八门的注意力变体」压平成「softmax 之前的一个逐点修正函数」，然后由编译器把它塞回手写 FlashAttention 模板里。本文把这句话拆开：为什么任意逐点 score_mod 能和 online softmax 的重标定循环共存、为什么 -inf 掩码必须单列成 mask_mod、BlockMask 是怎么把一份掩码压成两个索引向量的、反向传播是怎么用 AOTAutograd 的 joint graph 自动出来的、表达力边界上到底卡住了哪三类东西。配套 numpy 实验把六个变体的 online 与一次性计算比对到 1.776e-15，并把稀疏度损失、元数据字节数、页表索引转换这三笔账算成具体数字。"
 ---
 
-> **系列导航** ｜ 本系列承接 [编译器知识体系深度解析](/2026/08/25/compiler-01-lexing-parsing/)（torch.compile / Triton 工程三件套落在哪一层）与 [算子开发与优化](/2026/08/26/op-01-roofline/)（单算子为什么写成那样），把两者交界处补齐：**当一个「算子的变体空间」大到手写不完的时候，编译器该怎么介入**。
+> **系列导航** ｜ 本系列承接 [编译器知识体系深度解析](/2026/08/25/compiler-01-lexing-parsing/)（torch.compile / Triton 工程三件套落在哪一层）与 [算子开发与优化](/2026/09/03/op-01-hardware/)（单算子为什么写成那样），把两者交界处补齐：**当一个「算子的变体空间」大到手写不完的时候，编译器该怎么介入**。
 > 上一篇：无（系列首篇）｜ 下一篇：02 BlockMask 与稀疏度的工程实践——数据依赖稀疏、确定性与组合爆炸的另一半（待写）
 
 > **TL;DR**
@@ -137,7 +137,7 @@ FlexAttention 的回答不是「再写一个更强的注意力库」，而是**�
 <text x="534" y="256" font-size="10" fill="#166534">不材料化 N×N</text>
 <text x="534" y="268" font-size="10" fill="#166534">BlockMask 跳过整块</text>
 <text x="24" y="300" font-size="11.5" fill="#374151">论文 §1.1 的原话：</text>
-<text x="24" y="316" font-size="11.5" fill="#1e40af">"We introduce FlexAttention, a novel compiler-driven programming model that allows implementing the majority of attention variants in a few lines of idiomatic PyTorch code."</text>
+<text x="24" y="316" font-size="11.5" fill="#1e40af">“We introduce FlexAttention, a novel compiler-driven programming model that allows implementing the majority of attention variants in a few lines of idiomatic PyTorch code.”</text>
 <text x="24" y="332" font-size="10.5" fill="#6b7280">出处：arXiv:2412.05496（Dong, Feng, Guessous, Liang, He），2024-12-07</text>
 </svg>
 
@@ -202,7 +202,7 @@ def score_mod(score, b, h, q_idx, kv_idx):
 
 反过来，**标量**是会被烤进 kernel 的：2026 年的 FA4 博客明确写了
 
-> "However, scalars captured in `score_mod` or `mask_mod` are baked into the compiled kernel. If you have a `soft_cap` value that changes between calls, each unique value triggers a recompilation."
+> “However, scalars captured in `score_mod` or `mask_mod` are baked into the compiled kernel. If you have a `soft_cap` value that changes between calls, each unique value triggers a recompilation.”
 
 （[FlexAttention + FlashAttention-4: Fast and Flexible](https://pytorch.org/blog/flexattention-flashattention-4-fast-and-flexible/)，2026-03-05）
 
@@ -416,7 +416,7 @@ acc = acc / l_i[:, None]
 
 **理由一（语义）**：用 score_mod 表达掩码，需要在「打分 = 0」这个假输入上跑一遍用户的 score_mod，看它是否返回 $$-\infty$$。原文：
 
-> "However, this is hacky – what if the user's score_mod returned -inf when the input is 0? Or what if the user's score_mod masked out with a large negative value instead of -inf?"
+> “However, this is hacky – what if the user's score_mod returned -inf when the input is 0? Or what if the user's score_mod masked out with a large negative value instead of -inf?”
 
 （[PyTorch 博客 FAQ](https://pytorch.org/blog/flexattention/)）
 
@@ -601,7 +601,7 @@ mask_tensor = create_mask(mask_mod, B, H, Q_LEN, KV_LEN, device)   # :2063
 1. **跨 batch / head 广播**：`create_block_mask(mod, B=None, H=None, ...)`——绝大多数掩码（causal、滑窗）与 batch 和头无关，设成 `None` 直接省两个维度。
 2. **编译它**。FAQ 里原本写「`torch.compile` 因为一些限制不能直接作用在 `create_block_mask` 上，请用 `_compile=True`」，但**这个限制已经被修复了**——2.14.1 里 `_compile=True` 会先抛 `DeprecationWarning`（`:2040-2045`）：
 
-   > "_compile flag on create_block_mask was originally added to work around a torch.compile limitation. That limitation has since been addressed. So, to compile create_block_mask, we suggest doing torch.compile(create_block_mask)."
+   > “_compile flag on create_block_mask was originally added to work around a torch.compile limitation. That limitation has since been addressed. So, to compile create_block_mask, we suggest doing torch.compile(create_block_mask).”
 
 3. **自己写构造函数**。真的在意就别走 mask_mod，直接给出 `kv_num_blocks` 和 `kv_indices`——FAv2 之后这在 vLLM 里是常规操作（第 9 节）。
 
@@ -714,7 +714,7 @@ flex_attention_template = TritonTemplate(
 
 还有一个很实际的点：**如果忘了把它包进 torch.compile 会怎样**？源码会直接警告你（`nn/attention/flex_attention.py:2595-2605`）：
 
-> "flex_attention called without torch.compile() - this will use an unfused implementation that materializes the full scores matrix instead of generating a fused kernel."
+> “flex_attention called without torch.compile() - this will use an unfused implementation that materializes the full scores matrix instead of generating a fused kernel.”
 
 也就是说：**没配 compile 的 FlexAttention 会退化成「比 FlashAttention 还糟」的实现**——它真会把 $$N\times N$$ 分数矩阵材料化出来。这不是慢一半，是回到 2022 年之前。
 
@@ -831,9 +831,9 @@ joint_graph = make_fx(joint_f)(*unwrapped_score_mod_indexes, example_grad, *unwr
 
 官方给的成本数字是：**`create_block_mask` 端到端开销远低于 1%，序列长 $$S=32768$$ 时是 $$+0.2\%$$**（[PyTorch 2.13 release blog](https://pytorch.org/blog/pytorch-2-13-release-blog/)）。「几乎零成本的确定性」是这句数字的含义。
 
-值得注意的另一件事：**这个确定性是 Flash 后端专有的**——从源码的层叠可以看到 `(compute_dq_write_order)` 的 docstring 写的是 "precompute dQ write-order metadata needed by deterministic block-sparse FLASH backward"（`:1998-1999`）。而 FA4 博客的限制清单里也明确留着一条：
+值得注意的另一件事：**这个确定性是 Flash 后端专有的**——从源码的层叠可以看到 `(compute_dq_write_order)` 的 docstring 写的是 “precompute dQ write-order metadata needed by deterministic block-sparse FLASH backward”（`:1998-1999`）。而 FA4 博客的限制清单里也明确留着一条：
 
-> "**Deterministic backward with block-sparsity:** The Flash backend's backward pass is not yet deterministic when block-sparsity is enabled (score-mod-only workloads are deterministic)."
+> “**Deterministic backward with block-sparsity:** The Flash backend's backward pass is not yet deterministic when block-sparsity is enabled (score-mod-only workloads are deterministic).”
 
 ---
 
@@ -906,7 +906,7 @@ $$
 
 这一条不是 Flow 的边界，是当前的工程取舍。官方博客的原话：
 
-> "Also note that despite FlexAttention being able to express sparsity in attention, we currently do not support embedding sparsity directly into the kernel (i.e. actual sparsity)."
+> “Also note that despite FlexAttention being able to express sparsity in attention, we currently do not support embedding sparsity directly into the kernel (i.e. actual sparsity).”
 
 今天能做到的是**块级跳过**（一个块要么全算要么不算）。 $$BS=128$$ 时，一个块里只要有一个元素要算，$$128\times128=16384$$ 个 MAC 就得全部走完——第 5 节那张表里「元素密度 20.8% vs 块级密度 40.6%」就是这件事的直接后果。
 
@@ -1133,13 +1133,13 @@ block_mask_slice = block_mask[:, :, block_offset]     # 注意它切片后 mask_
 
 [PyTorch 官方博客](https://pytorch.org/blog/flexattention-flashattention-4-fast-and-flexible/)（Guessous, Stern, Hoehnerbach, Xie, Zadouri, Shah, Dao，2026-03-05）给出的信息密度极高，几条值得原文记住：
 
-> "In practice, this has proven true: dozens of papers cite FlexAttention, and over a thousand repos have adopted it."
+> “In practice, this has proven true: dozens of papers cite FlexAttention, and over a thousand repos have adopted it.”
 
-> "At the time of the original blog post, we compared against FlashAttention-3 (FA3) on Hopper GPUs and were roughly at 80% of its performance. If you measure this today, FlexAttention achieves roughly 60% of FlashAttention-3's throughput, despite improvements to both implementations!"
+> “At the time of the original blog post, we compared against FlashAttention-3 (FA3) on Hopper GPUs and were roughly at 80% of its performance. If you measure this today, FlexAttention achieves roughly 60% of FlashAttention-3's throughput, despite improvements to both implementations!”
 
 第二句是非常少见的自我揭短，而且它解释了为什么必须换后端：**两边都在改进，差距反而变大**（Blackwell 上 Triton 表达不了 warp-specialized 的深度流水）。作者把它概括为
 
-> "What was once a small gap has grown to a chasm!"
+> “What was once a small gap has grown to a chasm!”
 
 实现方式是把 FA4 用 CuTeDSL 重写并把用户的 score_mod 内联进去：
 
@@ -1232,7 +1232,7 @@ flex_flash = torch.compile(
 
 最后放一句官方在 2026 年自己说的话，它比任何宣传语都更能说明这个模型的位置：
 
-> "A common pattern emerges: researchers experiment with Flex, find something that works, then hit a wall when performance becomes critical. At the time of the original blog post, we compared against FlashAttention-3 (FA3) on Hopper GPUs and were roughly at 80% of its performance. If you measure this today, FlexAttention achieves roughly 60% of FlashAttention-3's throughput."
+> “A common pattern emerges: researchers experiment with Flex, find something that works, then hit a wall when performance becomes critical. At the time of the original blog post, we compared against FlashAttention-3 (FA3) on Hopper GPUs and were roughly at 80% of its performance. If you measure this today, FlexAttention achieves roughly 60% of FlashAttention-3's throughput.”
 
 FlexAttention 不是终点，它是「先让它跑起来、先别管它有多快」那一层。真正的价值在于：**当你终于要写那个 CUDA/Triton kernel 的时候，你已经确切知道你要写的是什么了。**
 
@@ -1275,5 +1275,5 @@ FlexAttention 不是终点，它是「先让它跑起来、先别管它有多快
 **本站配套**
 
 - [编译器知识体系深度解析（01）](/2026/08/25/compiler-01-lexing-parsing/) —— torch.compile / Triton 这套工程三件套落在编译原理的哪一层
-- [算子开发与优化（01）](/2026/08/26/op-01-roofline/) —— 为什么「先算 Roofline 上界」是写任何 kernel 之前的第一步
+- [算子开发与优化（01）](/2026/09/03/op-01-hardware/) —— 为什么「先算 Roofline 上界」是写任何 kernel 之前的第一步
 - 本实验：[`ipynbs` `experiments/flex-attention/flex_core/`](https://github.com/lrypcy/ipynbs/tree/5954fb521a279b997005a6f514144c3b380c8e36/experiments/flex-attention/flex_core/)（commit `5954fb5`，27 条断言全过）

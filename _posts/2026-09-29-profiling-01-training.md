@@ -10,7 +10,7 @@ mathjax: true
 
 > **系列导航** ｜ 工具总纲：[NV 卡性能剖析工具全景：从 nvidia-smi 到 Nsight Compute](/2026/08/26/nv-gpu-profiling-toolkit/) ｜ 本系列：[00 度量口径](/2026/09/29/profiling-00-metrics/) → **01 训练栈 profiling** → [02 推理服务 profiling](/2026/09/29/profiling-02-inference/)
 >
-> 上一篇做的是尺子：MFU / HFU 的分子分母、timer 的语义、goodput 的边界。这一篇用那把尺子回答栈级问题——**一次迭代的时间去哪了**。单 kernel 怎么分析已经由 [算子系列 op-04](/2026/09/03/op-04-case-gemm/) 讲过，这里只做聚合与归因。
+> 上一篇做的是尺子：MFU / HFU 的分子分母、timer 的语义、goodput 的边界。这一篇用那把尺子回答栈级问题——**一次迭代的时间去哪了**。单 kernel 怎么分析已经由 [算子系列 op-04](/2026/09/03/op-04-performance-analysis/) 讲过，这里只做聚合与归因。
 
 **TL;DR**
 

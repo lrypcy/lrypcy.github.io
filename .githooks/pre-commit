@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# pre-commit：提交前跑两道体检
+# pre-commit：提交前跑三道体检
 #   1. Liquid 冲突符号（tools/check_liquid.py）—— 有命中就一定阻断
 #   2. 首页知识图谱（tools/graph_sync.py + tools/kg_layout_check.mjs）
+#   3. 站内链接可解析性（tools/check_links.py）
 #
 # 行为：
 #   - 第 1 道对所有 md/html 生效：正文里任何裸 `{{` / `{%` 都会让 GitHub Pages
@@ -10,6 +11,8 @@
 #     进入暂存区时才跑，其他提交零开销
 #   - 第 2 道默认只提示、不阻断提交（写得再烂也能提交，WIP 不受影响）
 #   - GRAPH_SYNC_STRICT=1 时切换为严格模式：有必须处理项就阻断
+#   - 第 3 道同样只提示、不阻断（坏链不挡构建，挡阅读）；
+#     LINKS_STRICT=1 时切换为严格模式
 #   - 配置文件本身坏了（yml 解析失败 / 边指向不存在的系列）一定阻断
 #   - 布局体检（tools/kg_layout_check.mjs）发现节点重叠时也一定阻断——那是肉眼可见的坏
 #   - 临时跳过：git commit --no-verify
@@ -95,6 +98,27 @@ if command -v node >/dev/null 2>&1; then
   fi
 else
   echo "knowledge-graph: 未找到 node，跳过布局体检"
+fi
+
+# ---------- 第 3 道：站内链接可解析性 ----------
+# 四步校验管渲染与内容，管不了 404：`/2026/10/18-slug`（少一层斜杠）这类错
+# 会静默通过所有其他检查，只有线上点开才发现。只查暂存的 _posts/*.md。
+if [ -n "$PY_BASE" ]; then
+  staged_posts="$(git diff --cached --name-only --diff-filter=ACM \
+    | grep -E '^_posts/[^/]+\.md$' || true)"
+  if [ -n "$staged_posts" ]; then
+    echo "check_links: 检测到 $(printf '%s\n' "$staged_posts" | wc -l | tr -d ' ') 个暂存文章，检查站内链接…"
+    if ! "$PY_BASE" tools/check_links.py $staged_posts; then
+      echo ""
+      echo "  check_links: 以上链接解析不到真实文件（多半是日期写错或 slug 少一层斜杠）。"
+      echo "              默认不阻断；LINKS_STRICT=1 时阻断，或 git commit --no-verify 跳过。"
+      if [ "${LINKS_STRICT:-0}" = "1" ]; then
+        exit 1
+      fi
+    fi
+  fi
+else
+  echo "check_links: 未找到 python3，跳过链接体检"
 fi
 
 exit 0

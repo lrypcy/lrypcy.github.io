@@ -94,15 +94,20 @@ Deep-Dive 默认**单篇长文直进 `_posts/`**，不拆篇。
 写新文前先读 `.workbuddy/memory/topics/series-boundaries.md`：主线清单、各系列定位与边界、
 已核正事实。新文章一律承接既有主线，不另起炉灶。
 
-## 8. 写完必跑：四步校验
+## 8. 写完必跑：五步校验
 
 判据与踩坑细节见 `.workbuddy/memory/topics/writing-checks.md`，顺序固定：
 
 1. `python3 tools/check_post.py FILE` —— 公式 / 表格渲染
 2. `python3 tools/scan_garbled.py FILE` —— 乱码与伪词
-3. `python3 tools/fix_quotes.py` —— 半角引号转全角
+3. `python3 tools/fix_quotes.py FILE` —— 半角引号转全角（**注意：它是修复不是
+   dry-run，会直接改文件**；只想看报告就先 `git diff`）
 4. **回填一致性比对** —— 正文每个 ```text 块的数字与脚本输出按数字字面量比对
    （LaTeX 科学计数法与脚本 e 记法要先归一化；脚本改过必须重跑）。
    脚本出处：新增的在 `ipynbs` 的 `experiments/<topic>/<name>/`，存量的在本仓库 `tools/`
+5. `python3 tools/check_links.py FILE` —— 站内链接可解析性（`/YYYY/MM/DD/slug/`
+   必须对应真实 `_posts` 文件）。前四步管渲染与内容，管不了 404：
+   2026-10-18  serving/specdec 铺开时就出现过 `/2026/10/18-specdec-…`
+   （少一层斜杠）整批链接静默通过四步校验。不传参数扫全站。
 
-四步全过才可提交。
+五步全过才可提交。

@@ -9,7 +9,7 @@ mathjax: true
 excerpt: "FlexAttention 的数学在 01 那篇已经讲完，剩下的是工程：create_block_mask 内部真的会物化一份 Q×KV 的布尔张量（8×16×8192² 是 8192 MiB），每步还是每层重建掩码的阈值不到 2%，确定性 dQ 靠的是一张 rank 表把累加顺序钉死（按 rank 累加与串行累加逐位相等），块大小选错了滑窗掩码会多算 25% 的元素，以及上下文并行里 BlockMask 的 kv_num_blocks 直接就是负载均衡的代价模型（PTRR 把 causal 的不均衡从 1.875 压到 1.000）。配套 numpy 实验五组 19 条断言。"
 ---
 
-> **系列导航** ｜ 本系列承接 [编译器知识体系深度解析](/2026/08/25/compiler-01-lexing-parsing/) 与 [算子开发与优化](/2026/08/26/op-01-roofline/)，讲编译器与算子的交界。
+> **系列导航** ｜ 本系列承接 [编译器知识体系深度解析](/2026/08/25/compiler-01-lexing-parsing/) 与 [算子开发与优化](/2026/09/03/op-01-hardware/)，讲编译器与算子的交界。
 > 上一篇：[FlexAttention（01）：把注意力变体编译成一个 FlashAttention 内核](/2026/10/17/flex-attention-01-programming-model/)（online softmax 为什么能吃下任意逐点修正）｜ 下一篇：03 torch.compile 与后端调度（autotune、max-autotune、CUDA graph、重编译治理）（待写）
 
 > **TL;DR**
@@ -102,7 +102,7 @@ if H is None:
 
 所以 **`B=None, H=None` 的收益不是在元数据上（元数据本来就广播），而是在这份中间张量上**。这解释了官方 FAQ 那句话的真正含义：
 
-> "create_block_mask is unfortunately fairly expensive, both from a memory and compute perspective, as determining whether a block is completely sparse requires evaluating mask_mod at **every single point in the block**."
+> “create_block_mask is unfortunately fairly expensive, both from a memory and compute perspective, as determining whether a block is completely sparse requires evaluating mask_mod at **every single point in the block**.”
 
 （[PyTorch 博客 FAQ](https://pytorch.org/blog/flexattention/)）
 
@@ -184,7 +184,7 @@ $$BS$$ 从 64 提到 1024（16×）→ 元数据降 **249×**（差在 $$n_b$$ �
 
 **② 编译它**。FAQ 原文写的是「`torch.compile` 因为一些限制不能直接作用在 `create_block_mask` 上，请用 `_compile=True`」。**这个限制已经被修复了**——2.14.1 里 `_compile=True` 会先抛 `DeprecationWarning`（`:2040-2045`）：
 
-> "_compile flag on create_block_mask was originally added to work around a torch.compile limitation. That limitation has since been addressed. So, to compile create_block_mask, we suggest doing torch.compile(create_block_mask)."
+> “_compile flag on create_block_mask was originally added to work around a torch.compile limitation. That limitation has since been addressed. So, to compile create_block_mask, we suggest doing torch.compile(create_block_mask).”
 
 真实系统已经在用新写法了（vLLM `db9527a4`：`:55-57`）：
 
@@ -295,7 +295,7 @@ $$D=64$$、$$\kappa=4$$ 时阈值是 **1.562%**——也就是说**只要掩码�
 <text x="34" y="166" font-size="10.5" fill="#7c2d12">但即便如此，FLOPs 口径下仍然划算：净收益 = 跳过比例 − κ/(4D) = 46.9% − 1.562% = +45.3%（causal）。</text>
 <text x="34" y="184" font-size="10.5" fill="#7c2d12">真正让 ③ 变难的是另外三笔：每层一次 GB 级 bool 峰值 · 每层一串独立 kernel · 形状一变就重编译。</text>
 
-<text x="24" y="210" font-size="10.5" fill="#374151">官方原话："This is the hardest setting, since we're unable to amortize the block mask computation across multiple FlexAttention invocations."</text>
+<text x="24" y="210" font-size="10.5" fill="#374151">官方原话：“This is the hardest setting, since we're unable to amortize the block mask computation across multiple FlexAttention invocations.”</text>
 </svg>
 
 ---
@@ -423,7 +423,7 @@ block_mask = create_block_mask(
 2. **需要 `q_num_blocks` / `q_indices`**，否则直接报错（`:1902-1905`）——而这两个是 `BlockMask` 自动生成或由调用方提供的。
 3. **FA4 后端在块稀疏下还没做**：
 
-   > "**Deterministic backward with block-sparsity:** The Flash backend's backward pass is not yet deterministic when block-sparsity is enabled (score-mod-only workloads are deterministic)."
+   > “**Deterministic backward with block-sparsity:** The Flash backend's backward pass is not yet deterministic when block-sparsity is enabled (score-mod-only workloads are deterministic).”
 
    （[FlexAttention + FlashAttention-4](https://pytorch.org/blog/flexattention-flashattention-4-fast-and-flexible/)）
 
@@ -581,7 +581,7 @@ pw_of_two = V.graph.sizevars.guard_or_false(
 
 注意源码里那句注释（`:75-83`），它把设计意图说得很清楚：
 
-> "Decode eligibility is an optimization choice, not a user-visible contract... We also do NOT use guard_or_true: an unknown predicate should disable decode, not silently enable it."
+> “Decode eligibility is an optimization choice, not a user-visible contract... We also do NOT use guard_or_true: an unknown predicate should disable decode, not silently enable it.”
 
 **判不出来就退回通用 kernel，绝不为了启用 decode 而给用户强加运行时约束。**
 
@@ -605,7 +605,7 @@ if Q_LEN % (device_mesh.size() * _DEFAULT_SPARSE_BLOCK_SIZE) != 0:
 
 docstring 解释了为什么（`:1222-1228`）：
 
-> "Currently requires Q_LEN to be divisible by CP mesh world size * BLOCK_SIZE (BLOCK_SIZE defaults to 128). This constraint exists because the BlockMask must handle both padding and offsets correctly. For example, if Q_LEN is 384, CP world size is 2, and BLOCK_SIZE is 128, the local Q_LEN would be 192. In such cases, both rank0 and rank1 would have paddings in their local BlockMasks. Support for padding in this scenario is planned for future work."
+> “Currently requires Q_LEN to be divisible by CP mesh world size * BLOCK_SIZE (BLOCK_SIZE defaults to 128). This constraint exists because the BlockMask must handle both padding and offsets correctly. For example, if Q_LEN is 384, CP world size is 2, and BLOCK_SIZE is 128, the local Q_LEN would be 192. In such cases, both rank0 and rank1 would have paddings in their local BlockMasks. Support for padding in this scenario is planned for future work.”
 
 **原因**：local → global 的索引换算发生在**块粒度**，不是 token 粒度。看 `_rewrite_mask_mod` 里的换算（`:1275-1284`）：
 
@@ -667,7 +667,7 @@ PyTorch 为此准备了三个负载均衡器（`torch/distributed/tensor/experim
 
 第三个的 docstring 是本节最关键的一句话（`:301-304`）：
 
-> "Processing-Time based Round-Robin (PTRR) load balancer. This load balancer should **only be used for flex_attention()** since it leverages `BlockMask`."
+> “Processing-Time based Round-Robin (PTRR) load balancer. This load balancer should **only be used for flex_attention()** since it leverages `BlockMask`.”
 
 它「leverage」的是什么？看 `_generate_indices`（`:435-442`）：
 

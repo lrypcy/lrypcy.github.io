@@ -13,7 +13,7 @@ mathjax: true
 >
 > 前置：[00 地基](/2026/09/28/megatron-00-foundation/)（代码地图 / 配置系统 / 控制流）｜ [01 进程组](/2026/10/08/megatron-01-process-groups-and-comm-overlap/)（组怎么建、怎么选、stream 流派）｜ [02 专家并行](/2026/10/08/megatron-02-expert-parallel/)｜ [03 张量并行与序列并行](/2026/10/09/megatron-03-tensor-parallel-and-sequence-parallel/)｜ [04 GTP](/2026/10/11/megatron-04-generalized-tensor-parallelism/)｜ [05 数据并行与优化器](/2026/10/10/megatron-05-data-parallel-and-optimizers/)｜ [08 显存账本](/2026/10/12/megatron-08-memory-ledger/)｜ [14 模块规格与层栈](/2026/10/12/megatron-14-module-spec-and-layer-stack/)｜ [15 GPT/LLaMA 装配](/2026/10/13/megatron-15-gpt-and-llama-model-assembly/)｜ [16 Hybrid 与 MoE 装配](/2026/10/14/megatron-16-hybrid-and-moe-model-assembly/)｜ [09 低精度 FP8/FP4](/2026/10/15/megatron-09-low-precision-fp8-fp4/)
 >
-> 原理层：[分布式训练（04）流水并行](/2026/08/31/dist-train-04-pipeline-parallel/)（1F1B 方块图与气泡推导）｜ [分布式训练（05）调度器](/2026/09/01/dist-train-05-schedulers/)
+> 原理层：[分布式训练（04）流水并行](/2026/08/31/dist-train-04-pipeline-parallel/)（1F1B 方块图与气泡推导）
 >
 > 本系列做**源码层**：并行原理已在《分布式训练》系列讲透，这里一律引用不重推。源码基准 **`megatron-core` 0.20.0**，commit `60e039626`。
 >
