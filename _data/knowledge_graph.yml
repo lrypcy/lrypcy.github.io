@@ -41,6 +41,10 @@ categories:
     icon: "🖥️"
     color: "#0d9488"
     desc: 给 AI 编译器工程师的芯片课：从晶体管到 Tensor Core、脉动阵列与互连
+  - name: 集群与容错
+    icon: "🛡"
+    color: "#b91c1c"
+    desc: checkpoint 成本模型、故障恢复、调度语义与多租户隔离
   - name: 数据与存储
     icon: "📦"
     color: "#0369a1"
@@ -107,6 +111,15 @@ series:
     order: 2
     prefixes: [op-]
     desc: 14 讲。Roofline 上界预判 → 硬件执行模型 → CUDA/Triton/Ascend C → Profiling 工具链 → 优化技术体系 → GEMM/Attention/卷积案例 → 国产 NPU 与编译器集成。
+
+  - id: fault-tolerance
+    name: 集群与容错
+    short: 集群与容错
+    category: 集群与容错
+    layer: 0
+    order: 7
+    prefixes: [cluster-fault-tolerance-]
+    desc: 多讲。01 checkpoint 成本模型（写开销与重算开销的对抗、闭式最优、异步写与分层检查点、周期性故障的最坏相位）→ 待写：调度语义与 gang scheduling、多租户隔离、弹性训练的重配成本。
 
   - id: data-pipeline
     name: 数据 pipeline
@@ -368,6 +381,7 @@ links:
   - { from: chip,      to: compiler,   label: ISA 与内存层次是后端代码生成的靶子 }
   - { from: chip,      to: dist-train, label: NVLink/RDMA 拓扑决定通信上界 }
   - { from: data-pipeline, to: dist-train, label: 数据切分与加载是数据并行的前置 }
+  - { from: dist-train, to: fault-tolerance, label: 故障恢复建立在并行策略之上 }
   - { from: compiler,  to: op,         label: torch.compile / Triton 生成 Kernel }
   - { from: op,        to: dist-train, label: 通信与融合 Kernel }
   - { from: compiler,  to: dist-train, label: 图切分与并行 Pass }

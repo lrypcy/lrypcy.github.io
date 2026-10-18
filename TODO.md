@@ -101,19 +101,28 @@
 
 ---
 
-## 4. 数据 pipeline 与存储 I/O ⬜
+## 4. 数据 pipeline 与存储 I/O 🟨
 
 > **2026-10-18 核实**：站内真空白。`dataloader` / `数据加载` / `并行文件系统` / `对象存储` /
 > `Lustre` / `GPFS` / `Ceph` 全站零命中。153 篇里没有一个字讲数据怎么进 GPU。
+> **第 01 篇已交付**（commit `c035035`）：`_posts/2026-10-18-data-pipeline-01-loader-and-sharding.md`，
+> 538 行，配套 lab 在 ipynbs `experiments/data-pipeline/`（两个纯 CPU numpy 实验）。
+> 新分类「数据与存储」+ 系列 `data-pipeline` 已入 `_data/knowledge_graph.yml`。
 
 **核心问题**：训练侧的「喂料」瓶颈 —— 为什么 GPU 在等数据，以及存储这一层能做什么。
 
 **待查证的子问题**
 
-- [ ] 加载流水线：读盘 / 解码 / tokenize / batch 组装的时间线在哪一段断？
+- [x] 加载流水线：读盘 / 解码 / tokenize / batch 组装的时间线在哪一段断？
       DataLoader worker 数与 pinned memory 的真实收益曲线（可跑 CPU 实验）
-- [ ] 数据格式：webdataset / mds / arrow / parquet 的随机访问代价差异；
-      shuffling 与全局 batch 的语义（分布式下谁负责 shuffle、seed 怎么同步）
+      —— **已在 01 篇做完**。结论：worker 数收益是阶跃的，越过 $$L/T_s \ge B/T_g$$ 后归零；
+      prefetch 深度在几乎所有配置下无影响，起作用的是生产盈余 $$\alpha$$
+      （1.00 → 1.25 就把损失从 2.5% 压到 0）。
+- [x] 数据切分语义：分布式下谁负责 shuffle、seed 怎么同步 —— **已在 01 篇做完**
+      （四种策略的正确性 + 分布偏斜 + shard 是 cluster）。核心发现：真正的病不是重复/遗漏
+      而是每个 rank 的类别分布偏斜，TV 是随机分配的 12 倍，且常规指标查不出来。
+- [ ] 数据格式：webdataset / mds / arrow / parquet 的随机访问代价差异
+      —— **未做**，是 02 篇的主候选。
 - [ ] 存储层：并行文件系统（Lustre / GPFS）与对象存储（S3）在吞吐、元数据、成本上的分野；
       本地 NVMe 缓存层（Alluxio / JuiceFS）放在哪一级
 - [ ] 与训练的耦合：checkpoint 写与数据读争抢同一条 I/O 路径时会发生什么；
@@ -123,12 +132,13 @@
 **参考线索**
 
 - 站内可接：`2026-09-29-profiling-01-training`（迭代时间线里已经能看到 dataloader 空档，但没展开）
-- 可跑实验：**这条最容易做真实验** —— 单机上用 numpy 合成数据，扫 worker 数 / 批大小 /
-  文件格式，量吞吐与 GPU 等待占比，做「构造真值 ↔ 反算值」自校验
+- **写 02 篇前先想清楚怎么突破 01 篇的模型边界**：01 篇的 prefetch 结论明确限定在
+  「worker 连续生产、无 batch 边界、无 IPC 开销」的模型内。真实 DataLoader 的 prefetch
+  还负责隐藏跨进程传 batch 张量的延迟，突破不了这个边界就别重复 01 篇。
 - 待查：PyTorch DataLoader 源码锁 commit；webdataset / litdata 的实现取舍
 
-**产出**：先跑 pilot 实验拿到「不同 worker 数下的加载吞吐曲线」，有数字就写成单篇，
-companion lab 放 ipynbs 仓库 `experiments/data-pipeline/`。
+**产出**：02 篇聚焦「存储层 + 格式随机访问代价」，需先做格式扫描的 pilot 实验
+（纯 CPU 可跑：扫 shard 大小 / 格式 / 随机访问模式，量读放大与吞吐）。
 
 ---
 
