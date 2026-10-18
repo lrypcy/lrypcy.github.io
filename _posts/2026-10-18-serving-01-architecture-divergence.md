@@ -561,7 +561,7 @@ vLLM 有 SGLang 没有的 EngineCore 故障隔离与更广的 attention backend 
 
 **上一篇**：本篇为推理引擎系列开篇
 
-**下一篇**：推理引擎（02）：调度与批处理 —— 把 prefill 切碎塞进 decode 的空隙（待发布）
+**下一篇**：[推理引擎（02）：调度与批处理 —— 把 prefill 切碎塞进 decode 的空隙](/2026/10/18/serving-02-scheduling-and-batching/)
 
 **站内承接**：指标口径（TTFT / TPOT / 吞吐 / goodput 的分子分母与并发扫描）见
 [《性能分析（02）：推理》](/2026/09/29/profiling-02-inference/)；

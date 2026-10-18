@@ -64,11 +64,15 @@
 
 ---
 
-## 3. 集群调度、故障恢复与弹性训练 ⬜
+## 3. 集群调度、故障恢复与弹性训练 🟨
 
 > **2026-10-18 核实**：站内真空白。`kubernetes` / `k8s` / `多租户` / `弹性训练` / `Lustre` 全站零命中，
 > `slurm` 只在 `megatron-12` 里提过一次。这是目前缺口里最大的一块。
 
+> **第 01 篇已交付**（commit `7e3d112`）：`_posts/2026-10-18-cluster-fault-tolerance-01-checkpoint-cost.md`
+> （368 行），配套 lab 在 ipynbs `experiments/cluster-scheduling/03-checkpoint-cost-model/`。
+> 新分类「集群与容错」+ 系列 `fault-tolerance` 已入 `_data/knowledge_graph.yml`。
+> **本篇只覆盖 checkpoint 成本模型**，调度语义 / 多租户 / 弹性训练均未动（见下方子问题）。
 **核心问题**：一个千卡训练任务从提交到跑完，集群这一层到底做了什么？失败之后怎么续？
 
 **待查证的子问题**
@@ -79,7 +83,9 @@
       分配错了代价是多少（和 `dist-train-07` §3 的 NCCL 分段带宽模型接上）
 - [ ] 故障恢复：故障检测（hang 判定、NCCL watchdog）→ 隔离（drain / cordon）→ 恢复（重启 vs 热替换）
       三段的时延分布；重试次数与训练步损失的关系
-- [ ] checkpoint 策略：写频次的成本模型（写一次耗时 vs 平均故障间隔 × 重算步数），
+- [x] checkpoint 策略：写频次的成本模型 —— **已在 01 篇做完**（闭式最优 $$I^\* = \sqrt{2wM}$$，
+      写开销与重算开销在最优处相等；异步写压低 $$w$$、分层检查点把重算上限降到 $$i/2$$；
+      周期故障最坏相位损失翻倍）。
       异步写 / 分层写（显存 → host → 并行 FS）的取舍。**注意**：`megatron-12` 的变更史第 9 条记着
       `dist_checkpointing/` 未展开且未分配编号 —— 那是 Megatron 源码向，本文是集群策略向，别合并
 - [ ] 弹性训练：resize 世界大小时，优化器状态 / 数据分片 / LR 怎么重配？
