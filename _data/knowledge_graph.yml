@@ -76,7 +76,7 @@ categories:
   - name: 系统实现
     icon: "🔬"
     color: "#475569"
-    desc: 框架内部实现的源码级走读：采样的 fast path、logprob 的五条路径与确定性复现
+    desc: 框架内部实现的源码级走读：采样的 fast path、logprob 的五条路径与确定性复现，以及 Python 字节码 / Frame 与 Dynamo 图捕获
   - name: 深度学习
     icon: "🧠"
     color: "#0284c7"
@@ -376,6 +376,15 @@ series:
     prefixes: [pytorch-sampling-internals]
     desc: 1 篇长文。`torch.multinomial` 的 fast path 如何吃掉两种用法 → LLM 采样栈的 logits 塑形 → 投机解码里采样正确性变成一道数学题 → logprob 的五条路径为什么给出不同的数 → RL 里采样器与打分器的口径必须对齐 → 重参数化与 Gumbel-Softmax → VLA 的连续动作 → RNG 与确定性复现。回答「同一个 logprob，为什么五个地方算出来不一样」。
 
+  - id: python-runtime
+    name: Python 运行时与图捕获
+    short: Python 运行时
+    category: 系统实现
+    layer: 2
+    order: 9
+    prefixes: [python-runtime-]
+    desc: 1 篇长文。编译流水线（源码 → AST → 符号表 → Code Object → 字节码）→ 编译期作用域分类如何决定运行时的 LOAD_FAST / LOAD_GLOBAL / LOAD_DEREF / LOAD_NAME → 编译期常量折叠与运行时自适应专门化（PEP 659）的分野 → Code Object 静态复用与 Frame 动态独立 → 求值栈与生成器 frame 的保留 → PEP 523 的 Frame Evaluation Hook 与 sys.settrace / sys.monitoring 的能力边界 → TorchDynamo 的字节码符号执行、FX Graph、Graph Break 与 Guard。回答「torch.compile 是从哪里拿到它要编译的东西的」。
+
 links:
   - { from: chip,      to: op,         label: 存储层次与执行模型决定 Kernel 怎么写 }
   - { from: chip,      to: compiler,   label: ISA 与内存层次是后端代码生成的靶子 }
@@ -425,6 +434,8 @@ links:
   - { from: serving,   to: specdec,        label: 投机解码是引擎的一个子系统，脱离引擎谈它没有意义 }
   - { from: sampling,  to: specdec,        label: 拒绝采样的无偏性是投机解码正确性的那道门 }
   - { from: sampling,  to: serving,        label: 采样与 logprob 口径贯穿引擎的解码路径 }
+  - { from: compiler,  to: python-runtime, label: torch.compile 的前端建立在 Python 执行机制之上 }
+  - { from: python-runtime, to: serving,   label: 引擎侧 torch.compile 能不能开取决于图捕获稳不稳定 }
 
 paths:
   - name: AI Infra 工程师主线

@@ -38,9 +38,15 @@ ALLOWED_SYMBOLS = set(
 KNOWN_GARBLED = [
     "Sector", "danshai", "Lyndonvious", "iskeymic", "ischemic",
     "tungsten", "mantle", "buildsi", "rookeeper", "handover",
-    "param sewer", "Casa de Papel", "those knobs", "FRAME",
+    "param sewer", "Casa de Papel", "those knobs",
     "Pursuit", "opiremental", "radio ", "科技企业识别",
 ]
+
+# 大小写敏感的伪词：只在**完全按此大小写出现**时才报警。
+# FRAME 当初入库是因为 OCR 把正文里的词误认成全大写的 "FRAME"；
+# 但 CPython 语境下 "Frame" / "frame object" / "PyFrameObject" 是标准术语，
+# 大小写不敏感匹配会把它们（以及 framework）全误报，所以单独拎出来。
+KNOWN_GARBLED_CS = ["FRAME"]
 
 
 def check_unicode(text):
@@ -84,8 +90,10 @@ def check_known(text):
     纯 ASCII 单词用词边界匹配，避免子串误报——例如黑名单里的 'FRAME'
     会把正常词 'framework' 全部命中。含空格或非 ASCII 的条目按子串匹配。
     """
-    low = text.lower()
     hits = []
+
+    # 大小写不敏感：纯 ASCII 单词走词边界，含空格 / 非 ASCII 的走子串
+    low = text.lower()
     for w in KNOWN_GARBLED:
         lw = w.lower()
         if re.fullmatch(r"[a-z0-9]+", lw):
@@ -93,6 +101,15 @@ def check_known(text):
                 hits.append(w)
         elif lw in low:
             hits.append(w)
+
+    # 大小写敏感：必须原样出现才算
+    for w in KNOWN_GARBLED_CS:
+        if re.fullmatch(r"[a-zA-Z0-9]+", w):
+            if re.search(r"\b%s\b" % re.escape(w), text):
+                hits.append(w)
+        elif w in text:
+            hits.append(w)
+
     return hits
 
 
