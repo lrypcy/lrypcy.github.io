@@ -24,7 +24,7 @@ excerpt: "torch.compile() 为什么能在不动模型源码的前提下把 Pytho
 > - Guard 分两层：Python 侧的 `code_list`（`torch` 模块 id、`torch.relu` 函数 id 等）与 C++ 侧的 `TENSOR_MATCH`（形状 / dtype / stride / device 根本不进 Python code）。两个 Tensor 输入的一次最简编译就有 11 条 guard。
 > - **自动动态形状只救得了形状，救不了 dtype**：4 个不同 batch 依次调用，默认编译 2 次、关掉自动动态编译 4 次、显式 `mark_dynamic` 后 1 次；而 f32 → f64 → f32 是 2 次。
 
-配套实验：[`ipynbs` commit `1244c33`](https://github.com/lrypcy/ipynbs/tree/1244c3353edab366036587a72df924aea0ef3190/experiments/pytorch-runtime/dynamo-frame-capture/) 下的 `dynamo-frame-capture/`，纯 CPU、固定 seed `20261019`、无网络，66 条断言全过；本文所有「实测」数字都来自它的输出（[`results/`](https://github.com/lrypcy/ipynbs/tree/1244c3353edab366036587a72df924aea0ef3190/experiments/pytorch-runtime/dynamo-frame-capture/results/)）。
+配套实验：[`ipynbs` commit `9087af2`](https://github.com/lrypcy/ipynbs/tree/9087af2277089223696d6ad4a2cd9ee56eab2c8a/experiments/pytorch-runtime/dynamo-frame-capture/) 下的 `dynamo-frame-capture/`，纯 CPU、固定 seed `20261019`、无网络，66 条断言全过。两个 notebook 都**内嵌了输出**，点开就能看到每组跑了什么、跑出什么：[`runtime_lab.ipynb`](https://github.com/lrypcy/ipynbs/blob/9087af2277089223696d6ad4a2cd9ee56eab2c8a/experiments/pytorch-runtime/dynamo-frame-capture/runtime_lab.ipynb)（G1–G6，只用标准库）与 [`dynamo_lab.ipynb`](https://github.com/lrypcy/ipynbs/blob/9087af2277089223696d6ad4a2cd9ee56eab2c8a/experiments/pytorch-runtime/dynamo-frame-capture/dynamo_lab.ipynb)（G7–G9，需要 torch CPU）。本文所有「实测」数字都来自它们的输出（[`results/`](https://github.com/lrypcy/ipynbs/tree/9087af2277089223696d6ad4a2cd9ee56eab2c8a/experiments/pytorch-runtime/dynamo-frame-capture/results/)）。
 
 ---
 
