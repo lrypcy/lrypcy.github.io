@@ -53,10 +53,16 @@
 （路径见那份清单里 `ipynbs` 一行）。**新写的随文实验脚本与代码示例一律放 `ipynbs`，
 不再写进本仓库 `tools/`。**
 
-- **随文实验脚本** → `ipynbs` 的 `experiments/<topic>/<name>/`，结构沿用该仓库既有约定：
-  `<name>.ipynb` 或 `<name>.py` + `README.md` + `results/`（输出固化，读者不必自己跑）。
+- **随文实验** → `ipynbs` 的 `experiments/<topic>/<name>/`，结构沿用该仓库既有约定：
+  **`README.md` + 已跑出输出的 `<name>.ipynb` + `results/`**（输出固化，读者不必自己跑）。
   README 写清**对应文章（带链接）+ 如何运行 + 结论**
-- **可独立运行 / 可交互的示例** → 同上，notebook 形态优先（遵守该仓库自己的开发规范）
+- **一律 notebook 优先**（用户 2026-10-19 明确要求）。理由：notebook 的代码与输出并排，
+  读者点开 GitHub 就能看到「跑了什么、跑出什么」，正文引用的是**可见的结果**而不是
+  一个要他自己执行的脚本。只有确实不适合 notebook 形态时才退成 `.py`
+  （例如需要 `sys.argv` 分组、要挂 CI 静默跑、或被沙箱 SIGTERM 掐断的长脚本）；
+  退成 `.py` 时也要在 `results/` 里留一份固化输出。
+- notebook 里每个分组仍要能独立复现：固定 seed、纯 CPU、**每组末尾带断言**（自校验），
+  并在最后一个 cell 里把断言总数打出来，好和 README / 正文对账
 - 改完 **push 到 GitHub**，然后在本文仓库**引用**：正文给 permalink（锁 commit，
   见 `WRITING.md` §3）。不要把大 notebook 拷进本站仓库
 - 本仓库 `tools/` 只剩**校验脚本 + Cloudflare 访问统计后端**；已存在的实验脚本
