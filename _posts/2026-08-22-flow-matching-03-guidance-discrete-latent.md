@@ -8,7 +8,7 @@ layout: post
 mathjax: true
 ---
 
-> **系列导航** ｜ [建模之一：从概率路径到边际向量场](/2026/08/22/flow-matching-01-algorithm-evolution/) ｜ [建模之二：score、扩散与 SDE 扩展](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [应用篇：工业落地](/2026/08/22/flow-matching-04-applications/)
+> **系列导航** ｜ [原理详解：讲到能自己推](/2026/10/20/flow-matching-00-principles/) ｜ [建模之一：从概率路径到边际向量场](/2026/08/22/flow-matching-01-algorithm-evolution/) ｜ [建模之二：score、扩散与 SDE 扩展](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [应用篇：工业落地](/2026/08/22/flow-matching-04-applications/)
 
 > **TL;DR**
 >
