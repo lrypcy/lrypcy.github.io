@@ -1,5 +1,5 @@
 ---
-title: "从概率路径到 Flow Matching：用一套数学框架理解现代扩散模型——从连续性方程、条件流匹配，到 Score、SDE 与 Classifier-Free Guidance 的完整推导"
+title: "从概率路径到 Flow Matching：用一套数学框架理解现代扩散模型——连续性方程、条件流匹配、Score 与 SDE、Classifier-Free Guidance"
 date: 2026-10-20 22:00:00 +0800
 categories:
   - 生成模型
@@ -841,6 +841,8 @@ $$
 
 这条恒等式解释了为什么我们能够使用简单、可采样的条件目标，去学习一个本身难以直接计算的边际速度场。
 
+> 🧪 **数值核验**（配套 [notebook C 组](https://github.com/lrypcy/ipynbs/blob/0373dc6bc687065693a1ff7b2416b39231d4cab7/experiments/flow_matching/fm-principles/fm_principles.ipynb)）：取 $$p_{\mathrm{data}}$$ 为有限个原子的加权混合，整条链路（$$p_t$$、$$u_t$$、$$\nabla\log p_t$$）就有解析闭式，$$\mathcal L_{\mathrm{FM}}-\mathcal L_{\mathrm{CFM}}$$ 可以不加任何数值差分地算到机器精度——确定性求积下，这个差跨整个参数网格的相对跨度只有 $$9.86\times10^{-13}$$（$$t=0.8$$，常数本身已小到 $$1.8\times10^{-3}$$）。但**不能用蒙特卡洛验**：$$t\to1$$ 时边际场含 $$1/(1-t)$$ 因子、常数 $$C$$ 接近 0，MC 估计量的散布比被测量还大几个数量级——$$t=0.9$$ 处相对散布达 $$3509\%$$，样本量加大十倍反而升至 $$47967\%$$，信号被完全淹掉。
+
 ### 5.6 为什么训练不需要解 ODE？
 
 以线性插值路径为例：
@@ -1037,6 +1039,8 @@ $$
 
 因此，Flow Matching 和 Score-Based Diffusion 在这种路径下并不是两套互不相关的数学体系，而是可以通过不同的参数化方式描述相同的分布演化。
 
+> 🧪 **数值核验**（notebook A 组）：把这条恒等式放到 5 条不同路径（三种 OT、三角、多项式）上逐点核对，条件场反解、Prop 1、denoiser 反解三条恒等式的最大误差全部落在 $$4.90\times10^{-14}$$ 以内，且与路径选择无关。
+
 ### 6.4 四种常见参数化：Velocity、Score、Denoiser 和 Noise
 
 除了 Velocity 与 Score，实际模型还经常预测干净样本或噪声。
@@ -1120,6 +1124,8 @@ $$
 在现代生成模型中，Velocity Prediction 受到广泛关注，一个重要原因正是它在某些常用路径下具有简洁的目标形式，并且能避免部分噪声预测参数化在特定时间区间中的误差放大问题。
 
 不过，这不是一个适用于所有路径和所有模型的绝对结论。具体表现仍取决于路径设计、时间采样、损失权重、网络预条件化以及采样算法。
+
+> 🧪 **数值核验**（notebook D / G 组）：恒等式层面，四种参数化来回换算的误差只有 $$2.84\times10^{-14}$$；但训练层面的代价是真实的——把 velocity 网络当 score 用（$$s=v/b$$，即丢掉 $$b_tx$$ 项）时，$$t=0.05$$ 处误差被放大 903.5 倍。端到端手训两个头看到同一件事：换算回 velocity 后，$$\epsilon$$ 头在 $$t=0.05$$ 处的 RMSE 是 velocity 头的 12.13 倍（$$t\ge0.5$$ 后两者接近）——差别不在表达力，在 $$\epsilon\to u$$ 换算里那个 $$1/\alpha_t$$。
 
 ---
 
@@ -1302,6 +1308,8 @@ $$
 注意这里的关键不是“随机噪声不会影响样本”，而是：**噪声确实改变了单条轨迹，但通过对漂移项进行相应修正，可以让整个随机群体保持相同的边际分布演化。**
 
 这为理解概率流 ODE、扩散模型采样以及随机性调节提供了统一的数学解释。
+
+> 🧪 **数值核验**（notebook B / E 组）：直接在 Fokker–Planck 方程上核对——同一个 $$u_t$$ 裸配噪声，$$\sigma=0.8$$ 时残差高达 $$2.43$$，补上 $$\tfrac{\sigma^2}{2}\nabla\log p_t$$ 后回到 $$5.36\times10^{-14}$$（$$\sigma=2$$ 时则是 $$1.52\times10^{1}$$ 对 $$2.64\times10^{-13}$$）。分布不变性同样可验：$$\sigma\in[0,1]$$ 四档终点 W1 极差 $$0.0196$$，与两组独立采样的噪底 $$0.0151$$ 同量级；而 $$\sigma=2$$ 时 W1 劣化到 $$0.1291$$——不是理论失效，是 Euler–Maruyama 的步长已经不够，模拟误差压过了理论不变性。
 
 ### 7.5 为什么随机项不能随意添加？
 
@@ -1499,6 +1507,8 @@ $$
 这里的结论需要一个重要限定：上述分布解释建立在精确 Score 以及相应条件关系之上。真实神经网络存在估计误差，实际离散采样也会引入数值误差，因此 CFG 的实际生成分布未必严格等于上述倾斜分布。
 
 这也是为什么 CFG 更适合被理解为一种有效的引导启发式，而不是对原始条件分布进行无偏采样的保证。
+
+> 🧪 **数值核验**（notebook F 组）：两条恒等式在整条网格上逐点成立——Bayes 分解出的引导场恒等式误差 $$\le1.15\times10^{-14}$$，CFG 组合式与 classifier guidance 放大式的等价误差 $$\le8.26\times10^{-14}$$；由倾斜分布 $$\tilde p_t$$ 重构的速度场与 CFG 场的误差 $$\le8.17\times10^{-14}$$（$$w$$ 从 1 到 8）。同一实验推 ODE 看终点：$$w$$ 从 1 到 8，终点落在 $$y=1$$ 区域的占比从 0.499 单调升到 0.956——锐化是真实的，多样性的代价也是真实的。
 
 ---
 
@@ -1713,6 +1723,12 @@ $$
     Peter Holderrieth and Ezra Erives, *An Introduction to Flow Matching and Diffusion Models*, MIT 6.S184 (2026).
 
     https://diffusion.csail.mit.edu/
+
+11. **配套数值核验**
+
+    本文全部「数值核验」出自本系列原理篇的配套实验：A–G 七组、26 条断言全过，
+    纯 numpy、纯 CPU，输出已固化，不必自己跑。
+    notebook：[fm_principles.ipynb](https://github.com/lrypcy/ipynbs/blob/0373dc6bc687065693a1ff7b2416b39231d4cab7/experiments/flow_matching/fm-principles/fm_principles.ipynb)；输出：[results/stdout.txt](https://github.com/lrypcy/ipynbs/blob/0373dc6bc687065693a1ff7b2416b39231d4cab7/experiments/flow_matching/fm-principles/results/stdout.txt)。
 
 ## 上一篇 / 下一篇
 
