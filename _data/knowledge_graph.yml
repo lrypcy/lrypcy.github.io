@@ -230,7 +230,7 @@ series:
     layer: 1
     order: 6
     prefixes: [flow-matching-]
-    desc: 5 篇。原理详解（概率路径 / 边际向量场 / CFM 恒等式 / CFG 锐化的解析核验）＋ 建模三讲（概率路径与边际向量场、score 与 SDE 扩展、条件生成与离散域潜空间）＋ 应用篇（SD3 到蛋白质设计）。
+    desc: 5 篇。原理篇（概率路径 / 连续性方程 / CFM 恒等式 / Score 与 Velocity 换算 / Fokker–Planck / CFG 倾斜分布）＋ 建模三讲（概率路径与边际向量场、score 与 SDE 扩展、条件生成与离散域潜空间）＋ 应用篇（SD3 到蛋白质设计）。
 
   - id: vae
     name: 变分自编码器与潜空间表示

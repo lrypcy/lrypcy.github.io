@@ -8,7 +8,7 @@ layout: post
 mathjax: true
 ---
 
-> **系列导航** ｜ [原理详解：讲到能自己推](/2026/10/20/flow-matching-00-principles/) ｜ [建模之二：score、扩散与 SDE 扩展](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/) ｜ [应用篇：工业落地](/2026/08/22/flow-matching-04-applications/)
+> **系列导航** ｜ [原理篇：从概率路径到 Flow Matching](/2026/10/20/flow-matching-00-principles/) ｜ [建模之二：score、扩散与 SDE 扩展](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/) ｜ [应用篇：工业落地](/2026/08/22/flow-matching-04-applications/)
 
 > **TL;DR**
 >
