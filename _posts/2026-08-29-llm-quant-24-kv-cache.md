@@ -14,9 +14,10 @@ mathjax: true
 
 > **TL;DR**
 >
-> * **核心结论**：权重量化省的是“加载一次”的成本，KV cache 量化省的是“每一步都要读”的成本——这是两者经济学的根本差别。本篇给出一个可解析计算的判据：decode 阶段 attention 的算术强度恒为 $$\mathrm{AI}_{\text{attn}} = \dfrac{2\,n_h}{n_{\text{kv}}\,B_{\text{kv}}}$$ FLOP/byte，**与序列长度 $$s$$ 和 batch $$b$$ 都无关**，在 H100 上 FP16 KV 只有 4 FLOP/byte，比 roofline 拐点（约 295）低两个数量级。这意味着 attention 永远不会因为上下文变长而变成算力受限——**你把 KV 压到 2-bit（32 FLOP/byte）它仍然在带宽墙下面**。所以 KV 量化的带宽收益是“几乎无条件线性”的，而权重量化的收益会在 batch 变大时被算术强度吃掉。这就是“W4 不一定是最大瓶颈”的数学根据。
-> * **反直觉发现**：① **Key 必须 per-channel、Value 必须 per-token，而且这不是调参经验，是被下游的消费方式决定的**——Key 被 $$q^\top k_j$$ 沿**通道轴**做内积消费，每个通道的误差等权进入 logit；Value 被 $$o=\sum_j p_j v_j$$ 沿 **token 轴**做凸组合消费，只有少数 $$p_j$$ 大。KIVI 论文实测把 Value 换成 per-channel，输出误差从 3.55% 炸到 49.89%（约 15 倍），CoQA 从 63.53 掉到 2.88[arXiv:2402.02750](https://arxiv.org/abs/2402.02750) Table 1–2。② **RoPE 是 KV 量化最大的隐藏陷阱**：它是保范正交变换，不制造 outlier，但它把 outlier 从“固定通道”变成“位置相关的通道混合”，于是“先量化再做 RoPE”与“先做 RoPE 再量化”严格不等价；KVQuant 实测 pre-RoPE 比 post-RoPE 便宜 0.82 PPL（7.05 → 6.23，LLaMA-7B 3-bit）[arXiv:2401.18079](https://arxiv.org/abs/2401.18079) Table 10。③ **在 Hopper 上，W4 在大 batch 下几乎不省时间**——Hopper 的 tensor core 不原生支持 INT4 dense GEMM，W4 必须先反量化成 FP16/BF16 再喂 tensor core，于是 W4 只省**带宽**、不省**算力**；一旦 batch 大过拐点使 GEMM 变成算力受限，W4 的收益就塌缩，剩下的只有反量化开销（QServe 实测 20–90%）[arXiv:2405.04532](https://arxiv.org/abs/2405.04532)。
-> * **系列定位**：[23 篇](/2026/08/29/llm-quant-23-unified-view/) 结尾明确承认了它的三个盲区，第二个就是“只讲权重与激活，没讲 KV Cache”。本篇来补这个洞。读完它你应该能回答：我这个服务的 batch 和序列长度落在哪个区间？该优先压权重、还是优先压 KV、还是压 KV 只是为了**装得下**而不是为了**跑得快**？以及——为什么 KV 量化在 vLLM 这类分页系统里比在论文里难得多。
+> * **核心问题与结论**：长上下文服务的显存大头常在 KV cache 而非权重。decode 阶段 attention 的算术强度 $$\mathrm{AI}_{\text{attn}}=2n_h/(n_{\text{kv}}B_{\text{kv}})$$ 与 $$s$$、$$b$$ 无关（§1.5 推导），所以压 KV 的带宽收益随位宽近似线性，压权重的收益却随 batch 增大而递减。
+> * **关键证据**：KIVI 在 Llama-2-13B、2-bit、Key per-channel 的设定下实测，把 Value 换成 per-channel 后输出误差 3.55 → 49.89（放大 14 倍）、CoQA 从 63.53 掉到 2.88[arXiv:2402.02750](https://arxiv.org/abs/2402.02750) Table 1–2；机制是 Key 沿通道轴被 $$q^\top k_j$$ 内积消费、Value 沿 token 轴被 $$\sum_j p_j v_j$$ 凸组合消费（§2.1）。合成探针（§7.2、kv_cache_quant）只复现方向，复现不出那个 14 倍。
+> * **适用边界与代价**：per-channel／per-token 是论文实测纪律而非本篇推出的定律，且 §7 前言显示 2-bit 下换 scale 策略能翻转粒度排序。W4 只在 batch 低于算力拐点（H100 标称下 $$b^\ast\approx74$$，§5.2）时才省时间，QServe 报 INT4 反量化开销 20–90%[arXiv:2405.04532](https://arxiv.org/abs/2405.04532)；上分页系统还得让 group 与 page size 对齐，2-bit 下元数据税可占 25%（§4.1）。
+> * **系列定位**：补 [23 篇](/2026/08/29/llm-quant-23-unified-view/)“只讲权重与激活”的盲区；评价 KV 量化时短上下文困惑度参考性弱，长上下文检索更敏感（§2.3）。
 
 ---
 

@@ -14,480 +14,561 @@ mathjax: true
 
 > **TL;DR**
 >
-> * **核心结论**：量化感知训练（QAT）的全部技巧建立在一个算子之上——伪量化（Fake-Quantize）。它的前向就是01 篇的 RTN round-trip：$$\hat{x}=s\,\mathrm{clip}(\mathrm{round}(x/s),\,q_{\min},q_{\max})$$；反向用直通估计器（STE）让梯度假装量化不存在。本篇把这个算子的数学、插入位置、框架实现、反传断裂问题一次性讲透：**伪量化把 PTQ 的离线评估与 QAT 的在线训练统一到同一张计算图里——同一个算子，PTQ 用来量后验证，QAT 用来训中模拟**。
-> * **反直觉发现**：① 4-bit per-tensor 伪量化的 SNR 低至3.02 dB，而 per-group(128) 恢复到14.10 dB——粒度从 per-tensor 到 per-group 在同一算子上白捡11 dB；② STE 在有效范围内梯度均值为1.0（完美直通），但软量化真实梯度只有0.5——**STE 系统性高估梯度约一倍**，偏差来自 round 的平台效应；③ 权重伪量化只需一次插入（离线），激活伪量化必须逐前向动态计算 scale——两者的工程复杂度差一个数量级。
-> * **系列定位**：这是「大模型量化算法」第二部分（QAT）的开篇。PTQ 部分（00–16 篇）的共同假设是“训练结束、只调权重”；QAT 部分从本篇开始打破这个假设——把量化搬进计算图，让模型在量化约束下继续学习。伪量化算子是 QAT 的全部地基，后续 LSQ（18 篇）学 scale、PACT 学 clamp 上界、AdaRound/BRECQ（19 篇）做 PTQ-QAT 之间的桥，全都从这个算子出发。配套实验真实可跑（纯 numpy，几秒出图）：fake_quant_ste_check。
+> * **核心问题与结论**：伪量化（Fake Quantize）不是“量化的近似”，而是**量化器本身的一种表示**——浮点进、浮点出，输出钉在量化网格上。定义必须量化与反量化成对执行，零点在解码时减掉：$$q=\mathrm{clip}(\mathrm{round}(x/s)+z_p,q_{\min},q_{\max})$$、$$\hat{x}=s(q-z_p)$$。同一算子既是 PTQ 的离线评估工具，也是 QAT 里模拟量化的节点，差别只在是否处在优化循环里。
+> * **关键证据**：① 非对称网格漏掉 $$-z_p$$ 会让可表示区间平移 $$s\,z_p$$，§3.2 算例中误差达 $$s/2$$ 的 20 倍；② 重尾激活上 4-bit min-max 只用到 9/16 个码字，改 0.999 分位裁剪后相对误差降 4.66 dB——但同一操作在 8-bit 上**反亏 16.00 dB**（`fake_quant_ste` C 组，合成探针，SEED=0）；③ `MinMaxObserver(-128,127)` 对 $$[-1,0,2,5]$$ 给出 $$z_p=-86$$——决定对称性的是 `qscheme`，不是码字范围。
+> * **适用边界与代价**：伪量化**不省任何计算**——训练更慢、显存更大，推理不会变快；加速发生在部署侧，由引擎把 QDQ 图 lower 成整数 kernel（§7.3）。以上数字来自合成探针与 torch 2.10 实测，不是真实模型精度。
 
 ---
 
-## 1. 为什么要把量化搬进计算图
+## 1. 为什么需要伪量化
 
-### 1.1 训练–部署的精度鸿沟
+### 1.1 训练与部署运行在两套数值体系上
 
-大模型的训练与部署运行在两套完全不同的数值体系上：
+训练用 FP32/BF16 的反向传播，部署用 INT4/INT8/FP8 的前向。这不是精度参数上的微调，而是**一次函数替换**：层里那个矩阵乘换了一个完全不同的算子，它的输入输出取值范围、舍入方式、溢出行为都由整数算术决定。
 
-| 维度 | 训练框架 | 推理引擎 |
-|---|---|---|
-| 权重精度 | FP32 / BF16 / FP16 | INT4 / INT8 / FP8 |
-| 激活精度 | FP32 / BF16 | INT8 / INT4 / 混合精度 |
-| 计算单元 | Tensor Core (FP16/BF16) | Tensor Core (INT8/FP8) / INT GEMM kernel |
-| 核心操作 | 反向传播 + 梯度更新 | 纯前向推理 |
+[01 篇](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 已经算清了替换的代价：固定网格下，误差被拆成舍入误差（$$\lvert\epsilon\rvert\le s/2$$，只要不饱和）和裁剪误差（尾部质量 × 网格粗细）。PTQ 在**权重**上做这次替换、用校准集定 scale，之后不再动参数；代价是模型从未见过自己的量化版本，误差无法挽回。
 
-这个鸿沟意味着：**训练时看到的数值分布 ≠ 部署时量化后的数值分布**。模型在 FP32 下优化的权重，一旦量化到 INT4，层输出就偏了——01 篇证明这个偏差在 per-tensor 粒度下可达11 dB 的 SNR 损失。
+QAT 的思路是反过来：**在训练里先把替换“排练”一遍**，让梯度在量化约束下继续更新那些还没被量化的浮点参数（“shadow weights”）。排练用的那个算子就是伪量化。
 
-### 1.2 PTQ 与 QAT：同一个算子的两种用法
+### 1.2 伪量化、PTQ、QAT 三者的关系
 
-伪量化算子（Fake-Quantize，简称 FQ）就是为弥合这个鸿沟而生的。它的定义极其简单：
+这三者常被说成“三种量化方法”，实际是**一个算子 + 两种用法**：
 
-$$
-\mathrm{FQ}(x;\,s,\,z_p,\,b) = s \cdot \mathrm{clip}\big(\mathrm{round}(x/s) + z_p,\; q_{\min},\; q_{\max}\big)
-$$
+| 维度 | 伪量化算子 FQ | PTQ | QAT |
+|---|---|---|---|
+| 本体 | 一个算子（前向 round-trip、反向 STE） | 一套流程（校准 → 定 scale → 求量化权重） | 一套流程（插 FQ → 训练 → 导出） |
+| FQ 的角色 | — | 可选：用来**评估**量化误差 | 必需：训练中**模拟**量化 |
+| 权重是否更新 | 不涉及 | 否 | 是（在量化约束下） |
+| 计算图 | 单个节点 | 不改图，只换数值 | 图里多出 FQ 节点 |
 
-前向执行一次量化再反量化的 round-trip（01 篇 §3.1 的仿射量化器），输出仍然是浮点数——但这个浮点数被“吸附”到了量化网格上。
+关键在于：**PTQ 和 QAT 的差别不在算子，而在算子所处的上下文**（是否在优化循环里、scale 是冻结还是可学）。这也是为什么理解了这个算子，就等于拿到了 QAT 的全部地基。
 
-**PTQ 用法**：训练完成后，在权重上插入伪量化算子，用少量校准数据跑前向，统计量化误差，作为评估基线。Scale 由校准集离线确定，插入后不再训练。
+### 1.3 伪量化 ≠ 低比特计算
 
-**QAT 用法**：训练过程中，在权重和/或激活上插入伪量化算子，每次前向都模拟量化误差，反向传播时用 STE 让梯度“穿过”量化节点继续更新权重。Scale 可以固定（由校准集提供），也可以作为可学习参数（LSQ，18 篇预告）。
+最容易被误解的一条：**伪量化不省任何计算**。
 
-两者的对比如下：
+FQ 的前向是“量化 → 反量化”，中间那个整数码是一过性的中间量，输出仍然是浮点张量，随后的矩阵乘仍然在浮点单元上跑。所以：
 
-| 维度 | PTQ | QAT |
-|---|---|---|
-| 伪量化用途 | 离线评估量化误差 | 在线训练中模拟量化效应 |
-| 权重是否更新 | 否（固定量化） | 是（在量化约束下学习） |
-| Scale 来源 | 校准集离线统计 | 校准集或可学习参数 |
-| 训练开销 | 零（仅一次前向） | 接近正常训练（多一次 FQ 前向） |
-| 代表算法 | RTN, GPTQ, AWQ | LSQ, PACT, LLM-QAT |
+- 用 FQ 做 QAT，训练**更慢**（多了一次 round-trip），显存**更大**（多存 scale/zero-point 与统计状态），推理**不变快**；
+- FQ 唯一的产品是**一组适应了量化误差的参数**，以及（对激活而言）一套可用的 scale；
+- 真正的加速发生在部署侧，由推理引擎把 QDQ 图 lower 成整数 kernel（§7.3）。
 
-这张表的关键洞察：**伪量化算子是 PTQ 与 QAT 的公共组件**——区别不在于算子本身，而在于它所处的上下文（是否在训练循环中）。理解了这个算子，就理解了 QAT 的全部地基。
+把这件事说清楚，后面所有工程描述才有意义：QAT 训练图里的浮点计算和部署图里的整数计算，是**同一个量化方案的两种实现**，而不是同一个东西。
 
-整篇的路线图如下：
+---
 
-```mermaid
-flowchart TD
-    A["训练–部署精度鸿沟<br>FP32 训练 ↔ INT4 推理"] --> B["伪量化算子 FQ<br>统一 PTQ 评估与 QAT 训练"]
-    B --> C["§3 数学<br>round-trip 公式与误差上界"]
-    B --> D["§4 插入位置<br>逐算子该在前插还是输出插"]
-    B --> E["§5 框架实现<br>PyTorch / ONNX / TensorRT / TVM"]
-    B --> F["§6 不可导问题<br>round 与 clamp 的梯度断裂"]
-    F --> G["STE 直通估计器<br>前向量化 反向恒等"]
-    G --> H["§7 实验验证<br>误差特性与梯度偏差"]
-    H --> I["§8 Takeaway<br>引出 LSQ / PACT"]
-```
+## 2. 符号约定
 
-## 2. 符号字典增量表
-
-全系列沿用01 篇的符号约定：$$x$$ 为激活、$$W$$ 为权重、$$s$$ 为步长、$$z_p$$ 为零点、$$q$$ 为整数码、$$\hat{x}$$ 为反量化值、$$b$$ 为位宽、$$q_{\min}=-2^{b-1}$$、$$q_{\max}=2^{b-1}-1$$。本篇只新增以下行：
+[01 篇 §2](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 锁定的符号（$$x, W, s, z_p, b, q, \hat{x}, q_{\min}, q_{\max}$$）含义不变。本篇新增：
 
 | 符号 | 含义 | 易混淆提示 |
 |---|---|---|
-| $$\mathrm{FQ}(\cdot)$$ | 伪量化算子（Fake-Quantize），前向 round-trip、反向 STE | 不同于量化器 $$Q(\cdot)$$——FQ 输出浮点，$$Q$$ 输出整数 |
-| $$\mathrm{DQ}(\cdot)$$ | 反量化算子（DequantizeLinear），$$\mathrm{DQ}(q)=s(q-z_p)$$ | ONNX 图中 QuantizeLinear / DequantizeLinear 分开表示 |
-| $$\mathrm{QDQ}$$ | QuantizeLinear → DequantizeLinear 对的缩写 | ONNX / TensorRT 术语，插入时成对出现 |
-| $$s_w$$ | 权重的量化步长（per-channel 或 per-group） | 下标 $$w$$ 区分于激活步长 $$s_a$$ |
-| $$s_a$$ | 激活的量化步长（per-token 或 per-tensor） | 动态计算：每个前向 pass 重新统计 |
-| $$\mathcal{G}$$ | 量化网格点集合，$$\mathcal{G}=\{s(q-z_p)\mid q\in[q_{\min},q_{\max}]\}$$ | round-trip 后所有值被吸附到 $$\mathcal{G}$$ 上 |
-| $$\delta_{\mathrm{STE}}$$ | STE 的隐式梯度算子，$$\partial\hat{x}/\partial x\approx\mathbf{1}_{[\mathrm{in\;range}]}$$ | 这是一个算子近似，不是精确导数 |
-| $$T$$ | 软量化的温度参数（仅 §6.2 使用） | $$T\to 0$$ 时软量化趋近硬量化 |
+| $$\mathrm{FQ}(\cdot)$$ | 伪量化算子，前向 round-trip、输出浮点 | 不是量化器 $$Q(\cdot)$$：FQ 输出浮点，$$Q$$ 输出整数 |
+| $$\lfloor\cdot\rceil$$ | 最近整数舍入（ties-to-even，与 IEEE / ONNX 一致） | 不是向上取整 |
+| $$\mathcal{G}$$ | 量化网格 $$\mathcal{G}=\{s(q-z_p)\mid q\in[q_{\min},q_{\max}]\}$$ | FQ 的输出必落在 $$\mathcal{G}$$ 上 |
+| $$\mathcal{R}$$ | FQ 的**可表示区间** $$[s(q_{\min}-z_p),\;s(q_{\max}-z_p)]$$ | 超出 $$\mathcal{R}$$ 即饱和，误差不再受 $$s/2$$ 约束 |
+| $$g_{\rm STE}$$ | STE 的隐式梯度算子 | 是替代导数的假设，不是真导数 |
+| $$\mathrm{FQ}_W,\mathrm{FQ}_X$$ | 权重侧 / 激活侧的伪量化 | 两者在训练中的**生命周期**不同（§6.2） |
 
-### 变量映射表
+一个贯穿全文的记号约定：**$$\hat{x}$$ 指 FQ 的输出（浮点、在网格上）**，$$q$$ 指中间整数码。凡出现“量化误差”，默认指 $$x-\hat{x}$$。
 
-| 数学符号 | 代码变量 | Shape | 说明 |
-|---|---|---|---|
-| $$x$$ | `x` | `(n,)` 或 `(B, T, n)` | 激活张量（浮点） |
-| $$W$$ | `W` | `(m, n)` | 权重矩阵 |
-| $$s$$ / $$s_w$$ / $$s_a$$ | `s` / `s_w` / `s_a` | 标量或广播数组 | 量化步长 |
-| $$z_p$$ | `zp` | 标量或广播整数 | 整数零点 |
-| $$\hat{x}$$ | `x_hat` | 同 `x` | 伪量化输出（浮点） |
-| $$q$$ | （中间量） | int64 | 量化整数码 |
-| $$b$$ | `b` | int | 位宽 |
-| $$q_{\min}$$, $$q_{\max}$$ | `QMIN(b)`, `QMAX(b)` | int | $$-2^{b-1}$$, $$2^{b-1}-1$$ |
-| $$\mathrm{FQ}(x)$$ | `fake_quantize_forward(x, s, b)` | 同 `x` | 前向伪量化 |
-| $$\delta_{\mathrm{STE}}$$ | `fake_quantize_ste_grad(x, grad, s, b)` | 同 `x` | 反向 STE 梯度 |
-| $$T$$ | `temperature` | float | 软量化温度（实验用） |
-| $$\mathcal{G}$$ | `grid_points` | `(2^b,)` | 量化网格点集合 |
+---
 
-## 3. 伪量化算子的数学
+## 3. 伪量化算子的定义
 
-### 3.1 QuantizeLinear → DequantizeLinear Round-trip
+### 3.1 完整定义：先量化，再反量化
 
-从01 篇 §3.1 的仿射量化器出发，伪量化算子就是一步量化紧跟一步反量化：
+[01 篇 §3.1](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 的仿射量化器是两步，伪量化就是把这两步**串起来执行一次**：
 
 $$
-\hat{x} = \mathrm{FQ}(x) = s \cdot \mathrm{clip}\Big(\mathrm{round}\big(\tfrac{x}{s}\big)+z_p,\; q_{\min},\; q_{\max}\Big)
+\underbrace{q=\mathrm{clip}\Big(\mathrm{round}\big(\tfrac{x}{s}\big)+z_p,\;q_{\min},\,q_{\max}\Big)}_{\text{QuantizeLinear}}
+\qquad
+\underbrace{\hat{x}=s\,(q-z_p)}_{\text{DequantizeLinear}}
 $$
 
-展开来看，round 和 clip 在公式中各司其职：
-
-- **round**：将连续值 $$x/s$$ 映射到最近整数，产生舍入误差 $$\epsilon_r \in [-0.5, 0.5]$$（01 篇 §3.2 的 granular error）。
-- **clip**：将超出 $$[q_{\min}, q_{\max}]$$ 的整数截断到边界，产生裁剪误差 $$\epsilon_c$$（01 篇 §3.2 的 saturation error）。
-
-Round-trip 后，数值被“吸附”到量化网格点上：$$\hat{x} \in \mathcal{G}$$。非网格点的原始值 $$x$$ 与最近网格点之差，就是伪量化引入的误差 $$\epsilon = x - \hat{x}$$。
-
-### 3.2 误差分解与上界
-
-对任意 $$x$$，误差可分解为：
+合成一步写，FQ 的完整定义是
 
 $$
-\epsilon = \epsilon_r + \epsilon_c, \qquad \vert\epsilon_r\vert \le s/2, \qquad \epsilon_c = \begin{cases} x - s\cdot q_{\max} & x > s\cdot q_{\max} \\ x - s\cdot q_{\min} & x < s\cdot q_{\min} \\ 0 & \text{otherwise} \end{cases}
+\boxed{\;\hat{x}=\mathrm{FQ}(x)=s\Big[\mathrm{clip}\Big(\mathrm{round}\big(\tfrac{x}{s}\big)+z_p,\;q_{\min},\,q_{\max}\Big)-z_p\Big]\;}
 $$
 
-在 clip 范围内（$$\lvert x\rvert \le s\cdot q_{\max}$$），误差上界为 $$s/2$$。这直接决定了伪量化算子的精度：**步长 $$s$$ 越小（位宽越高或粒度越细），误差上界越小**。
+**这里的 $$-z_p$$ 不能省。** 常见的错误写法是 $$\hat{x}=s\cdot\mathrm{clip}(\mathrm{round}(x/s),q_{\min},q_{\max})$$——它在编码时漏掉 $$+z_p$$、解码时也漏掉 $$-z_p$$，两个偏移互相抵消，看起来“自洽”，代价是可表示区间被整体平移了 $$z_r=s\,z_p$$：正确区间是 $$[s(q_{\min}-z_p),\,s(q_{\max}-z_p)]$$，而它覆盖的是 $$[s\,q_{\min},\,s\,q_{\max}]$$。于是在两个区间错开的那一段里，量化值被钉在错误的边界上，误差可以远超 $$s/2$$（§3.2 的算例把它们逐元素列出来）。只有强制 $$z_p=0$$ 时两种写法才重合，而这恰好是后面 §3.3 要拆穿的那条“对称量化常识”。
 
-对称量化（$$z_p=0$$）时，$$s = \max\lvert x\rvert/q_{\max}$$（min-max scale），网格关于零对称。非对称量化时 $$z_p\neq 0$$，网格平移以覆盖 $$[x_{\min}, x_{\max}]$$（01 篇 §3.1 推导）。
+用 01 篇的实数零点 $$z_r=s\,z_p$$ 可以把定义看得很干净。代入可得
 
-### 3.3 对称 vs 非对称在算子参数上的表达
+$$
+\hat{x}=s\cdot\mathrm{clip}\Big(\mathrm{round}\big(\tfrac{x}{s}\big)+z_p,\;q_{\min},q_{\max}\Big)-z_r
+=s\cdot\mathrm{round}\Big(\tfrac{x}{s}\Big)-z_r\quad(\text{未饱和时})
+$$
 
-| 模式 | 算子参数 | 反量化公式 | 网格覆盖 |
-|---|---|---|---|
-| 对称（$$z_p=0$$） | $$s=\max\lvert x\rvert/q_{\max}$$ | $$\hat{x}=sq$$ | $$[-sq_{\max},\;sq_{\max}]$$ |
-| 非对称 | $$s,\;z_p$$ | $$\hat{x}=s(q-z_p)$$ | $$[s(q_{\min}-z_p),\;s(q_{\max}-z_p)]$$ |
+也就是说，**未饱和时 FQ 就是“把 $$x$$ 就近吸附到间距 $$s$$、相位 $$z_r$$ 的栅格上”**，与 zero-point 是几无关；$$z_p$$ 只决定这个栅格能覆盖哪一段实数轴。这个视角后面有两处用处：解释 STE 的梯度行为（§5），以及解释为什么“共享网格”不是语义要求（§6.5）。
 
-工程经验：**LLM 权重用对称**（分布近似零对称），**激活视情况用非对称**（ReLU/GELU 后单边偏斜）。01 篇 §3.2 已给出数字支撑。
+```mermaid
+flowchart LR
+    A["浮点 x"] --> B["x / s<br>归一化"]
+    B --> C["round(·)<br>就近取整"]
+    C --> D["+ z_p<br>平移到无符号域"]
+    D --> E{"在<br>[q_min, q_max]?"}
+    E -->|"是"| F["整数码 q"]
+    E -->|"否"| G["饱和到边界<br>裁剪误差"]
+    F --> H["(q - z_p) · s<br>反量化"]
+    G --> H
+    H --> I["x_hat 落在网格 G 上<br>仍为浮点"]
+    I --> J["下一个浮点算子"]
+```
 
-### 3.4 粒度在算子参数上的表达
+### 3.2 一个能手算的算例
 
-粒度决定一组 $$(s, z_p)$$ 覆盖多少个元素——粒度越细，每组元素越少，$$s$$ 越小，误差越小。但 scale 元数据本身要存 FP16/INT32，粒度不是免费的（01 篇 §7.2 的有效位宽公式）：
+不看代码，先用 8 个元素把这两步走一遍。取非对称参数 $$s=0.1$$、$$z_p=10$$、$$q_{\min}=0$$、$$q_{\max}=255$$（这是一段 $$\mathcal{R}=[-1.0,\,24.5]$$ 的网格，覆盖 ReLU 之后单边偏斜的激活很自然），输入
 
-| 粒度 | 参数组数 | $$s$$ 的 Shape | 典型配置 |
-|---|---|---|---|
-| per-tensor | 1 | 标量 | 动态激活量化 |
-| per-channel | $$m$$（输出通道数） | $$(m,1)$$ | 权重量化默认 |
-| per-group($$g$$) | $$m \times n/g$$ | $$(m,n/g,1)$$ | AWQ/GPTQ, $$g=128$$ |
+$$
+x=[0,\;0.3,\;-0.2,\;1.0,\;-3.0,\;30.0,\;0.05,\;24.5]
+$$
 
-### 3.5 网格吸附效应：实验验证
+$$
+\begin{aligned}
+&\tfrac{x}{s} = [0,\;3,\;-2,\;10,\;-30,\;300,\;0.5,\;245]\\
+&\mathrm{round} = [0,\;3,\;-2,\;10,\;-30,\;300,\;0,\;245] \quad(\text{ties-to-even：}0.5\to0)\\
+&\mathrm{round}+z_p = [10,\;13,\;8,\;20,\;-20,\;310,\;10,\;255]\\
+&q = \mathrm{clip}(\mathrm{round}+z_p)=\big[10,\;13,\;8,\;20,\;\mathbf{0},\;\mathbf{255},\;10,\;255\big]\\
+&\hat{x}=s(q-z_p)=[0,\;0.3,\;-0.2,\;1.0,\;\mathbf{-1.0},\;\mathbf{24.5},\;0,\;24.5]
+\end{aligned}
+$$
 
-伪量化 round-trip 最直观的效果是**网格吸附**：非网格点被拉到最近的网格电平。01 篇 §4 证明 per-tensor 在 outlier 权重上 SNR 仅0.97 dB；本篇在含 outlier 通道的256×1024 权重矩阵上，系统对比三种粒度 × 三种位宽（配套实验 Demo A，[experiments/quantization/fake_quant_ste/run.py](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_ste/run.py)）：
+这 8 个元素刚好把三种情形都覆盖了：
 
-![伪量化 round-trip 误差随位宽和粒度变化：左图 SNR 在 4-bit 下从 per-tensor 的3.02 dB阶梯式爬升到 per-group 的14.10 dB；右图 MSE 对数坐标显示粒度细化的指数级收益](/assets/img/quant/fake_quant_roundtrip_error.png)
-
-| 位宽 | 粒度 | MSE | SNR (dB) | 最大绝对误差 |
+| 元素 | 情形 | 结果 | 误差 $$x-\hat{x}$$ | 性质 |
 |---|---|---|---|---|
-| 4-bit | per-tensor | 9.75e-04 | 3.02 | 1.060 |
-| 4-bit | per-channel | 2.71e-04 | 8.58 | 0.645 |
-| 4-bit | per-group(128) | 7.61e-05 | **14.10** | 0.185 |
-| 6-bit | per-tensor | 5.66e-04 | 5.38 | 0.242 |
-| 6-bit | per-channel | 3.40e-05 | 17.60 | 0.185 |
-| 6-bit | per-group(128) | 6.82e-06 | 24.57 | 0.185 |
-| 8-bit | per-tensor | 4.03e-04 | 6.86 | 0.059 |
-| 8-bit | per-channel | 3.62e-06 | 27.32 | 0.059 |
-| 8-bit | per-group(128) | 6.13e-07 | **35.04** | 0.059 |
+| $$0$$、$$24.5$$ | 恰好落在网格上 | 不变 | $$0$$ | 误差 0，但梯度是否通过由 STE 决定（§5.3） |
+| $$0.3$$、$$1.0$$、$$0.05$$ | 未饱和 | 吸附到最近格点 | $$0$$、$$0$$、$$0.05$$ | $$\lvert\epsilon\rvert\le s/2=0.05$$ |
+| $$-3.0$$ | 下溢饱和 | 截到下界 $$-1.0$$ | $$-2.0$$ | $$\lvert\epsilon\rvert=2.0\gg s/2$$ |
+| $$30.0$$ | 上溢饱和 | 截到上界 $$24.5$$ | $$5.5$$ | $$\lvert\epsilon\rvert=5.5\gg s/2$$ |
 
-**这张表回答三个问题**：
+两件事值得盯住。第一，$$x=-0.2$$ 反量化回 $$-0.2$$——它是格点，负零点并没有问题。而两种错写法都会在这里翻车：**编码加了 $$z_p$$、解码漏减**的版本算成 $$s(\mathrm{round}(x/s)+z_p)=0.1\times(-2+10)=0.8$$，误差 1.0，是 $$s/2$$ 的 20 倍；**编码解码都漏**的版本算成 $$s\cdot\mathrm{round}(x/s)=0$$，误差 0.2，也已经是 $$s/2$$ 的 4 倍。第二，饱和元素的误差完全由“超出多少”决定，与 $$s$$ 无关（$$s$$ 再小十倍，$$-3.0$$ 仍然只到 $$-1.0$$）。这就是 §3.4 要量的东西。
 
-1. **粒度的11 dB 白捡**：4-bit 下 per-group(128) 比 per-tensor 高 11.08 dB——这个差距完全来自 scale 被 outlier 通道绑架后逐步释放的过程。per-channel 解决行间 outlier（+5.56 dB），per-group 进一步隔离行内散点（+5.52 dB）。
-2. **位宽提升的边际递减**：per-group 下从 4-bit 到 8-bit 提升 20.94 dB（约每 bit 5.2 dB），低于01 篇的 6.02 dB 理论值——因为 outlier 引入的裁剪误差在低位宽更重，抵消了部分位宽收益。
-3. **最大绝对误差的“天花板”效应**：per-channel 和 per-group 在 6-bit 和 8-bit 的最大绝对误差均为0.185（由 outlier 通道的最大值决定，已被 per-channel 的行级 scale 吸收），只有 per-tensor 才能看到全局 outlier 撑大的误差。
+![A 组两件事：左图是 FQ 的台阶函数贴着恒等线走（每格内为常数，跳变发生在格点中点）；右图把误差按「未饱和=舍入」与「饱和=裁剪」分成两堆画在 log-log 上，舍入那堆被 s/2=0.0079 截住，裁剪那堆一路延伸到两个数量级之外](/assets/img/quant/fq_a_roundtrip.png)
 
-## 4. 插入位置学
+（同一套四步流程在配套实验 `fake_quant_ste` A 组里对另一组参数 $$s=0.5,\;z_p=20$$ 逐元素断言过，含 ties-to-even 那一格：$$x/s=10.5\to10$$。）
 
-伪量化算子的数学很简单；真正决定 QAT 效果的是**在哪里插入**。这是本篇的重头戏。
+### 3.3 “对称量化 $$z_p=0$$”是个误解
 
-### 4.1 权重 only vs 权重 + 激活
+01 篇把对称量化写成“强制 $$z_r=0$$”，读起来像是 $$z_p$$ 恒为 0。实际实现里不是：PyTorch 的 `MinMaxObserver(quant_min=-128, quant_max=127)` 对输入 $$[-1,0,2,5]$$ 算出的 qparams 是 **`scale=0.0235, zero_point=-86`**（配套实验 `fake_quant_torch_onnx` 的 1(c) 组）。原因很直接：默认 `qscheme` 是 `per_tensor_affine`，于是
 
-两种插入策略对应不同的量化目标：
+$$
+s=\frac{x_{\max}-x_{\min}}{q_{\max}-q_{\min}}=\frac{6}{255}=0.0235,\qquad
+z_p=\mathrm{round}\big(q_{\min}-x_{\min}/s\big)=\mathrm{round}(-128+42.5)=-86
+$$
 
-| 策略 | 伪量化对象 | 训练目标 | 工程复杂度 | 代表场景 |
-|---|---|---|---|---|
-| 权重 only | $$W$$ | 让模型适应权重量化误差 | 低（scale 静态） | W4A16（llama.cpp, GPTQ 后微调） |
-| 权重 + 激活 | $$W$$ 和 $$X$$ | 同时适应两侧量化误差 | 高（$$s_a$$ 动态） | W8A8（TensorRT, ONNX Runtime） |
+（$$-85.5$$ 按 ties-to-even 落到 $$-86$$。）**要记住的区分是：给出有符号码字范围不等于做对称量化。** 同一份数据把 `qscheme` 显式换成 `per_tensor_symmetric`，$$z_p$$ 就被钉在码字中点——`qint8` 下是 0、`quint8` 下是 127，而 scale 变成 $$10/255=0.0392$$（PyTorch 的对称 scale 用的是 $$x_{\max}-x_{\min}$$ 而不是 $$\max\lvert x\rvert$$）。决定对称性的是 `qscheme`，不是码字范围。
 
-**权重伪量化**的 scale 在训练前由校准集确定，训练过程中固定不变——它的伪量化算子就是“把 $$W$$ 走一遍 round-trip”，让优化器看到量化后的 $$W$$ 而非浮点 $$W$$。
+所以这里要分清**两条彼此独立的性质**，教科书常把它们混成一条“对称”：
 
-**激活伪量化**的 scale 必须在每次前向传播时动态计算（因为激活值随输入变化）。这就是为什么激活量化的工程复杂度远高于权重量化——scale 的统计本身就是一个算子，需要挂在计算图中。
-
-### 4.2 逐算子的插入规则
-
-不同算子对伪量化的敏感度不同，插入位置也不同。以下是最常见的算子类型及其插入策略：
-
-| 算子类型 | 权重插入位置 | 激活插入位置 | 原因 |
+| 性质 | 数学内容 | 由什么保证 | $$z_p$$ 必须为 0 吗 |
 |---|---|---|---|
-| Conv / Linear | 权重参数上（训练前离线） | 算子输出（Activation 后） | 权重是静态参数可离线量化；激活在输出端量化可覆盖 bias 修正 |
-| MatMul (Attention) | 两个输入 K, V | 同上 | Q/K/V 投影后分别量化；Attention score 通常不量化（Softmax 敏感） |
-| LayerNorm | 无权重（gamma/beta 量化收益低） | 算子输入或输出 | LN 是归一化算子，输入分布已接近标准正态，量化误差被放大 |
-| Softmax | 无 | 输出 | Softmax 输出在 $$[0,1]$$ 之间，动态范围小，量化友好；但输入（logits）通常不量化 |
-| 残差加法 | 无 | 两个操作数 | 残差连接的两个分支都需要量化到同一网格，否则加法语义不一致 |
-| GELU / ReLU | 无 | 输出 | 激活函数输出是下一层的输入，量化点在输出端 |
+| 零可精确表示 | 存在码字 $$q$$ 使 $$s(q-z_p)=0$$ | $$z_p$$ 是整数即可（取 $$q=z_p$$） | **不必** |
+| 可表示区间关于 0 对称 | $$s(q_{\min}-z_p)=-s(q_{\max}-z_p)$$ | 需要 $$z_p=(q_{\max}+q_{\min})/2$$ | 视码字范围而定 |
 
-核心原则：**激活的伪量化必须放在激活值确定之后、进入下一个算子之前**。原因是激活伪量化需要模拟真实的量化误差传播——如果放在算子之前（输入端量化），误差会被算子内部的浮点运算部分“吸收”，无法准确反映部署时的量化效应。
+第二条才是通常说的“对称量化”。在 `qint8` 的 $$[-128,127]$$ 上，中点是 $$-0.5$$ 不是整数，torch 的 `per_tensor_symmetric` 取 $$z_p=0$$，于是区间是 $$[-6.0, 5.95]$$——**端点并不真的对称，被放弃的正是 128 号那个负码字**（这就是 18 篇会遇到的“少半个格”问题）。而在 `quint8` 的 $$[0,255]$$ 上，中点是 127.5，torch 取 $$z_p=127$$ 或 $$128$$，同一个“对称”配置在不同 dtype 下 $$z_p$$ 完全不同。
 
-### 4.3 为什么激活伪量化必须模拟 clamp 后的饱和效应
+结论：**$$z_p$$ 是元数据里的一个整数，反量化时照减不误**；“对称”是 $$s$$ 与码字范围的选择，不是一句“$$z_p=0$$”可以代替的。
 
-权重的分布相对稳定（训练完成后变化很小），但激活的分布随输入剧烈变化。如果只模拟 round 而不模拟 clip，QAT 就无法让模型学会“避开量化范围之外的值”——这恰恰是 QAT 相比 PTQ 的核心优势。
+这个区分有实际后果：**任何“对称所以可以省掉 $$z_p$$”的推论都是错的**，省掉的只是“实数零点不为零”那部分偏移，而不是解码公式里的减法。
 
-以 ReLU 后的激活为例：大部分值在 $$[0, M]$$ 之间（$$M=s\cdot q_{\max}$$），但偶有大值超出范围。如果不模拟 clip，优化器会认为这些大值可以自由存在；部署时它们被截断，误差无法预测。伪量化算子的 clip 正是在告诉优化器：**“超过 $$M$$ 的值会被截断到 $$M$$，请学会控制它们”**。
+配套实验 `fake_quant_ste` A 组把这件事断言成了数字：取 $$s=0.5,\;z_p=20,\;q\in[0,255]$$，正确的可表示区间是 $$[s(q_{\min}-z_p),\,s(q_{\max}-z_p)]=[-10.0,\,117.5]$$；而编码、解码两处都不写 $$z_p$$ 的 `s*clip(round(x/s),q_min,q_max)` 把区间平移成 $$[s\,q_{\min},\,s\,q_{\max}]=[0.0,\,127.5]$$——**负半轴整段被截断**。具体到元素：$$x=3.2$$ 正确写法给 $$3.00$$（误差 0.20），只在解码漏减 $$z_p$$ 的写法给 $$13.00$$（误差 9.80，放大 49 倍）；$$x=-25.0$$ 正确写法给下溢后的 $$-10.0$$（误差 15.0），而“两处都不写”的写法直接给 0（误差 25.0）。
 
-这就是 PACT（Parameterized Clipping Activation，arXiv:1805.06085）的核心思想：把 clip 的上界 $$M$$ 也变成可学习参数，让模型自己决定“在哪里截断最好”——18 篇展开。
+**这类错误的隐蔽之处正在于此**：两段区间重叠的部分算出来一模一样，差异只出现在错开的那一段——A 组里 $$x=0.0$$ 这个未饱和元素两种写法都给 0，而 $$x=-25.0$$ 这种落在错开段的元素误差直接从 15.0 跳到 25.0。两种写法的**输出之差恒等于这段平移量** $$z_r=s\,z_p$$（这里 $$0.5\times20=10.0$$），与元素取多少值无关——这正是它容易被漏掉的原因：抽查几个正常元素看不出任何差别。
 
-### 4.4 BN folding 与伪量化的配合
+### 3.4 两条误差来源，只有一条有 $$s/2$$ 界
 
-BatchNorm 在推理时可以折叠进前一层的 Conv/Linear：
+把 FQ 拆成“舍入”和“裁剪”两段，就能精确说出误差界从哪来：
 
 $$
-W' = \gamma \odot W / \sqrt{\sigma^2+\epsilon}, \qquad b' = \gamma \odot (b - \mu)/\sqrt{\sigma^2+\epsilon} + \beta
+\epsilon_r = x-\hat{x}\big|_{\text{未饱和}}=\;? \qquad\epsilon_c = x-\hat{x}\big|_{\text{饱和}}=\;?
 $$
 
-在 QAT 中，BN folding 必须在伪量化插入**之前**完成。原因是：如果先插伪量化再折叠 BN，BN 的缩放因子 $$\gamma/\sqrt{\sigma^2+\epsilon}$$ 会作用在量化后的值上，改变 scale 的有效范围——部署时 BN 已被折叠、不存在这个缩放，导致训练–部署不一致。
+**阶段一（只舍入、不裁剪）**：$$\hat{x}=s\,\mathrm{round}(x/s)$$，最近整数舍入下
 
-正确的流水线：**先 fold BN → 再插入伪量化**。这也是 PyTorch torch.ao 的 eager mode 默认流程。
+$$
+\lvert\epsilon_r\rvert\le\frac{s}{2}
+$$
 
-### 4.5 QDQ 图等价变换
+这条界**只对未饱和元素成立**，且前提是舍入到最近（不是随机舍入、不是向零取整）。
 
-在 ONNX / TensorRT 的显式量化图中，QuantizeLinear → DequantizeLinear（QDQ）节点可以进行一系列等价变换，用于图优化：
+**阶段二（裁剪）**：$$x\notin\mathcal{R}$$ 时，$$\hat{x}$$ 被钉在边界上，
 
-| 变换规则 | 说明 | 效果 |
+$$
+\epsilon_c=x-\hat{x}_{\rm edge},\qquad \lvert\epsilon_c\rvert\ \text{无界}
+$$
+
+注意 $$\epsilon\ne\epsilon_r+\epsilon_c$$ 那种线性分解是**错的**：一个元素要么未饱和（只有 $$\epsilon_r$$），要么饱和（误差由 $$\epsilon_c$$ 主导）。把两者写成“和”会让人误以为边界外还能享受 $$s/2$$ 的小误差。
+
+于是“减小 $$s$$”的收益是**分段的**：
+
+- 对**大多数未饱和元素**，误差随 $$s$$ 线性下降；
+- 对**尾部元素**，减小 $$s$$ 会让 $$\mathcal{R}$$ 同步缩小，饱和元素变多、每个的误差变大——这一项与 $$s$$ 的依赖方向相反。
+
+这就是为什么“激活侧要模拟部署会做的裁剪”（§6.4）：只模拟 round 的训练目标里根本没有这一项，优化器会心安理得地把激活推到 $$\mathcal{R}$$ 之外，代价在部署时才兑现。
+
+![C 组：左图为各截断比例下的激活相对 MSE（log-log，横轴是截断比例），右图为 4-bit 各方案实际用到的码字数——min-max 被离群值撑大 scale，16 个码字只用到 9 个](/assets/img/quant/fq_c_clip.png)
+
+（本仓 `fake_quant_ste` 的 C 组把这条账算到了数字上：重尾激活上 min-max scale 被离群值撑大、4-bit 只用到 9/16 个码字；按 0.999 分位裁剪后相对误差从 $$3.0236\times10^{-1}$$ 降到 $$1.0346\times10^{-1}$$（**$$+4.66$$ dB**）。**但同一条操作在 8-bit 上是反的**：$$1.8780\times10^{-3}\to7.4811\times10^{-2}$$，裁剪让误差涨了两个数量级（**$$-16.00$$ dB**）。口径见 §6.4。）
+
+### 3.5 粒度：把 $$(s,z_p)$$ 从标量换成分组向量
+
+粒度不是新算子，只是让 $$s$$（以及必要时 $$z_p$$）沿某个轴广播：
+
+| 粒度 | 一组覆盖的元素 | 权重侧典型取值 | scale 个数 |
+|---|---|---|---|
+| per-tensor | 整个张量 | 激活常见的保守选择 | 1 |
+| per-channel | 一个输出通道（权重的行） | 权重量化默认 | $$m$$ |
+| per-group | 一组相邻输入通道（如 32/64/128） | INT4 权重工业标配 | $$m\cdot n/g$$ |
+
+![B 组：左图为 per-tensor / per-channel / per-group 三种粒度的输出相对 MSE 随位宽变化（log 轴，本实现下 per-channel 反而最优）；右图为 4-bit 下对称与非对称 × 三种粒度的对比](/assets/img/quant/fq_b_granularity.png)
+
+数学上它只是把 $$s$$ 从标量换成可广播数组，但**误差模型的形状会变**：per-channel 消除“行与行之间动态范围差异”，per-group 进一步消除“行内散点”，代价是元数据（[01 篇 §7.2](/2026/08/23/llm-quant-00-quantizer-fundamentals-rtn/) 的有效位宽）。需要注意，**分组并不总比通道好**：当 group 沿输入维切块、块内把多个输出通道的权重混在一起取 absmax 时，它比 per-channel 更粗——本仓实验里 2-bit 就出现了 per-group 误差高于 per-channel 的格子（$$0.7700$$ 对 $$0.7107$$，差 $$8.3\%$$；`fake_quant_ste` B 组，如实列出，不藏）。
+
+---
+
+## 4. 前向易改，反向难：STE 从哪里来
+
+### 4.1 round 与 clip 的真导数
+
+$$
+\frac{\partial q}{\partial x}=\frac{\partial}{\partial x}\Big[\mathrm{clip}\big(\mathrm{round}(x/s)\big)\Big]=\underbrace{\frac{1}{s}\sum_{k}\delta(x-ks)}_{\text{只在格点有值}}\cdot\underbrace{\mathbf 1_{\{x\in\mathcal R\}}}_{\text{裁剪的 0/1 掩码}}
+$$
+
+两个事实决定了它不能直接用于训练：
+
+1. **几乎处处为 0**：在任意两个格点之间 $$q$$ 是常数，梯度为 0；在格点上导数是 Dirac 冲量，不可用；
+2. **有（相对）测度零的支撑集**：梯度只在测度零的格点上非零，随机初始化下几乎不可能正好落上去。
+
+如果照实传这个梯度，权重更新的第一步就会把所有权重判成“与 loss 无关”。
+
+### 4.2 一种可用的替代：STE
+
+Bengio 等人的 straight-through estimator 给出一个替代导数：
+
+$$
+\frac{\partial\mathcal L}{\partial x}\;\approx\;\frac{\partial\mathcal L}{\partial\hat{x}}\cdot g_{\rm STE}(x),\qquad
+g_{\rm STE}(x)=\mathbf 1\big\{\,\mathrm{round}(x/s)+z_p\in[q_{\min},\,q_{\max}]\,\big\}
+$$
+
+注意判据落在**舍入之后的整数码**上，不是直接落在 $$x\in\mathcal R$$ 上——很多材料写成后者，两者相差半格，§5.2 会把实测的切点摆出来。
+
+它不是“假装量化不存在”这么简单，而是一个**两段的替代**：
+
+- **在可表示区间内**：把 round 的导数当作 1（直通），clip 的导数本来就是 1；
+- **在区间外**：导数为 0（裁剪的掩码照实传），因为那里 $$q$$ 确实是常数，且我们希望优化器**不要**再往区间外推。
+
+PyTorch 的实测梯度正是这个形状。`fake_quant_torch_onnx` 1(b) 组在 $$s=0.1,\;z_p=0,\;q\in[-128,127]$$ 下逐点打印 $$d\hat{x}/dx$$：格点 $$x=0$$、格中点 $$x=0.05$$、端点 $$x=12.7=q_{\max}s$$ 与 $$x=-12.8=q_{\min}s$$ 全给 **1**，远超范围的 $$x=100$$ 给 **0**（对算子做一次 `backward` 即得）。范围外为 0 是**有意的设计**：PACT 之所以要把 clip 上界参数化，正是因为 STE 在这里把梯度切断了，边界本身学不动（[18 篇 §4](/2026/08/29/llm-quant-18-lsq-pact-dsq/)）。
+
+### 4.3 偏在哪里、为什么还能训练
+
+§5.1 会把“偏在哪”量出来，先给结论式的三条：
+
+1. **大小偏**：区间内真实斜率几乎处处是 0，STE 给 1。单点上这是“无穷大的高估”；只有**在一格宽度上积分**，STE 的 1 才与真实的平均斜率 1 对上——这是一个**积分意义上无偏、逐点有偏**的估计。任何“STE 平均高估 $$\times$$ 倍”的说法都要先说明统计口径（对什么分布、在哪个区间取平均），否则是伪问题。
+2. **边界偏**：区间外给 0 是刻意的省略，代价是“越界值没有梯度把它拉回来”，只能靠 clip 本身的效果 + 其他参数的更新间接缓解。
+3. **为什么仍然有效**：只要求梯度的**方向**大体正确、尺度不至于让优化发散。STE 提供的正是“朝减小量化误差的方向走”的一阶信号；LSQ 讨论了更细的尺度问题（用 $$1/\sqrt{n_WQ_P}$$ 之类因子把 $$\partial\hat{x}/\partial s$$ 的尺度校平），而 Adam 之类的自适应优化器对逐层尺度不敏感，这是 STE 在实践中能凑效的工程原因之一。
+
+### 4.4 scale 自己的梯度是另一回事
+
+LSQ 的核心观察是：**round 之外的仿射部分可以对 $$s$$ 求导**，不需要给 round 额外编一个导数：
+
+$$
+\frac{\partial\hat{x}}{\partial s}=\frac{\partial}{\partial s}\big[s\cdot\bar{q}(v/s)\big]
+=\bar{q}\;\underbrace{-\;\frac{v}{s}\cdot\frac{\partial\bar{q}}{\partial (v/s)}}_{\text{仍需 STE 假设}}
+$$
+
+推导与 $$\partial\hat{x}/\partial\alpha$$ 的形式（PACT）放在 [18 篇 §3–§4](/2026/08/29/llm-quant-18-lsq-pact-dsq/)，这里只强调一点：**“输入梯度”与“scale 梯度”是两个独立的近似**，用同一套 STE 假设推出来，但落在不同的量纲上，不能混着说“STE 让 scale 可学”。
+
+---
+
+## 5. STE 的偏差到底有多大
+
+这一节的数字都来自 `fake_quant_ste` D 组（纯 numpy，SEED=0）。
+
+![D 组：一格内 STE 的常数 1 与数值差分的尖峰对比，右图为直通比例随 scale 的变化](/assets/img/quant/fq_d_ste.png)
+
+### 5.1 逐点 vs 区间积分
+
+在 4-bit、$$s$$ 固定、$$z_p=0$$ 的设定下扫描一整格 $$[ks,(k+1)s)$$：
+
+- 在可表示区间内 $$g_{\rm STE}\equiv 1$$，处处相同；
+- 同一格上做数值差分，**非零采样点只占 0.37%**，且这些非零差商恒为 $$\pm500=s/(2\varepsilon)$$——它是**差分窗口造出来的伪影**，$$\varepsilon\to0$$ 时发散，不是可用的一阶导数（真导数在格点之间是 0、在格点上是 Dirac 冲量）；
+- 但把差商在一格上积分，结果仍是 $$s$$：跳变高度 $$s$$ 与 STE 的 $$\int 1\,dx=s$$ 对得上。
+
+所以正确的说法是：**STE 在“一格平均”的意义上是准确的，在“逐点”的意义上处处错**（`fake_quant_ste` D 组，逐点段）。
+
+### 5.2 直通比例由分布与 scale 决定，不是常数
+
+真正能定量的是“有多少元素拿到梯度”：
+
+先修正一个常见写法：放行判据作用在 **round 之后的整数码**上，而不是直接作用在 $$x\in\mathcal R$$ 上：
+
+$$
+P(g_{\rm STE}=1)=P\big(\mathrm{round}(x/s)+z_p\in[q_{\min},\,q_{\max}]\big)
+$$
+
+**这两个集合不等价**：阈值卡在**半格**处。`fake_quant_torch_onnx` 1(b) 组在 $$s=0.1,\;z_p=0,\;q\in[-128,127]$$（即 $$\mathcal R=[-12.8,\,12.7]$$）上逐点打印梯度：上界一侧 $$x/s=127.49$$ 仍为 1、$$127.50$$ 起为 0；下界一侧 $$x/s=-128.50$$ **仍为 1**、$$-128.51$$ 才变 0。也就是说放行域是 $$[-12.85,\,12.75)$$——下界含、上界不含，比 $$\mathcal R=[-12.8,\,12.7]$$ 两端各宽 $$s/2=0.05$$。**而且两端不对称**：上界恰在 mid-point 切断（$$127.5\to128$$ 越界），下界要再走半格才切断（$$-128.5$$ 按 ties-to-even 落回 $$-128$$，仍在范围内）。同一组还断言了区间内部（含格点、格中点、$$q_{\max}s$$ 端点）梯度恒为 1。所以把 STE 写成 $$\mathbf 1[x\in\mathcal R]$$ 是与实现不符的近似，做“多少元素拿到梯度”的账时会差出半格的量。
+
+![5 组：左图把每个探针点的实测梯度画成柱子（绿=放行、红=切断）；右图是放行域示意——放行区比可表示区间在两端各宽半格，且因 round 是 ties-to-even，127.5 舍到 128 越界被切断、-128.5 舍回 -128 仍在范围内被放行，两端切点不对称](/assets/img/quant/fq_g5_ste_domain.png)
+
+在均匀分布 $$x\sim U(-M,M)$$ 的对称量化下，这个比例有闭式解：
+
+$$
+P(g_{\rm STE}=1)=\min\!\Big(1,\;\frac{(q_{\max}+1)s}{M}\Big)
+$$
+
+实测五点（$$M/(s\,q_{\max})$$ 从 0.25 到 2.0）与闭式解吻合到第三位小数：直通比例 $$1.0000\to0.5715$$，闭式 $$1.0000\to0.5714$$（`fake_quant_ste` D 组，SEED=0）。换成真实的重尾激活，各 scale 下的直通率是：min-max **100.00%**、p0.999 **99.91%**、p0.99 **99.17%**、p0.9 **91.23%**。
+
+两点读数：① **min-max scale 下直通率恒为 100%**，这不是巧合而是定义使然——它把最大值钉在 $$q_{\max}$$ 上，按定义没有元素越界；代价是分辨率最粗、舍入误差最大。于是“梯度拿得多”与“量化误差小”在这里**方向相反**，这才是 QAT 里选 scale 的真实权衡；② 把 0.5 之类的数字当作“STE 的通用偏差”没有意义——放行比例是（分布形状 $$\times\;s$$）的函数，随 scale 收紧而下降，这也解释了校准集与训练分布不一致时 QAT 为什么会卡住。
+
+### 5.3 真零权重拿不到梯度
+
+边界处的行为要单独交代，因为它和 §5.2 的“宽半格”是同一件事的两面。`fake_quant_torch_onnx` 1(b) 组把这几行都打印出来了：格点 $$x=0$$、格中点 $$x/s=0.5$$、端点 $$x/s=127.0$$（即 $$x=12.7=q_{\max}s$$）梯度都是 1——**恰好落在可表示区间边界上的元素是放行的**，再往外还能再走半格才断。
+
+这条不影响上面的比例计算，但影响一个实际现象：**被剪成 0 的权重在 QAT 里会一直停在 0**——它舍入到 0、反量化仍是 0，梯度即便为 1，更新也会被下一步的 re-quant 吃回去（除非优化器的动量/权重衰减先把浮点值搬离 0，再由 re-quant 决定它落在哪个格点）。稀疏化与 QAT 的组合因此需要特殊处理，常见做法是把「前向量化、反向落在另一份参数上」显式建模——这正是 [E4 篇](/2026/09/22/llm-quant-E4-onebit-ternary-bonsai/) 讲的 shadow weights。
+
+---
+
+## 6. 在 Transformer 计算图中插入伪量化
+
+到这里算子已经定义完了。真正决定 QAT 效果的不是公式，是**插在哪、量化谁、scale 谁来定**。这一节先给出决策框架，再落到 Transformer 上的具体位置，最后给出可直接用来检查本机的代码。
+
+```mermaid
+flowchart TD
+    A["输入激活 X"] --> B["FQ_X<br>可选：per-tensor / per-token"]
+    B --> C["Linear 投影<br>x·W_Q^T"]
+    C --> D["FQ_Q（投影输出）<br>可选"]
+    D --> E["Attention<br>QK^T / softmax / PV"]
+    E --> F["FQ_O（注意力输出）<br>可选"]
+    F --> G["输出投影 W_O"]
+    G --> H["Residual Add"]
+    H --> I["RMSNorm"]
+    I --> J["MLP<br>gate / up / down"]
+    J --> K["Residual Add"]
+
+    W1["权重 FQ_W<br>W_Q / W_K / W_V / W_O<br>per-channel 或 per-group，训练前定 scale"] -.-> C
+    W2["权重 FQ_W<br>MLP 三联权重"] -.-> J
+
+    classDef cand stroke-dasharray: 4 3
+    class B,D,F,H,W1,W2 cand
+```
+
+图中虚线节点是**候选**量化边界，不是所有部署方案都要插。哪些最后真的留下，取决于目标格式（W4A16 / W8A8 / FP8）、kernel 能融合到哪、以及误差预算。
+
+![E 组：同一份两层 MLP 代码下 W4A16 / W8A8-static / W8A8-dynamic 三种方案的逐张量误差与网格对齐率](/assets/img/quant/fq_e_insertion.png)
+
+### 6.1 权重侧与激活侧的四个决策
+
+“把量化插到 Linear 上”这句话至少省掉了四个独立决策：
+
+| 决策 | 选项 | 谁决定 |
 |---|---|---|
-| QDQ 抵消 | $$\mathrm{DQ}(\mathrm{Q}(x))=x$$（无量化误差时） | 相邻 QDQ 对可消除（训练时无实际量化，仅占位） |
-| 常量折叠 | QDQ 作用于常量权重 → 立即量化存储 | 减少运行时计算量 |
-| QDQ 前推 | 将 QDQ 从算子输出移到下一个算子输入 | 改变量化点但数学等价 |
-| QDQ 合并 | 多个 QDQ 合并为一个 | 减少冗余计算 |
+| 量化哪些张量 | 只有 $$W$$ / 只有 $$X$$ / 两者 | 目标格式（W4A16 只量化 $$W$$，W8A8 两边都量化） |
+| 粒度 | per-tensor / per-channel / per-group | 权重的 outlier 结构、kernel 支持的 group size |
+| scale 的来源 | 校准集统计一次 / 每步统计 / 可学习 | PTQ vs QAT，静态 vs 动态激活 |
+| 精度分配 | 8-bit / 4-bit / 混合 | 误差预算（[25 篇](/2026/09/19/llm-quant-25-mixed-precision/)） |
 
-这些变换在 TensorRT 的 QDQ graph optimizer 中自动执行——它们的前提是 QDQ 的语义定义清晰：**QuantizeLinear 输出整数，DequantizeLinear 输入整数输出浮点**，两者成对出现时 round-trip 语义不变。
+**bias 和累加精度不属于这个决策集**：工业 kernel 里 bias 通常存 INT32、累加也在 INT32，这两件事由 kernel 决定，不由 FQ 节点表达。写 QAT 时把 bias 也插一层 FQ 是常见错误，它不模拟任何部署行为，只是白白多一层噪声。
 
-## 5. 框架实现对照
+### 6.2 权重 FQ 与激活 FQ 的生命周期不同
 
-### 5.1 PyTorch torch.ao.quantization
+旧文把两者概括成“权重离线、激活在线”，差距十倍。这话混了三个概念：
 
-PyTorch 提供两种量化流程：
-
-**Eager Mode（手动 fuse + insert）**：
-1. 手动指定需要量化的子模块（通常是 `nn.Linear`, `nn.Conv2d`）
-2. 调用 `torch.ao.quantization.fuse_modules()` 把 Conv + BN + ReLU 融合
-3. 调用 `torch.ao.quantization.prepare()` 插入伪量化 observer
-4. 用校准数据跑前向，observer 统计 activation 的 scale
-5. 调用 `torch.ao.quantization.convert()` 将 observer 替换为实际量化算子
-
-**FX Graph Mode（自动插桩）**：
-1. 通过 `torch.ao.quantization.quantize_fx()` 一步完成
-2. FX tracing 自动捕获所有算子调用，插入伪量化节点
-3. 支持更复杂的模型拓扑（条件分支、动态 shape）
-
-核心区别：eager mode 需要人工指定量化点，FX mode 自动推断。但两者共享同一个伪量化算子实现——`torch.ao.quantization.FakeQuantize`，内部就是 round + clip + STE。
-
-### 5.2 ONNX 显式 QDQ 图
-
-ONNX 用两个独立算子表示伪量化：
-
-```
-QuantizeLinear(x, scale, zero_point) → q    # 浮点 → 整数
-DequantizeLinear(q, scale, zero_point) → x_hat  # 整数 → 浮点
-```
-
-在 QAT 训练图中，这对算子被插入到每个需要量化的权重和激活上。导出为 ONNX 后，QDQ 节点作为“占位符”保留——推理引擎（TensorRT、ONNX Runtime）在加载图时识别 QDQ 模式并替换为真正的量化 kernel。
-
-### 5.3 TensorRT 的 QDQ 消费
-
-TensorRT 的 explicit quantization 模式直接消费 QDQ 图：
-
-1. 解析 ONNX 图，识别 QuantizeLinear → 算子 → DequantizeLinear 模式
-2. 为每个 QDQ 对分配量化参数（从 QDQ 节点的 scale/zero_point 读取）
-3. 将 QDQ + 算子融合为 INT8/FP8 kernel
-4. 对不支持量化的算子，自动插入反量化 + 浮点计算 + 重新量化
-
-TensorRT 的 QDQ graph optimizer 还会执行 §4.5 的等价变换：抵消冗余 QDQ、前推量化点、常量折叠权重。
-
-### 5.4 TVM Relay QNN：三段式 Pass
-
-TVM 的量化流程（relay.qnn）是本节重点——因为本系列的读者群体是 TVM / AI 编译器受众。TVM 的量化设计与 PyTorch / ONNX 有本质区别：**它不是在训练框架里插伪量化算子，而是在编译图上做量化标注和 lowering**。
-
-TVM relay qnn 的量化分为三个 pass，形成一个清晰的流水线：
-
-**第一段：Annotate（标注）**
-
-遍历 Relay IR 图，在需要量化的算子输入/输出上插入 `qnn.quantize` 和 `qnn.dequantize` 节点。标注规则由 ` annotate_required_ops` 函数定义——默认标注所有支持量化的算子（conv2d, dense, batch_matmul 等）。
-
-标注后的图看起来像：
-
-```
-%0 = qnn.quantize(%data, scale=..., zero_point=...)
-%1 = qnn.quantize(%weight, scale=..., zero_point=...)
-%2 = qnn.dequantize(%0, scale=..., zero_point=...)
-%3 = qnn.dequantize(%1, scale=..., zero_point=...)
-%4 = nn.conv2d(%2, %3, ...)
-```
-
-注意：这里的 `qnn.quantize` / `qnn.dequantize` 是**显式节点**（类似 ONNX 的 QDQ），不是隐式的伪量化。它们的语义是：quantize 输出 INT8，dequantize 输出 FP32——中间的计算用 INT8 进行。
-
-**第二段：Calibrate（校准）**
-
-用校准数据跑前向，统计每个 `qnn.quantize` / `qnn.dequantize` 节点的 scale 和 zero_point。TVM 支持多种校准策略：
-
-| 策略 | 方法 | 特点 |
+| 概念 | 权重 FQ | 激活 FQ |
 |---|---|---|
-| min-max | 统计全局 min/max | 简单但受 outlier 影响 |
-| percentage | 分位数截断（如99.99%） | 对 outlier 更鲁棒 |
-| KL divergence | 最小化量化前后分布的 KL 散度 | 计算量大但精度最好 |
+| **图构建** | 一次（`prepare` 时插入模块） | 一次（同上） |
+| **前向执行** | **每次前向都执行**：权重是可训练参数，每步都要重新 round-trip | 每次前向都执行，输入每次不同 |
+| **scale 更新** | 通常冻结（校准值）；也可学（LSQ） | 观察器滑动平均 / 冻结 / 每 token 现算 / 可学（PACT 的 $$\alpha$$） |
 
-校准结果写入图中每个 QDQ 节点的属性——这一步完成后，所有 scale 参数确定。
+关键更正：**“一次插入”说的是图构建，不是数值执行**。QAT 里权重每步都被重新伪量化，所以“权重 Fake Quant 是离线的”是错的——离线的是**scale 的估计**，不是算子的执行。这一点在实验上可以直接看到：训练一阵之后，浮点权重与伪量化权重的 rel-MSE 会随权重变大而漂移（`fake_quant_torch_onnx` 2 组实测：40 步训练后 `rel.MSE(W, FQ(W))` 从 3.7429e-03 涨到 **5.3566e-02**；同一组还断言 `disable_observer` 后 scale 逐位不变、权重仍在变）。
 
-**第三段：Realize（落地）**
+对应的训练流程图：
 
-这是 TVM 独有的关键步骤——将 `qnn.quantize` / `qnn.dequantize` 节点**融合进算子**，生成真正的 INT8 kernel。Realize pass 做三件事：
+```mermaid
+flowchart LR
+    P["模型参数 W<br>（可训练，浮点）"] --> FQ["FQ_W<br>每步重新 round-trip"]
+    X["上一层的激活"] --> OBS["Observer<br>统计 min/max"]
+    OBS -->|"填 scale"| FQ2["FQ_X"]
+    X --> FQ2
+    FQ --> OP["浮点算子<br>Linear / MatMul"]
+    FQ2 --> OP
+    OP --> L["Loss（全浮点）"]
+    L -->|"反向：STE 直通 FQ"| P
+    L -->|"反向：一般不经 FQ_X 的 scale"| P
+    P --> OPT["优化器<br>更新浮点权重"]
+    OPT -.->|"下一 step"| FQ
+```
 
-1. **QDQ 融合**：将 `qnn.quantize → conv2d → qnn.dequantize` 融合为 `qnn.conv2d`（INT8 版本）
-2. **Scale lowering**：将反量化 scale 乘进 bias 或下一个算子的 scale，消除冗余反量化
-3. **合法化**：确保所有 INT8 算子的输入输出类型一致，处理不支持量化的算子（自动 fallback 到 FP32）
+（注意反向那条“经过 FQ_X 回到参数”的路径：激活 FQ 的梯度会继续往前传给前面的层，一路都是 STE。）
 
-Realize 后的图中不再有独立的 quantize/dequantize 节点——它们已经被“吃进”了 INT8 算子内部。
+### 6.3 Transformer 里逐位置的插入判断
 
-**TVM 独有的 `qnn.simulated_quantize`**
+下表每条都给出**判断依据**而不是“规则”。把“原因”那列换成“目标格式与 kernel 支持”来读，这才是工程决策的样子。
 
-除了上述显式量化路径，TVM 还提供 `relay.qnn.simulated_quantize` 算子——这是一个**伪量化算子**，前向执行 round-trip 但输出浮点（类似 PyTorch 的 FakeQuantize），反向用 STE。它主要用于：
+| 位置 | 是否量化 | 依据 | 常见陷阱 |
+|---|---|---|---|
+| $$W_Q,W_K,W_V,W_O$$ 权重 | 是 | 静态参数，量化收益最大 | **量化 $$W_K$$ 不等于量化 $$K$$**：前者是投影矩阵，后者是 $$x W_K$$ 的输出激活，两者是不同边界 |
+| 输入激活 $$X$$（进 Linear 之前） | W8A8 是，W4A16 否 | 目标格式决定；W8A8 要求 GEMM 两侧都是整数 | 把 $$W$$ 和 $$X$$ 量化混谈，导致“量化了 QKV”这种模糊说法 |
+| Q/K/V 投影输出 | 看 kernel | 若注意力用整数 kernel（QV 是 Q·K 之类）则要在投影后插；若注意力留在浮点则不必 | 插了但 kernel 不融合，白白增加误差 |
+| Attention score $$QK^\top$$ | 一般否 | 动态范围随长度变化、softmax 对它极敏感 | 强行量化会让长序列精度崩 |
+| Softmax 输出 | 一般否 | 值落在 $$[0,1]$$，但分布极度集中（大量近 0），8-bit 已勉强 | “值域小所以适合量化”是错直觉：值域小 ≠ 有效信息在可用码字上 |
+| 残差相加的两支 | 两支各自量化，不要求同网格 | 浮点 QDQ 图里两支可各自有 scale；整数域相加才需要重缩放 | 把“整数域实现细节”当成“量化语义要求”（§6.5） |
+| RMSNorm / LayerNorm | 输入或输出可选，通常至少一侧留浮点 | 归一化涉及除法与平方和，低精度累加误差会被放大 | 为了“全覆盖”把 LN 的输入输出都量化，往往得不偿失 |
+| MLP 三联（gate/up/down）权重 | 是 | 与 QKV 同理，是 LLM 参数主体 | 对不同的 down_proj 用不同粒度时要按误差预算而不是便利性来分 |
 
-- QAT 训练：在 TVM 的训练图中插入 simulated_quantize，让模型在量化约束下学习
-- PTQ 评估：在不需要真正 INT8 kernel 的场景下，快速评估量化误差
+### 6.4 为什么激活侧要模拟 clamp，而权重可以松一点
 
-`simulated_quantize` 的签名：
+假设一个训练目标只模拟 round、不模拟 clip（即把 $$\hat{x}$$ 写成无限的网格，不截断）。那么损失对“激活跑到 $$\mathcal R$$ 外”是**不敏感的**——训练能把这个值推得任意大而不付出代价（在 W8A8 的激活量化下，这种“越跑越大”的激励甚至可能因 scaling 而自我强化）。部署时它被截断，误差突然兑现。
+
+这就是“QAT 里的激活 FQ 要包含 clip”的理由：**clip 是让训练目标看见“可表示区间之外没有码字”的唯一机制**，只模拟 round 时目标函数对这个区间外的代价完全不敏感。分量级看 §3.4 引的 C 组数字：4-bit 下按 0.999 分位裁剪比 min-max 好 $$4.66$$ dB，8-bit 下反而差 $$16.00$$ dB——**“要裁剪”不是无条件规则，它随位宽换向**；但“训练时要模拟部署会做的裁剪”这件事与位宽无关，否则训练目标与部署行为就是两个函数。权重的情况不同：权重是固定的，scale 由它自己的 absmax 决定，元素越界的概率远小于激活，所以权重侧少一层 clip 的代价小得多。
+
+### 6.5 反例：残差两支必须共享网格？
+
+旧文写过“残差连接的两个分支都需要量化到同一网格，否则加法语义不一致”。**这是一条错误规则**，而且可以用一行代码推翻：
+
+设两支各自 per-tensor 8-bit 量化，$$\hat a=\mathrm{FQ}(a,s_a)$$、$$\hat b=\mathrm{FQ}(b,s_b)$$，相加得 $$\hat a+\hat b$$。如果“共享网格”是语义要求，那么两支持不同 scale 时加法结果应当退化（例如变成两列相同的常数）；实测是**逐列不相等**（这一条是纯数学恒等，可直接验证）。原因就是 §3.1 的观察：**FQ 只是两步仿射变换的组合**，两个不同相位的栅格相加，结果是两个不同相位栅格的叠加，数学上完全合法。
+
+“共享网格”真正的来历是**整数域实现**：当 kernel 要在整数域里做 `int32 add` 时，两支的 scale 必须相同（或者先把一支重缩放到另一支的 scale，即 requantize）。那是 §7 层的约束，不是 §6 层的语义约束。把实现约束写成语义规则，读者会以为换一种部署方式（两支都留浮点累加）就不合法——这正是旧文最典型的层次混淆。
+
+### 6.6 先用代码看清自己的模型插了什么
+
+不同框架插的节点不一样，**必须以实测图为准**。用 torch 2.10 跑一个两层 MLP 的 FX QAT：
 
 ```python
-relay.qnn.simulated_quantize(
-    data,        # 输入张量
-    scale,       # 量化步长
-    zero_point,  # 整数零点
-    min_range,   # 校准得到的最小值（用于 clip）
-    max_range,   # 校准得到的最大值（用于 clip）
-    # 输出：round-trip 后的浮点值
-)
+from torch.ao.quantization import get_default_qat_qconfig
+from torch.ao.quantization.quantize_fx import prepare_qat_fx
+
+qconfig = get_default_qat_qconfig("x86")
+prepared = prepare_qat_fx(model.eval(), {"": qconfig}, example_input)
+print(prepared.graph)
 ```
 
-它在 relay IR 中的 lowering 路径：`simulated_quantize → qnn.quantize + qnn.dequantize`（在 realize pass 中进一步融合）。这使得 TVM 的 QAT 训练图可以与 PTQ 图共享同一套量化基础设施。
+![3 组：prepare_qat_fx 后的计算图，激活侧是 activation_post_process_* 节点，权重侧没有独立节点](/assets/img/quant/fq_g3_fx_graph.png)
 
-### 5.5 框架对比总表
+打出来的图长这样（`fake_quant_torch_onnx` 3 组的完整输出节选）：
 
-| 框架 | 图表示 | QDQ 语义 | 量化流程 | TVM 特色 |
+```text
+%activation_post_process_0 = call_module[target=activation_post_process_0](args = (%x,), kwargs = {})
+%fc1 : [num_users=1] = call_module[target=fc1](args = (%activation_post_process_0,), kwargs = {})
+%activation_post_process_1 : [num_users=1] = call_module[target=activation_post_process_1](args = (%fc1,), kwargs = {})
+%relu : [num_users=1] = call_function[target=torch.relu](args = (%activation_post_process_1,), kwargs = {})
+```
+
+三点值得注意：
+
+1. **节点的名字里没有“FakeQuant”**——它们叫 `activation_post_process`，真实类型是 `FusedMovingAvgObsFakeQuantize`（观察器 + 伪量化合一）。按名字找节点会漏。
+2. **权重侧没有独立节点**：权重的 fake quant 发生在 `fc1` 模块内部（模块的 forward 里对自己的权重调用），所以“数图上 FQ 节点个数”不能只数激活节点。
+3. **x86 的 QAT 默认 qconfig 里激活是 `reduce_range=True`**，也就是实际只用 0–127 共 128 个码字（7-bit 有效位）。这是一条会被大多数人忽略的默认值，见 §7.2。
+
+---
+
+## 7. 从训练图到部署图：伪量化、QDQ、整数 kernel
+
+本节把三件事彻底分开。它们的输入输出类型、生命周期、误差语义都不同。
+
+| 层 | 代表 | 输入 → 输出 | 谁在这一层做决定 | 数值上是否真省了计算 |
 |---|---|---|---|---|
-| PyTorch | Module / FX Graph | FakeQuantize（伪量化，浮点输出） | prepare → calibrate → convert | — |
-| ONNX | 显式算子图 | QuantizeLinear + DequantizeLinear（显式节点） | 导出后由推理引擎消费 | — |
-| TensorRT | 解析 ONNX QDQ | 融合进 INT8 kernel | QDQ 图优化 → kernel 融合 | — |
-| TVM Relay | Relay IR 节点 | qnn.quantize / qnn.dequantize（显式）+ simulated_quantize（伪量化） | annotate → calibrate → realize 三段式 | realized 后 QDQ 融入 INT8 算子 |
+| 训练层：FQ | `FakeQuantize` / `qnn.simulated_quantize` | 浮点 → 浮点（在网格上） | 观察器 / 校准 / 学习 | 否 |
+| 表示层：QDQ | ONNX `QuantizeLinear` + `DequantizeLinear` | 浮点 → 整数 → 浮点 | 训练后的 scale 固化成常量 | 否（语义层） |
+| 执行层：kernel | TensorRT / 编译器 lowering | 整数 → 整数，或融合掉的低比特算 | 引擎的融合与精度选择 | **是** |
 
-## 6. 不可导问题与 STE
+### 7.1 训练层：PyTorch 的两种流程不能合并成一条
 
-### 6.1 Round 与 Clamp 的梯度断裂
+`prepare()` / `convert()` 是两套流程**共用**的图变换，不是“一条流水线”。PTQ 与 QAT 的区别在于中间发生了什么：
 
-伪量化算子的反向传播面临一个根本问题：**round 和 clip 的导数几乎处处为零**。
+```mermaid
+flowchart TD
+    subgraph PTQ["PTQ：不训练"]
+        A1["float 模型"] --> A2["prepare<br>插 Observer<br>（FakeQuant 关掉）"]
+        A2 --> A3["校准：跑一批数据<br>统计 min/max"]
+        A3 --> A4["convert<br>换成量化模块或 QDQ 图"]
+    end
+    subgraph QAT["QAT：训练"]
+        B1["float 模型"] --> B2["prepare_qat<br>插 FQ + Observer"]
+        B2 --> B3["训练：每步 FQ 前向<br>STE 反传更新权重"]
+        B3 --> B4{"收敛？"}
+        B4 -->|"否"| B3
+        B4 -->|"是"| B5["冻结 Observer<br>（统计量定稿）"]
+        B5 --> B6["convert / export<br>→ 部署表示"]
+    end
+```
 
-对 $$q = \mathrm{round}(x/s)$$：
-- 在任意两个网格点之间，$$q$$ 是常数，$$\partial q/\partial x = 0$$
-- 在网格点上，$$q$$ 跳变，导数不存在（Dirac delta）
+差别有三处，都是容易被写错的地方：**QAT 的 `prepare_qat` 插的是“FQ + Observer”且 FQ 打开**（PTQ 的 `prepare` 插的是 Observer，FQ 的量化被禁用）；**QAT 要训练**；**QAT 在导出前必须冻结统计量**（否则 `convert` 时 scale 与训练末期不一致）。`quantize_fx()` 只是“`prepare` + `convert` 的语法糖”，它**不做校准也不做训练**，把它写成“一步完成自动插桩”会让人以为 QAT 也只需要两次调用。
 
-对 $$q = \mathrm{clip}(q', q_{\min}, q_{\max})$$：
-- 在 $$q_{\min} < q' < q_{\max}$$ 时，$$\partial q/\partial q' = 1$$（恒等）
-- 在 $$q' \le q_{\min}$$ 或 $$q' \ge q_{\max}$$ 时，$$\partial q/\partial q' = 0$$（饱和区）
+### 7.2 表示层：ONNX QDQ 是有数值语义的真算子
 
-组合起来，$$\partial\hat{x}/\partial x$$ 在几乎所有点上为零——梯度无法穿过伪量化算子传回权重，训练完全停滞。
-
-### 6.2 STE：直通估计器
-
-Bengio et al.（arXiv:1308.3432）提出 Straight-Through Estimator 来解决这个问题。STE 的核心思想极其简单：
-
-**前向**：正常执行伪量化 round-trip
-$$
-\hat{x} = \mathrm{FQ}(x)
-$$
-
-**反向**：假装量化不存在，梯度直通
-$$
-\frac{\partial\mathcal{L}}{\partial x} \approx \frac{\partial\mathcal{L}}{\partial\hat{x}}
-$$
-
-更精确的 STE 还会考虑 clip 的饱和区：只有在量化范围内的元素，梯度才能传回；超出范围的元素，梯度被置零：
+ONNX 的 `QuantizeLinear` 定义是
 
 $$
-\delta_{\mathrm{STE}}(x) = \begin{cases} 1 & q_{\min} < \mathrm{round}(x/s)+z_p < q_{\max} \\ 0 & \text{otherwise} \end{cases}
+y=\mathrm{saturate}\Big(\mathrm{round}\Big(\frac{x}{y_{\rm scale}}\Big)+y_{\rm zero\_point}\Big)
 $$
 
-### 6.3 STE 的有偏性分析
-
-STE 是一个有偏的梯度估计。本篇用一个思想实验说明偏差来源：
-
-考虑一个标量 $$x$$ 在网格区间 $$[ks, (k+1)s]$$ 内。前向 round 后 $$\hat{x}=ks$$（或 $$(k+1)s$$），输出在该区间内是**常数**——所以真实梯度为0。但 STE 给出梯度1（直通），系统性地高估了这个区间的梯度。
-
-偏差的定量分析。设 $$x$$ 在网格区间内均匀分布，$$\hat{x}=\mathrm{round}(x/s)\cdot s$$。STE 梯度为1，真实梯度为0（区间内常数函数）。方差：
+其中 `round` 是 **ties-to-even**（与 PyTorch 的 round 一致，但与 C 的 `round()`——ties away——不一致），saturate 的目标类型由 `y_zero_point` 的类型（或 `output_dtype`）决定。`DequantizeLinear` 是它的逆：
 
 $$
-\mathrm{Var}[\delta_{\mathrm{STE}}] = \mathbb{E}[(\delta_{\mathrm{STE}}-\nabla_x\hat{x})^2] = \mathbb{E}[\delta_{\mathrm{STE}}^2] = 1
+y=(x-y_{\rm zero\_point})\cdot y_{\rm scale}
 $$
 
-而真实梯度方差为0。STE 的偏差为1（完全来自 round 的平台效应）。
+三个细节决定了“QDQ 不是占位符”：
 
-但实际训练中 STE 仍然有效，原因有二：
-1. **方向正确**：STE 梯度的方向与 loss 下降方向大体一致（§7 实验证明方向一致性 > 95%）
-2. **全局抵消**：在大批量训练中，不同样本的 $$x$$ 落在不同网格区间，STE 的正偏差被多样化的样本“平均掉”
+1. **scale 是 initializer，不是注解**：导出之后 scale 就是图里的常量张量。改 scale = 改图，不是改一个属性。
+2. **判粒度只看 scale 的 shape，不能看有没有 `axis`**：torch 2.10 的 pt2e 导出链把 per-tensor 配置也写成了**每个 QDQ 节点都带 `axis=1`、而 scale 全是标量**（`fake_quant_torch_onnx` 4 组：8 个 QDQ 节点全部 `axis=1`，`shape=()`）——`axis` 在这里是冗余属性。反过来，ONNX 规范确实支持 per-axis（scale 形状为 `[out_channels]`），但**这条导出链路目前导不出来**：per-channel 配置直接失败于 `DispatchError: No ONNX function found for quantized_decomposed.dequantize_per_channel`（4b 组）。per-group 还需要 blocked quantization 的额外属性。所以“看 `axis` 反推粒度”在真实导出物上是错的。
+3. **round 的模式会影响复制**：reference 实现与 kernel 实现若在 ties 上不一致，量化结果会差一个 LSB——这在小权重上不是小事。
+4. **导出的三态差别可以直接看到**：同一份 QAT 模型导出后，**权重侧的 `QuantizeLinear` 被折叠成 int8 initializer，图上只剩 `DequantizeLinear`**；激活侧保留 Q/DQ 对（共 3 个 Q / 5 个 DQ，opset 20 由导出器自选，`zero_point` dtype 是 INT8）。更直接的一条：导出的 2 个矩阵乘**输入都来自 `DequantizeLinear`（浮点）**——这就是“QDQ 图 ≠ 整数 kernel”的图级证据。
 
-### 6.4 实验验证：STE 梯度 vs 软量化梯度
+**QDQ 有数值语义，但它不保证整数计算发生。** 一张 QDQ 图只说明“这里的量化方案是什么”，下游引擎完全可以选浮点实现（例如该算子没有整数 kernel、或该层被判定为精度敏感）。所以：
 
-用 sigmoid 松弛的 round 函数作为“真实可微量化器”的近似：
+- “导出成 QDQ” $$\ne$$ “部署会变快”；
+- “QDQ 抵消”只在**转换后的图仍保持原量化语义**时合法，例如 `DQ(Q(x))` 的两侧 scale 相同才可以合并；
+- 训练图与表示图都不能证明低比特真的在算：**要判断就得在部署侧实测**（engine 的 kernel 类型、显存占用、延迟）。这是本文把「执行层」单列一层的原因。
 
-$$
-\mathrm{round}_{\mathrm{soft}}(z; T) = \sum_{k=q_{\min}}^{q_{\max}} k \cdot \sigma\big((z-k)/T\big)
-$$
+### 7.3 执行层：谁决定能不能融合
 
-温度 $$T\to 0$$ 时趋近硬 round。数值差分计算其梯度，与 STE 对比（配套实验 Demo B）：
+推理引擎消费 QDQ 的典型流程（以 TensorRT 的 explicit quantization 路径为例，具体行为随版本变化，需以官方文档为准）：
 
-![STE 梯度 vs 软量化数值梯度：上图 STE=1（红色直线）vs 软量化 T=0.05（橙色，在网格点附近有尖峰）；中图不同温度下软量化梯度趋近阶梯；下图逐点偏差显示 STE 系统性高估约0.5](/assets/img/quant/ste_vs_numerical_grad.png)
+1. 解析 ONNX，识别 `Q → op → DQ` 与 `Q → op → Q` 模式；
+2. 从 Q 节点读 scale/zero-point，判断该 op 是否有整数实现；
+3. 有就融合成整数 kernel；没有就保留浮点（在边界处插 DQ/Q）；
+4. 图上再跑一轮等价变换：冗余 QDQ 抵消、scale 前推、常量折叠。
 
-**这张图回答三个问题**：
+第 3 步就是**所有“量化边界白插了”的来源**：你插的节点在训练里起了作用（让权重适应了量化误差），在执行层却可能因为没有对应 kernel 而被反量化回浮点——那部分收益变成纯误差而没有速度。这也是为什么“先定部署目标、再决定插哪里”的顺序不能反：**训练图可以任意插，但只有能被 lower 的边界才值得插。**
 
-1. **STE 确实高估梯度**：在有效范围内，STE 均值为1.0，软量化（$$T=0.05$$）均值为0.4995——偏差约 +0.50。原因是 STE 把 round 的平台效应完全忽略，而真实梯度在远离网格点处趋近于0。
-2. **方向大体正确**：两者同号比例 > 95%。STE 在所有有效区间给出正梯度，软量化也给出正梯度（只是幅值更小）。这解释了为什么 STE 虽然有偏，训练仍然能收敛。
-3. **边界行为一致**：在 clip 范围外（$$\lvert x\rvert > s\cdot q_{\max}$$），STE 和软量化都将梯度抑制到接近零——这正是 QAT 所需要的“让模型学会避开量化范围外的值”。
+### 7.4 一个必须知道的坑：`reduce_range=True`
 
-### 6.5 为下一篇埋钩子
+torch 的 `get_default_qat_qconfig("x86")` 里，激活的 observer 是 `MovingAverageMinMaxObserver(quant_min=0, quant_max=255, reduce_range=True)`。`reduce_range=True` 会把范围收缩到 `[0,127]`，理由是历史上某些 x86 VNNI 实现处理 uint8 时存在饱和问题。后果是：**你以为在训 W8A8，激活实际只有 7-bit 有效位**。
 
-STE 的有偏性启发了两类改进方向：
+这条对 LLM 尤其重要——LLM 的激活是重尾的，用 128 个码字去覆盖 8-bit 的量程，等于主动丢一位。所以任何引用“QAT 默认配置”的结论都要先确认 `reduce_range`。这条不要凭记忆：取路径是 `qconfig.activation.p.keywords["reduce_range"]`（`activation` 是 `_PartialWrapper`，参数挂在 `.p.keywords` 上；实例 `FusedMovingAvgObsFakeQuantize` 本身**没有** `reduce_range` 属性，直接取会抛 `AttributeError`）。`fake_quant_torch_onnx` 2 组把这个坑断言进去了。
 
-1. **学习 scale**：如果 $$s$$ 不再是固定常数而是可学习参数，梯度可以直接流过 $$s$$（不需要 STE），而 round 的不可导问题仍然存在——这就是 LSQ（Learned Step Size Quantization，arXiv:1902.08153）的核心思想，18 篇展开。
-2. **学习 clamp 上界**：STE 在饱和区的梯度为零，导致模型无法学习“最优截断点”——PACT（arXiv:1805.06085）把 clip 上界变成可学习参数，让梯度通过 $$M$$ 流回网络，18 篇一起讲。
+### 7.5 TVM：`simulated_quantize` 是真算子，“三段式”不是
 
-## 7. 实验
+TVM 的 relay qnn 里确实有一个与 PyTorch `FakeQuantize` 同角色的算子：
 
-### 7.1 实验环境与代码
+```python
+# python/tvm/relay/qnn/op/qnn.py:223（TVM v0.19.0）
+simulated_quantize(data, output_scale, output_zero_point, axis=-1, out_dtype="int8")
+```
 
-两个 Demo 均在纯 numpy 下实现（[experiments/quantization/fake_quant_ste/run.py](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_ste/run.py)），无需 GPU，几秒出图。合成权重矩阵 $$W\in\mathbb{R}^{256\times1024}$$：基底 $$N(0,0.02^2)$$，注入8个整体×10的 outlier 通道和0.1%的×30极端权重。
+它的签名**只有 scale/zero_point/axis/out_dtype**，没有 `min_range`/`max_range`；语义是“按 `out_dtype` 的整数范围做 clamp 再把结果乘回 scale”，输出仍是浮点——也就是伪量化。这是很多资料会写错的地方。
 
-### 7.2 Demo A：伪量化误差特性
+另外两件事经常被混淆：
 
-（§3.5 已嵌入数据表和图，此处补充解读。）
+- **`relay.qnn`** 是“量化算子集”（`qnn.quantize`/`qnn.dequantize`/`qnn.conv2d`/`qnn.simulated_quantize` 等）＋ legalization pass；
+- **`relay.quantize`** 是另一套东西：annotate → calibrate → realize 的函数族，是给**前端整数图**用的。
 
-关键观察：**粒度收益在低位宽更显著**。4-bit 下 per-group 比 per-tensor 提升 11.08 dB，8-bit 下提升 28.18 dB。这说明粒度细化不仅减小了舍入误差，还通过隔离 outlier 释放了更多有效位宽——与01 篇 §7.3 的结论一致。
+旧文把后者的三段式写成“relay qnn 的流程”，并声称最后 `realize` 会把 QDQ 融进 INT8 算子。真实情况是：`qnn` 的职责是 legalize（把通用量化图变形为目标支持的组合），把量化图真正落成整数 kernel 的是通用的 `LowerTE`/后端 schedule；`realize` 属于 `relay.quantize` 的 API。更要紧的一条：**`relay.qnn` 在 TVM v0.20.0 就已经整个删掉了**——v0.19.0 里还有 15 个 `python/tvm/relay/qnn/` 文件，v0.20.0 起为 0；删除发生在 commit [`ccaa534b`](https://github.com/apache/tvm/commit/ccaa534b2cc96f68f85b5d7926a80f4b75b05a21)（*Phase out relay python components*，2025-02-15）。所以引用“TVM 的 qnn 量化流程”必须锁到 v0.19.0，在 main 或 v0.20+ 上读者找不到任何东西。
 
-### 7.3 Demo B：STE 梯度偏差
+### 7.6 四层各自该看什么
 
-（§6.4 已嵌入数据和图，此处补充定量总结。）
-
-| 温度 $$T$$ | 软量化梯度均值 | STE 梯度均值 | 偏差 |
+| 层 | 核心问题 | 本篇文章/实验给出的证据 | 读者应该自己验的 |
 |---|---|---|---|
-| 0.50 | 0.4733 | 1.0000 | +0.5267 |
-| 0.20 | 0.4947 | 1.0000 | +0.5053 |
-| 0.05 | 0.4995 | 1.0000 | +0.5005 |
+| 训练层 | 伪量化怎么算、梯度怎么来 | §3 手算算例、§5 梯度口径、`print(prepared.graph)` 实测 | 在你的模型里 `print(prepared.graph)` |
+| 计算图层 | 边界插在哪、量化谁 | §6 逐位置判断、`fake_quant_ste` E 组 | 打印自己的 qconfig 与 `reduce_range` |
+| 表示层 | 量化语义怎么表达 | §7.2 QDQ 定义、ONNX 节点与 axis | 导出后读 ONNX 的 Q/DQ 与 scale 形状 |
+| 执行层 | 是否真执行低比特 | §7.3 融合流程、§7.3 的“看实测不看图” | 在目标 engine 上对比延迟与显存 |
 
-随着温度降低，软量化梯度收敛到0.5——这正是 round 函数在一个网格区间内的平均梯度（一半区间 $$\partial\hat{x}/\partial x=1$$，另一半为0，均值0.5）。STE 给出1.0，系统性高估一倍。
-
-## 8. 批判与展望
-
-### 8.1 本篇解决了什么
-
-本篇把伪量化算子（Fake-Quantize）的数学、插入位置、框架实现、反传断裂问题一次性讲透。核心贡献有四：
-
-1. **统一视角**：PTQ 的离线评估与 QAT 的在线训练共享同一个伪量化算子——区别不在于算子本身，而在于它所处的上下文。
-2. **插入位置学**：逐算子（Conv/Linear/MatMul/LayerNorm/Softmax/残差加法）的插入规则，以及“激活伪量化必须模拟 clip 饱和效应”的原理。
-3. **框架对照**：从 PyTorch eager/FX 到 ONNX QDQ 到 TensorRT explicit quantization 到 TVM relay qnn 三段式 pass，四套实现的异同一览。
-4. **STE 实验验证**：用软量化数值梯度证明 STE 系统性高估梯度约一倍（偏差 +0.50），但方向一致性 > 95%。
-
-### 8.2 致命局限
-
-STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学到的“适应量化”策略是次优的。更关键的是，伪量化算子的 scale（$$s_w$$, $$s_a$$）在默认实现中是固定常数，模型无法通过梯度去优化 scale 本身——这就像给模型戴上了“只能调权重、不能调量化器”的镣铐。打破这个镣铐，就是18 篇 LSQ/PACT 的主题。
-
-此外，本篇的插入位置规则是“手动指定”的——每个算子该在哪里插、用什么粒度，都靠工程师经验决定。自动化插入（如 ONNX Runtime 的 dynamo quantization、TVM 的 annotate pass）是工程侧的开放问题。
-
-### 8.3 Takeaway 三件套
-
-> **解决什么痛点**：PTQ 的量化误差是“事后评估”——模型从未见过量化后的权重，部署时精度下降无法挽回。伪量化算子把量化搬进计算图，让模型在训练中就“看到”量化误差，从而主动适应——这就是 QAT 的全部地基。
->
-> **致命局限**：STE 有偏 + scale 固定 = QAT 的天花板。模型只能在给定的量化网格内优化权重，无法优化网格本身。
->
-> **如何引出下一篇**：LSQ（arXiv:1902.08153）证明 scale 的梯度可以用 STE 的变体推导出来——$$\partial\mathcal{L}/\partial s \approx -q\cdot\partial\mathcal{L}/\partial\hat{x}$$——让模型自己学习“每层该用多细的网格”。PACT（arXiv:1805.06085）则把 clip 上界 $$M$$ 变成可学习参数。两者的共同点是：**在伪量化算子的基础上，把更多的“量化决策”变成可微的、可学习的**。
+---
 
 ## 参考清单
 
@@ -507,10 +588,10 @@ STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学�
 
 **代码与规范**
 
-- 本篇配套实验：[experiments/quantization/fake_quant_ste/](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_ste/)（numpy，几秒复现全部图表）
+- 本篇配套实验（两组，输出已固化）：[fake_quant_ste](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_ste/)（纯 numpy，算子数学 / 粒度 / 裁剪 / STE 判据 / 插入位置，SEED=0）、[fake_quant_torch_onnx](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_torch_onnx/)（torch 2.10 + onnx 1.20，observer qparams / 梯度 / eager 与 FX 流程 / ONNX QDQ 导出）
 - [PyTorch torch.ao.quantization](https://pytorch.org/docs/stable/quantization.html) —— eager / FX mode 量化 API
 - [ONNX Quantization](https://onnx.ai/onnx/api/onnx_quantization.html) —— QDQ 图规范
-- [TVM QNN 文档](https://tvm.apache.org/docs/tutorial/quantization.html) —— relay qnn 三段式量化
+- [TVM QNN 文档](https://tvm.apache.org/docs/tutorial/quantization.html)—— `relay.qnn` 自 v0.20.0 起已移除，本篇所有 TVM 结论锁 **v0.19.0**
 - [TensorRT Quantization](https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html) —— explicit quantization 与 QDQ 消费
 
 **系列导航**
@@ -519,8 +600,4 @@ STE 的有偏性意味着 QAT 训练的梯度信号并不精确——模型学�
 - 上一篇：[15 GGUF k-quants / FP8 / MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/) ｜ 下一篇：[18 LSQ / PACT / DSQ](/2026/08/29/llm-quant-18-lsq-pact-dsq/)
 - PTQ 部分（00–16 篇）提供量化器数学基础；本篇开启 QAT 部分
 
-**中文社区**：知乎上关于 QAT 和 STE 的讨论较多，尤其“量化感知训练为什么有效”类话题下有若干高质量回答；掘金上 PyTorch 量化实战教程覆盖了 torch.ao 的 eager mode 流程。本篇未能核验到稳定直链，暂不列出——诚实标注：本节为占位，非完整来源。
-
-> **Lab 练习（动手）**：
-> 1. 在 `run.py` 中将 Demo A 的 outlier 通道数从8改为64，观察 per-channel 相对 per-tensor 的优势如何变化——预期优势缩水，因为 per-channel 无法隔离行内 outlier。
-> 2. 在 Demo B 中将温度 $$T$$ 从0.05降到0.001，观察软量化梯度是否收敛到0.5——验证“round 的平均梯度为0.5”这一理论预测。
+> **继续阅读**：[18 LSQ / PACT / DSQ →](/2026/08/29/llm-quant-18-lsq-pact-dsq/)（把 scale 从常数变成可学参数）｜ [19 AdaRound / BRECQ / QDrop](/2026/09/19/llm-quant-19-adaround-brecq-qdrop/)（PTQ 与 QAT 之间的舍入决策带）
