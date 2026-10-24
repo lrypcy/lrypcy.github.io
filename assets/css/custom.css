@@ -2622,10 +2622,10 @@ body.is-filtered .tag-group li a { font-size: 15px; }
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - var(--header-h) - 40px);
-  background: var(--card-bg);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
   overflow: hidden;
 }
 .rail-head {
@@ -2633,13 +2633,12 @@ body.is-filtered .tag-group li a { font-size: 15px; }
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 11px 10px 11px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 10px 8px 12px;
 }
 .rail-head-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  color: var(--text);
+  color: var(--text-light);
   letter-spacing: 1px;
 }
 /* 分类目录折叠开关 */
@@ -2655,14 +2654,13 @@ body.is-filtered .tag-group li a { font-size: 15px; }
   line-height: 1;
   color: var(--text-light);
   background: transparent;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 12px;
   cursor: pointer;
   transition: var(--transition);
 }
 .rail-toggle:hover {
   color: var(--primary);
-  border-color: var(--primary);
   background: var(--primary-soft);
 }
 .rail-toggle-icon { font-size: 13px; }
@@ -2675,7 +2673,7 @@ html.rail-off .rail-toggle { padding: 0; width: 26px; justify-content: center; }
   flex: 1 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 8px 8px 14px;
+  padding: 4px 6px 14px;
   scrollbar-width: thin;
   scrollbar-color: rgba(59, 130, 246, 0.35) transparent;
 }
@@ -2722,7 +2720,6 @@ html.rail-off .rail-toggle { padding: 0; width: 26px; justify-content: center; }
   transition: transform 0.2s ease;
 }
 .rail-cat[open] > .rail-cat-sum .rail-cat-arrow { transform: rotate(90deg); }
-.rail-cat-icon { flex-shrink: 0; font-size: 13px; }
 .rail-cat-name {
   flex: 1 1 auto;
   min-width: 0;
@@ -2734,9 +2731,6 @@ html.rail-off .rail-toggle { padding: 0; width: 26px; justify-content: center; }
 .rail-cat-count {
   flex-shrink: 0;
   min-width: 20px;
-  padding: 0 6px;
-  border-radius: 9px;
-  background: var(--bg);
   color: var(--text-light);
   font-size: 11px;
   line-height: 17px;
@@ -2816,7 +2810,6 @@ html.rail-off .rail-toggle { padding: 0; width: 26px; justify-content: center; }
 .rail-foot {
   flex-shrink: 0;
   padding: 9px 16px;
-  border-top: 1px solid var(--border);
   font-size: 12px;
   color: var(--text-light);
   text-decoration: none;

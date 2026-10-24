@@ -2,6 +2,7 @@
 layout: page
 title: 关于
 permalink: /about/
+no_sidebar: true
 ---
 
 {% assign graph = site.data.knowledge_graph %}

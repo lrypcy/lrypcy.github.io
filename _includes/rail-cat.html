@@ -6,10 +6,9 @@
 
 {%- assign cname = include.cname -%}
 {%- assign ps = site.categories[cname] -%}
-{%- assign icon = '📁' -%}
 {%- assign color = '#3b82f6' -%}
 {%- for c in site.data.knowledge_graph.categories -%}
-  {%- if c.name == cname -%}{%- assign icon = c.icon -%}{%- assign color = c.color -%}{%- endif -%}
+  {%- if c.name == cname -%}{%- assign color = c.color -%}{%- endif -%}
 {%- endfor -%}
 
 {%- comment -%} 当前文章所属的分类：默认展开 {%- endcomment -%}
@@ -35,7 +34,6 @@
 <details class="rail-cat" data-cat="{{ cname }}" style="--cat-color: {{ color }}"{% if cur %} data-current="1" open{% endif %}>
   <summary class="rail-cat-sum">
     <span class="rail-cat-arrow" aria-hidden="true">›</span>
-    <span class="rail-cat-icon" aria-hidden="true">{{ icon }}</span>
     <span class="rail-cat-name">{{ cname }}</span>
     <span class="rail-cat-count">{{ ps | size }}</span>
   </summary>
