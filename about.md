@@ -20,8 +20,7 @@ no_sidebar: true
     <div class="about-links">
       <a href="https://github.com/lrypcy" target="_blank" rel="noopener">GitHub</a>
       <a href="mailto:p_c_yuan@whu.edu.cn">邮箱</a>
-      <a href="/posts/?tab=archives">全部文章</a>
-      <a href="/#series-quant">量化系列</a>
+      <a href="https://www.zhihu.com/people/lrypcy" target="_blank" rel="noopener">知乎</a>
     </div>
   </div>
 </div>
