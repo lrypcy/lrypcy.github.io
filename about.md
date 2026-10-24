@@ -19,7 +19,7 @@ permalink: /about/
     <div class="about-links">
       <a href="https://github.com/lrypcy" target="_blank" rel="noopener">GitHub</a>
       <a href="mailto:p_c_yuan@whu.edu.cn">邮箱</a>
-      <a href="/archives/">全部文章</a>
+      <a href="/posts/?tab=archives">全部文章</a>
       <a href="/#series-quant">量化系列</a>
     </div>
   </div>

@@ -13,12 +13,12 @@ layout: default
         <span class="post-category">
           <span class="post-meta-divider">|</span>
           {% assign cats = page.categories %}
-          {% for cat in cats %}<a href="/categories/?cat={{ cat | url_encode }}">{{ cat }}</a>{% unless forloop.last %}, {% endunless %}{% endfor %}
+          {% for cat in cats %}<a href="/posts/?cat={{ cat | url_encode }}">{{ cat }}</a>{% unless forloop.last %}, {% endunless %}{% endfor %}
         </span>
         {% endif %}
         {% if page.tags %}
         <span class="post-tags">
-          {% for tag in page.tags %}<a href="/tags/?tag={{ tag | url_encode }}">#{{ tag }}</a>{% endfor %}
+          {% for tag in page.tags %}<a href="/posts/?tag={{ tag | url_encode }}">#{{ tag }}</a>{% endfor %}
         </span>
         {% endif %}
       </div>

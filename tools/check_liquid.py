@@ -51,6 +51,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATE_EXACT = {
     "index.html",
     "about.md",
+    "posts.md",
     "archives.md",
     "categories.md",
     "tags.md",
