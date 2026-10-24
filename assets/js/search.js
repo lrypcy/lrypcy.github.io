@@ -5,10 +5,13 @@
   var trigger = document.querySelector('.search-trigger');
   var posts = null;
   var activeIndex = -1;
+  var typeFilter = 'all';
+  var lastQuery = '';
 
   function open() {
     overlay.classList.add('is-open');
     input.value = '';
+    typeFilter = 'all';
     results.innerHTML = '<div class="search-empty">输入关键词开始搜索…</div>';
     activeIndex = -1;
     setTimeout(function () { input.focus(); }, 80);
@@ -104,6 +107,7 @@
 
   input.addEventListener('input', function () {
     var q = input.value.trim();
+    lastQuery = q;
     if (!q) {
       results.innerHTML = '<div class="search-empty">输入关键词开始搜索…</div>';
       return;
@@ -111,6 +115,14 @@
     loadIndex(function () {
       renderResults(doSearch(q), q);
     });
+  });
+
+  results.addEventListener('click', function (e) {
+    var chip = e.target && e.target.closest ? e.target.closest('.search-type-chip') : null;
+    if (!chip) { return; }
+    e.preventDefault();
+    typeFilter = chip.getAttribute('data-type');
+    if (lastQuery) { renderResults(doSearch(lastQuery), lastQuery); }
   });
 
   input.addEventListener('keydown', function (e) {
