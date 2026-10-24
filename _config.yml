@@ -52,6 +52,18 @@ analytics:
   respect_dnt: false                    # true 则尊重浏览器 Do Not Track
 
 
+# 资讯（daily 调研笔记）：_daily/ 下每篇一个 md，列表见 /news/
+collections:
+  daily:
+    output: true
+    permalink: /daily/:name/
+defaults:
+  - scope:
+      path: ""
+      type: daily
+    values:
+      layout: daily
+
 # 构建排除
 exclude:
   - README.md

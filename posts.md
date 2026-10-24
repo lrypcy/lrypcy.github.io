@@ -226,29 +226,34 @@ no_title: true
 
 <!-- ======================= Tab 3：文章（归档） ======================= -->
 <div id="tab-archives" class="tab-panel" hidden>
-<div class="archives">
+<div class="archives" id="archivesList">
   {% assign posts_by_year = site.posts | group_by_exp: "post", "post.date | date: '%Y'" %}
   {% for year_group in posts_by_year %}
-  <h2 class="archive-year">{{ year_group.name }}<span>{{ year_group.items | size }} 篇</span></h2>
-  <ul class="archive-list">
-    {% for post in year_group.items %}
-    <li>
-      <span class="archive-date">{{ post.date | date: "%m-%d" }}</span>
-      <a href="{{ post.url }}">{{ post.title }}</a>
-    </li>
-    {% endfor %}
-  </ul>
+  <section class="archive-year-block">
+    <h2 class="archive-year">{{ year_group.name }}<span>{{ year_group.items | size }} 篇</span></h2>
+    <ul class="archive-list">
+      {% for post in year_group.items %}
+      <li>
+        <span class="archive-date">{{ post.date | date: "%m-%d" }}</span>
+        <a href="{{ post.url }}">{{ post.title }}</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
   {% endfor %}
 </div>
+<nav class="pager" id="archivesPager" hidden></nav>
 </div>
 
 <noscript>
   <style>
     .tab-panel[hidden] { display: block !important; }
     .page-tabs { display: none !important; }
+    .pager { display: none !important; }
   </style>
 </noscript>
 
+<script src="/assets/js/pager.js"></script>
 <script>
 (function () {
   var TABS = ['cats', 'tags', 'archives'];
@@ -455,6 +460,21 @@ no_title: true
     showAllBtn.addEventListener('click', function () { showAll = !showAll; renderCloud(); });
   }
   renderCloud();
+
+  /* ---- 归档分页：翻页时隐藏没有可见条目的年份块 ---- */
+  var archItems = [].slice.call(document.querySelectorAll('#tab-archives .archive-list li'));
+  if (window.pcyPager && archItems.length) {
+    window.pcyPager({
+      items: archItems,
+      perPage: 30,
+      container: document.getElementById('archivesPager'),
+      onChange: function () {
+        [].slice.call(document.querySelectorAll('#tab-archives .archive-year-block')).forEach(function (blk) {
+          blk.hidden = blk.querySelectorAll('.archive-list li:not([hidden])').length === 0;
+        });
+      }
+    });
+  }
 
   state = readState();
   syncUrl();

@@ -52,6 +52,7 @@ TEMPLATE_EXACT = {
     "index.html",
     "about.md",
     "posts.md",
+    "news.md",
     "archives.md",
     "categories.md",
     "tags.md",
