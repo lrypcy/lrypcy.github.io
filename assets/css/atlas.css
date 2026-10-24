@@ -53,6 +53,12 @@ body.home-atlas-page.no-scroll{overflow:hidden}
 .atlas .pulse{width:6px;height:6px;border-radius:50%;background:var(--primary);box-shadow:0 0 0 0 rgba(59,130,246,.35);animation:pulse 2.4s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(59,130,246,.32)}70%{box-shadow:0 0 0 9px rgba(59,130,246,0)}100%{box-shadow:0 0 0 0 rgba(59,130,246,0)}}
 .atlas .hero h1{font-size:clamp(46px,6.6vw,92px);line-height:.98;letter-spacing:-.045em;margin:22px 0 0;font-weight:750;color:var(--text)}
+.atlas .hero h1 .hero-brand{
+  display:block;margin:0 0 8px;
+  font-family:var(--font-brand,"PCY Brand","STXingkai","Kaiti SC","STKaiti","KaiTi",serif);
+  font-size:clamp(30px,3.4vw,48px);font-weight:400;line-height:1.18;letter-spacing:.08em;color:var(--text);
+}
+.atlas .hero h1 .hero-headline{display:block;font-size:inherit;line-height:inherit;letter-spacing:inherit;font-weight:inherit}
 .atlas .hero h1 .grad{background:linear-gradient(102deg,#2563eb 0%,#7c3aed 54%,#ea580c 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
 .atlas .hero .lede{max-width:830px;color:#52657a;font-size:clamp(14px,1.3vw,16.5px);line-height:1.9;margin:22px 0 0}
 .atlas .hero .lede b{color:var(--text);font-weight:600}

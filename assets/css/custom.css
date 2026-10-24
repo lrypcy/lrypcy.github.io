@@ -1256,7 +1256,7 @@ html.rail-off .rail-head-title { display: none; }
 }
 
 /* 窄屏隐藏悬浮目录（改用 sidebar / 文章内目录） */
-@media (max-width: 1199px) {
+@media (max-width: 991px) {
   .side-toc { display: none; }
 }
 

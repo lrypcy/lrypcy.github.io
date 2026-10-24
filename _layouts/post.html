@@ -65,10 +65,9 @@ layout: default
     var hs = body.querySelectorAll('h2');
     if (hs.length < 3) return;
 
-    // 宽屏 = 左侧竖排章节横线（hover 展开完整面板）；中等屏 = sidebar 内目录卡片；
-    // 手机 = 正文顶部目录卡（此时 sidebar 已经落到文章下方）
+    // 宽屏 = 左侧竖排章节横线（hover 展开完整面板）；窄屏 = sidebar 内目录卡片
     var w = window.innerWidth;
-    if (w >= 1200) {
+    if (w >= 992) {
       buildFloatingToc(hs);
     } else {
       buildSidebarToc(hs, body, w < 769);
