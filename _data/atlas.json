@@ -1,0 +1,3265 @@
+{
+  "meta": {
+    "title": "AI Infra 知识全景",
+    "subtitle": "从芯片、互连、编译、算子，到训练系统、集群调度、压缩部署、推理服务与可观测性"
+  },
+  "domains": [
+    {
+      "id": "hw",
+      "name": "算力硬件",
+      "icon": "▣",
+      "color": "#22d3ee",
+      "tagline": "从晶体管到超节点",
+      "desc": "AI 系统的物理下界：执行模型、存储层次、互连拓扑、封装与性能建模。理解硬件，才能判断一个 Kernel、一种并行或一套服务方案为什么可行。",
+      "subs": [
+        {
+          "id": "hw-gpu",
+          "name": "GPU 架构与执行模型",
+          "coverage": 2,
+          "series": [
+            "chip",
+            "transcendental"
+          ],
+          "desc": "从 SIMT 与 warp 调度，到 Tensor Core、共享内存、occupancy 和 Hopper/Blackwell 的微架构选择。",
+          "topics": [
+            {
+              "id": "hw-gpu-t0",
+              "name": "SIMT 与 warp 调度",
+              "coverage": 2
+            },
+            {
+              "id": "hw-gpu-t1",
+              "name": "SM / CUDA Core / Tensor Core",
+              "coverage": 2
+            },
+            {
+              "id": "hw-gpu-t2",
+              "name": "寄存器、共享内存与 occupancy",
+              "coverage": 2
+            },
+            {
+              "id": "hw-gpu-t3",
+              "name": "L1/L2/HBM 存储层次",
+              "coverage": 2
+            },
+            {
+              "id": "hw-gpu-t4",
+              "name": "TMA 与异步拷贝",
+              "coverage": 2
+            },
+            {
+              "id": "hw-gpu-t5",
+              "name": "Hopper / Blackwell 新特性",
+              "coverage": 2
+            },
+            {
+              "id": "hw-gpu-t6",
+              "name": "AMD CDNA / ROCm 生态",
+              "coverage": 0
+            },
+            {
+              "id": "hw-gpu-t7",
+              "name": "GPU 微基准与性能计数器",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "hw-asic",
+          "name": "专用加速器",
+          "coverage": 1,
+          "series": [
+            "chip"
+          ],
+          "desc": "TPU、NPU/ASIC、FPGA 与近存/存算一体的取舍：通用性、能效与软件栈成熟度的三角。",
+          "topics": [
+            {
+              "id": "hw-asic-t0",
+              "name": "TPU 与脉动阵列",
+              "coverage": 2
+            },
+            {
+              "id": "hw-asic-t1",
+              "name": "NPU / ASIC 与领域专用架构",
+              "coverage": 2
+            },
+            {
+              "id": "hw-asic-t2",
+              "name": "FPGA 与可重构计算",
+              "coverage": 0
+            },
+            {
+              "id": "hw-asic-t3",
+              "name": "存算一体 / 近存计算",
+              "coverage": 0
+            },
+            {
+              "id": "hw-asic-t4",
+              "name": "晶圆级芯片",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "hw-interconnect",
+          "name": "互连与封装",
+          "coverage": 1,
+          "series": [
+            "chip"
+          ],
+          "desc": "scale-up 与 scale-out 的物理边界：PCIe/CXL、NVLink、RDMA、光互连与 Chiplet。",
+          "topics": [
+            {
+              "id": "hw-interconnect-t0",
+              "name": "PCIe / CXL",
+              "coverage": 0
+            },
+            {
+              "id": "hw-interconnect-t1",
+              "name": "NVLink / NVSwitch",
+              "coverage": 2
+            },
+            {
+              "id": "hw-interconnect-t2",
+              "name": "InfiniBand / RoCE",
+              "coverage": 2
+            },
+            {
+              "id": "hw-interconnect-t3",
+              "name": "光互连 / 硅光",
+              "coverage": 0
+            },
+            {
+              "id": "hw-interconnect-t4",
+              "name": "Chiplet / UCIe / CoWoS",
+              "coverage": 2
+            },
+            {
+              "id": "hw-interconnect-t5",
+              "name": "超节点与 scale-up 域",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "hw-design",
+          "name": "芯片设计与性能建模",
+          "coverage": 2,
+          "series": [
+            "chip",
+            "transcendental"
+          ],
+          "desc": "ISA、流水线、流片与 Roofline：把算法需求翻译成芯片约束，再用模型判断瓶颈。",
+          "topics": [
+            {
+              "id": "hw-design-t0",
+              "name": "ISA 与流水线",
+              "coverage": 2
+            },
+            {
+              "id": "hw-design-t1",
+              "name": "RTL / 验证 / 流片",
+              "coverage": 2
+            },
+            {
+              "id": "hw-design-t2",
+              "name": "功耗、散热与能效",
+              "coverage": 1
+            },
+            {
+              "id": "hw-design-t3",
+              "name": "Roofline 与访存墙",
+              "coverage": 2
+            },
+            {
+              "id": "hw-design-t4",
+              "name": "算力 / 带宽 / 容量三角",
+              "coverage": 2
+            },
+            {
+              "id": "hw-design-t5",
+              "name": "协同设计与性能建模",
+              "coverage": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "comp",
+      "name": "编译与算子",
+      "icon": "◈",
+      "color": "#a78bfa",
+      "tagline": "把模型变成机器指令",
+      "desc": "AI 编译器和手写 Kernel 是模型与硬件之间的翻译层：图捕获、IR、融合、布局、tiling、低精度与自动调优，决定了硬件能被用到几成。",
+      "subs": [
+        {
+          "id": "comp-ir",
+          "name": "编译原理与 IR",
+          "coverage": 2,
+          "series": [
+            "compiler"
+          ],
+          "desc": "词法/语法/语义、SSA、数据流分析与循环优化——AI 编译器的通用底座。",
+          "topics": [
+            {
+              "id": "comp-ir-t0",
+              "name": "词法 / 语法 / 语义",
+              "coverage": 2
+            },
+            {
+              "id": "comp-ir-t1",
+              "name": "SSA 与数据流分析",
+              "coverage": 2
+            },
+            {
+              "id": "comp-ir-t2",
+              "name": "循环优化与多面体模型",
+              "coverage": 2
+            },
+            {
+              "id": "comp-ir-t3",
+              "name": "自动调优与代价模型",
+              "coverage": 2
+            },
+            {
+              "id": "comp-ir-t4",
+              "name": "内存规划与别名分析",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "comp-stack",
+          "name": "AI 编译器栈",
+          "coverage": 2,
+          "series": [
+            "compiler",
+            "xdsl",
+            "flex-attention"
+          ],
+          "desc": "LLVM/MLIR、TVM、XLA、TorchInductor、Triton 与 nvcc 的分工与边界。",
+          "topics": [
+            {
+              "id": "comp-stack-t0",
+              "name": "LLVM / MLIR",
+              "coverage": 2
+            },
+            {
+              "id": "comp-stack-t1",
+              "name": "TVM / Ansor",
+              "coverage": 2
+            },
+            {
+              "id": "comp-stack-t2",
+              "name": "XLA / OpenXLA",
+              "coverage": 2
+            },
+            {
+              "id": "comp-stack-t3",
+              "name": "TorchInductor / Dynamo",
+              "coverage": 2
+            },
+            {
+              "id": "comp-stack-t4",
+              "name": "Triton / TileLang",
+              "coverage": 2
+            },
+            {
+              "id": "comp-stack-t5",
+              "name": "nvcc / PTX / SASS",
+              "coverage": 2
+            },
+            {
+              "id": "comp-stack-t6",
+              "name": "xDSL / 声明式 IR",
+              "coverage": 2
+            },
+            {
+              "id": "comp-stack-t7",
+              "name": "后端代码生成与寄存器分配",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "comp-graph",
+          "name": "图编译与运行时",
+          "coverage": 2,
+          "series": [
+            "compiler",
+            "python-runtime",
+            "megatron"
+          ],
+          "desc": "图捕获、Graph Break、Guard、算子融合、布局与 CUDA Graph。",
+          "topics": [
+            {
+              "id": "comp-graph-t0",
+              "name": "图捕获与 tracing",
+              "coverage": 2
+            },
+            {
+              "id": "comp-graph-t1",
+              "name": "Dynamo / FX / Graph Break",
+              "coverage": 2
+            },
+            {
+              "id": "comp-graph-t2",
+              "name": "Guard 与重编译",
+              "coverage": 2
+            },
+            {
+              "id": "comp-graph-t3",
+              "name": "算子融合与布局",
+              "coverage": 2
+            },
+            {
+              "id": "comp-graph-t4",
+              "name": "内存规划与复用",
+              "coverage": 2
+            },
+            {
+              "id": "comp-graph-t5",
+              "name": "CUDA Graph 与启动开销",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "comp-kernel",
+          "name": "Kernel 工程",
+          "coverage": 2,
+          "series": [
+            "op",
+            "flex-attention",
+            "sampling"
+          ],
+          "desc": "CUDA/Triton/Ascend C 的手写 Kernel：tiling、流水、warp specialization 与 persistent kernel。",
+          "topics": [
+            {
+              "id": "comp-kernel-t0",
+              "name": "CUDA 编程模型",
+              "coverage": 2
+            },
+            {
+              "id": "comp-kernel-t1",
+              "name": "Triton / Ascend C / HIP",
+              "coverage": 2
+            },
+            {
+              "id": "comp-kernel-t2",
+              "name": "Tiling 与双缓冲",
+              "coverage": 2
+            },
+            {
+              "id": "comp-kernel-t3",
+              "name": "Warp Specialization",
+              "coverage": 2
+            },
+            {
+              "id": "comp-kernel-t4",
+              "name": "Persistent Kernel",
+              "coverage": 2
+            },
+            {
+              "id": "comp-kernel-t5",
+              "name": "GEMM / CUTLASS",
+              "coverage": 2
+            },
+            {
+              "id": "comp-kernel-t6",
+              "name": "FlashAttention 与注意力 Kernel",
+              "coverage": 2
+            },
+            {
+              "id": "comp-kernel-t7",
+              "name": "归一化 / 激活 / Softmax Kernel",
+              "coverage": 2
+            },
+            {
+              "id": "comp-kernel-t8",
+              "name": "MoE dispatch / combine Kernel",
+              "coverage": 1
+            },
+            {
+              "id": "comp-kernel-t9",
+              "name": "采样与解码 Kernel",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "comp-numeric",
+          "name": "数值与低精度",
+          "coverage": 2,
+          "series": [
+            "quant",
+            "transcendental",
+            "megatron"
+          ],
+          "desc": "FP16/BF16/FP8/FP4、累加精度、数值稳定性与超越函数实现。",
+          "topics": [
+            {
+              "id": "comp-numeric-t0",
+              "name": "FP16 / BF16 / TF32",
+              "coverage": 2
+            },
+            {
+              "id": "comp-numeric-t1",
+              "name": "FP8 / FP4 / MX 格式",
+              "coverage": 2
+            },
+            {
+              "id": "comp-numeric-t2",
+              "name": "混合精度与累加",
+              "coverage": 2
+            },
+            {
+              "id": "comp-numeric-t3",
+              "name": "数值稳定性与溢出",
+              "coverage": 2
+            },
+            {
+              "id": "comp-numeric-t4",
+              "name": "超越函数 / SFU 实现",
+              "coverage": 2
+            },
+            {
+              "id": "comp-numeric-t5",
+              "name": "量化 Kernel 与反量化",
+              "coverage": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dist",
+      "name": "分布式训练",
+      "icon": "⇄",
+      "color": "#818cf8",
+      "tagline": "把一张卡扩成一座集群",
+      "desc": "并行策略、集合通信、显存优化、低精度、MoE 与 RL 训练栈：分布式训练的核心是把计算、通信和内存三笔账同时算平。",
+      "subs": [
+        {
+          "id": "dist-parallel",
+          "name": "并行策略",
+          "coverage": 2,
+          "series": [
+            "dist-train",
+            "megatron"
+          ],
+          "desc": "DP/ZeRO/TP/PP/SP/CP/EP 与 2D/3D/4D 混合并行。",
+          "topics": [
+            {
+              "id": "dist-parallel-t0",
+              "name": "数据并行 DDP",
+              "coverage": 2
+            },
+            {
+              "id": "dist-parallel-t1",
+              "name": "ZeRO / FSDP",
+              "coverage": 2
+            },
+            {
+              "id": "dist-parallel-t2",
+              "name": "张量并行 TP",
+              "coverage": 2
+            },
+            {
+              "id": "dist-parallel-t3",
+              "name": "流水线并行 PP",
+              "coverage": 2
+            },
+            {
+              "id": "dist-parallel-t4",
+              "name": "序列并行 SP",
+              "coverage": 2
+            },
+            {
+              "id": "dist-parallel-t5",
+              "name": "上下文并行 CP",
+              "coverage": 2
+            },
+            {
+              "id": "dist-parallel-t6",
+              "name": "专家并行 EP",
+              "coverage": 2
+            },
+            {
+              "id": "dist-parallel-t7",
+              "name": "2D/3D/4D 混合并行",
+              "coverage": 2
+            },
+            {
+              "id": "dist-parallel-t8",
+              "name": "GTP / 广义张量并行",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "dist-comm",
+          "name": "集合通信",
+          "coverage": 2,
+          "series": [
+            "dist-train",
+            "megatron"
+          ],
+          "desc": "All-Reduce/All-Gather/All-to-All、NCCL 算法与通信重叠。",
+          "topics": [
+            {
+              "id": "dist-comm-t0",
+              "name": "All-Reduce / All-Gather / Reduce-Scatter",
+              "coverage": 2
+            },
+            {
+              "id": "dist-comm-t1",
+              "name": "All-to-All 与 MoE 通信",
+              "coverage": 2
+            },
+            {
+              "id": "dist-comm-t2",
+              "name": "NCCL / RCCL / MPI",
+              "coverage": 2
+            },
+            {
+              "id": "dist-comm-t3",
+              "name": "Ring / Tree / NVLS",
+              "coverage": 2
+            },
+            {
+              "id": "dist-comm-t4",
+              "name": "通信重叠与拓扑感知",
+              "coverage": 2
+            },
+            {
+              "id": "dist-comm-t5",
+              "name": "梯度压缩与通信量化",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "dist-memory",
+          "name": "显存与计算优化",
+          "coverage": 2,
+          "series": [
+            "megatron",
+            "dist-train"
+          ],
+          "desc": "激活重计算、优化器分片、offload、显存账本与碎片治理。",
+          "topics": [
+            {
+              "id": "dist-memory-t0",
+              "name": "激活重计算",
+              "coverage": 2
+            },
+            {
+              "id": "dist-memory-t1",
+              "name": "优化器状态分片",
+              "coverage": 2
+            },
+            {
+              "id": "dist-memory-t2",
+              "name": "CPU / NVMe Offload",
+              "coverage": 2
+            },
+            {
+              "id": "dist-memory-t3",
+              "name": "显存账本与碎片",
+              "coverage": 2
+            },
+            {
+              "id": "dist-memory-t4",
+              "name": "算子融合与重计算边界",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "dist-lowprec",
+          "name": "低精度训练",
+          "coverage": 2,
+          "series": [
+            "megatron",
+            "quant"
+          ],
+          "desc": "AMP、FP8/FP4 训练、loss scaling 与主权重。",
+          "topics": [
+            {
+              "id": "dist-lowprec-t0",
+              "name": "AMP 与 loss scaling",
+              "coverage": 2
+            },
+            {
+              "id": "dist-lowprec-t1",
+              "name": "FP8 训练",
+              "coverage": 2
+            },
+            {
+              "id": "dist-lowprec-t2",
+              "name": "FP4 / 低精度优化器",
+              "coverage": 2
+            },
+            {
+              "id": "dist-lowprec-t3",
+              "name": "主权重与随机舍入",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "dist-moe",
+          "name": "MoE 训练",
+          "coverage": 2,
+          "series": [
+            "megatron"
+          ],
+          "desc": "路由、专家并行、token dispatch 与负载均衡。",
+          "topics": [
+            {
+              "id": "dist-moe-t0",
+              "name": "Top-K 路由",
+              "coverage": 2
+            },
+            {
+              "id": "dist-moe-t1",
+              "name": "专家并行与容量因子",
+              "coverage": 2
+            },
+            {
+              "id": "dist-moe-t2",
+              "name": "Token Dispatch / Combine",
+              "coverage": 2
+            },
+            {
+              "id": "dist-moe-t3",
+              "name": "负载均衡与辅助损失",
+              "coverage": 2
+            },
+            {
+              "id": "dist-moe-t4",
+              "name": "细粒度 / 共享专家",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "dist-stability",
+          "name": "训练稳定性与容错",
+          "coverage": 2,
+          "series": [
+            "megatron",
+            "fault-tolerance"
+          ],
+          "desc": "Loss spike、NaN、确定性复现、故障注入与 checkpoint/restore。",
+          "topics": [
+            {
+              "id": "dist-stability-t0",
+              "name": "Loss Spike 与 NaN",
+              "coverage": 2
+            },
+            {
+              "id": "dist-stability-t1",
+              "name": "梯度裁剪与归一化",
+              "coverage": 2
+            },
+            {
+              "id": "dist-stability-t2",
+              "name": "确定性训练与复现",
+              "coverage": 2
+            },
+            {
+              "id": "dist-stability-t3",
+              "name": "异步 / 分层 Checkpoint",
+              "coverage": 2
+            },
+            {
+              "id": "dist-stability-t4",
+              "name": "故障恢复与弹性训练",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "dist-rl",
+          "name": "RL 训练系统",
+          "coverage": 2,
+          "series": [
+            "rl-stack",
+            "megatron",
+            "distill-rl"
+          ],
+          "desc": "rollout/training 分离、权重同步、refit/reshard 与 on-policy 数据流。",
+          "topics": [
+            {
+              "id": "dist-rl-t0",
+              "name": "Rollout 与训练分离",
+              "coverage": 2
+            },
+            {
+              "id": "dist-rl-t1",
+              "name": "权重同步 / Refit / Reshard",
+              "coverage": 2
+            },
+            {
+              "id": "dist-rl-t2",
+              "name": "On-Policy 数据流",
+              "coverage": 2
+            },
+            {
+              "id": "dist-rl-t3",
+              "name": "奖励模型服务",
+              "coverage": 2
+            },
+            {
+              "id": "dist-rl-t4",
+              "name": "PPO / GRPO 训练栈",
+              "coverage": 2
+            },
+            {
+              "id": "dist-rl-t5",
+              "name": "Agentic RL 环境与沙箱",
+              "coverage": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cluster",
+      "name": "集群、网络与存储",
+      "icon": "▦",
+      "color": "#34d399",
+      "tagline": "把 GPU 组织成可用系统",
+      "desc": "调度、切片、网络、存储、容错与集群观测：训练和推理的上层体验，最终由集群的资源编排与 IO 路径决定。",
+      "subs": [
+        {
+          "id": "cluster-sched",
+          "name": "集群调度",
+          "coverage": 1,
+          "series": [
+            "fault-tolerance"
+          ],
+          "desc": "Slurm、Kubernetes、Volcano、Ray 与 gang scheduling、拓扑感知、配额。",
+          "topics": [
+            {
+              "id": "cluster-sched-t0",
+              "name": "Slurm",
+              "coverage": 1
+            },
+            {
+              "id": "cluster-sched-t1",
+              "name": "Kubernetes",
+              "coverage": 1
+            },
+            {
+              "id": "cluster-sched-t2",
+              "name": "Volcano / Kueue",
+              "coverage": 1
+            },
+            {
+              "id": "cluster-sched-t3",
+              "name": "Ray",
+              "coverage": 1
+            },
+            {
+              "id": "cluster-sched-t4",
+              "name": "Gang Scheduling",
+              "coverage": 1
+            },
+            {
+              "id": "cluster-sched-t5",
+              "name": "拓扑感知调度",
+              "coverage": 1
+            },
+            {
+              "id": "cluster-sched-t6",
+              "name": "抢占、配额与多租户",
+              "coverage": 1
+            },
+            {
+              "id": "cluster-sched-t7",
+              "name": "弹性训练与自动扩缩",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "cluster-share",
+          "name": "GPU 资源共享",
+          "coverage": 0,
+          "series": [],
+          "desc": "MIG、MPS、时间片与 QoS：同一张卡如何安全地服务多个任务。",
+          "topics": [
+            {
+              "id": "cluster-share-t0",
+              "name": "MIG",
+              "coverage": 0
+            },
+            {
+              "id": "cluster-share-t1",
+              "name": "MPS",
+              "coverage": 0
+            },
+            {
+              "id": "cluster-share-t2",
+              "name": "时间片与分数 GPU",
+              "coverage": 0
+            },
+            {
+              "id": "cluster-share-t3",
+              "name": "QoS 与隔离",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "cluster-network",
+          "name": "数据中心网络",
+          "coverage": 1,
+          "series": [
+            "chip",
+            "serving"
+          ],
+          "desc": "Fat-Tree、Rail-Optimized、Dragonfly、RDMA 与拥塞控制。",
+          "topics": [
+            {
+              "id": "cluster-network-t0",
+              "name": "Fat-Tree / Rail-Optimized",
+              "coverage": 0
+            },
+            {
+              "id": "cluster-network-t1",
+              "name": "Dragonfly / 超节点",
+              "coverage": 0
+            },
+            {
+              "id": "cluster-network-t2",
+              "name": "RDMA 与 GPUDirect",
+              "coverage": 2
+            },
+            {
+              "id": "cluster-network-t3",
+              "name": "拥塞控制",
+              "coverage": 0
+            },
+            {
+              "id": "cluster-network-t4",
+              "name": "集合通信拓扑",
+              "coverage": 2
+            },
+            {
+              "id": "cluster-network-t5",
+              "name": "网络故障与重传",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "cluster-storage",
+          "name": "存储与 IO",
+          "coverage": 1,
+          "series": [
+            "data-pipeline",
+            "fault-tolerance"
+          ],
+          "desc": "并行文件系统、对象存储、本地 NVMe、checkpoint IO 与 burst buffer。",
+          "topics": [
+            {
+              "id": "cluster-storage-t0",
+              "name": "并行文件系统（Lustre/GPFS/Weka）",
+              "coverage": 0
+            },
+            {
+              "id": "cluster-storage-t1",
+              "name": "对象存储（S3）",
+              "coverage": 0
+            },
+            {
+              "id": "cluster-storage-t2",
+              "name": "本地 NVMe 与缓存",
+              "coverage": 0
+            },
+            {
+              "id": "cluster-storage-t3",
+              "name": "Checkpoint IO 与 Burst Buffer",
+              "coverage": 2
+            },
+            {
+              "id": "cluster-storage-t4",
+              "name": "数据版本与血缘",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "cluster-fault",
+          "name": "容错与可靠性",
+          "coverage": 2,
+          "series": [
+            "fault-tolerance",
+            "megatron"
+          ],
+          "desc": "心跳、节点故障、静默数据损坏、任务重启与弹性训练。",
+          "topics": [
+            {
+              "id": "cluster-fault-t0",
+              "name": "心跳与健康检查",
+              "coverage": 2
+            },
+            {
+              "id": "cluster-fault-t1",
+              "name": "节点故障与任务重启",
+              "coverage": 2
+            },
+            {
+              "id": "cluster-fault-t2",
+              "name": "Checkpoint/Restore",
+              "coverage": 2
+            },
+            {
+              "id": "cluster-fault-t3",
+              "name": "静默数据损坏",
+              "coverage": 0
+            },
+            {
+              "id": "cluster-fault-t4",
+              "name": "弹性训练",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "cluster-obs",
+          "name": "集群可观测性",
+          "coverage": 1,
+          "series": [
+            "profiling",
+            "perf-analysis"
+          ],
+          "desc": "DCGM、Prometheus/Grafana、日志与链路追踪、容量规划。",
+          "topics": [
+            {
+              "id": "cluster-obs-t0",
+              "name": "DCGM / GPU 指标",
+              "coverage": 2
+            },
+            {
+              "id": "cluster-obs-t1",
+              "name": "Prometheus / Grafana",
+              "coverage": 0
+            },
+            {
+              "id": "cluster-obs-t2",
+              "name": "日志与链路追踪",
+              "coverage": 1
+            },
+            {
+              "id": "cluster-obs-t3",
+              "name": "容量规划与成本",
+              "coverage": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "data",
+      "name": "数据工程",
+      "icon": "▤",
+      "color": "#60a5fa",
+      "tagline": "模型能力的原材料",
+      "desc": "采集、清洗、切分、加载、配比、对齐与多模态数据：数据管线的吞吐、正确性和分布，直接决定训练效率与模型上限。",
+      "subs": [
+        {
+          "id": "data-clean",
+          "name": "采集与清洗",
+          "coverage": 0,
+          "series": [],
+          "desc": "爬取、去重、质量过滤、毒性/PII 与合规。",
+          "topics": [
+            {
+              "id": "data-clean-t0",
+              "name": "爬取与授权",
+              "coverage": 0
+            },
+            {
+              "id": "data-clean-t1",
+              "name": "MinHash / SimHash 去重",
+              "coverage": 0
+            },
+            {
+              "id": "data-clean-t2",
+              "name": "质量过滤",
+              "coverage": 0
+            },
+            {
+              "id": "data-clean-t3",
+              "name": "语言识别",
+              "coverage": 0
+            },
+            {
+              "id": "data-clean-t4",
+              "name": "毒性与 PII 过滤",
+              "coverage": 0
+            },
+            {
+              "id": "data-clean-t5",
+              "name": "数据合规",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "data-split",
+          "name": "切分与采样",
+          "coverage": 2,
+          "series": [
+            "data-pipeline"
+          ],
+          "desc": "不重不漏的切分、分布偏斜、shard 语义与采样。",
+          "topics": [
+            {
+              "id": "data-split-t0",
+              "name": "Sharding 与不重不漏",
+              "coverage": 2
+            },
+            {
+              "id": "data-split-t1",
+              "name": "分布偏斜与采样",
+              "coverage": 2
+            },
+            {
+              "id": "data-split-t2",
+              "name": "Train/Val/Test 泄漏",
+              "coverage": 2
+            },
+            {
+              "id": "data-split-t3",
+              "name": "确定性 Shuffle",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "data-load",
+          "name": "加载流水线",
+          "coverage": 2,
+          "series": [
+            "data-pipeline"
+          ],
+          "desc": "DataLoader、IterableDataset、prefetch、worker 数与长尾。",
+          "topics": [
+            {
+              "id": "data-load-t0",
+              "name": "DataLoader / IterableDataset",
+              "coverage": 2
+            },
+            {
+              "id": "data-load-t1",
+              "name": "Prefetch 与 Worker 数",
+              "coverage": 2
+            },
+            {
+              "id": "data-load-t2",
+              "name": "Pinned Memory 与零拷贝",
+              "coverage": 2
+            },
+            {
+              "id": "data-load-t3",
+              "name": "WebDataset / Streaming",
+              "coverage": 2
+            },
+            {
+              "id": "data-load-t4",
+              "name": "独立长尾 vs 成片抖动",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "data-mix",
+          "name": "配比与课程",
+          "coverage": 0,
+          "series": [],
+          "desc": "领域权重、数据混合、课程学习、合成数据与去污染。",
+          "topics": [
+            {
+              "id": "data-mix-t0",
+              "name": "领域权重与数据混合",
+              "coverage": 0
+            },
+            {
+              "id": "data-mix-t1",
+              "name": "课程学习",
+              "coverage": 0
+            },
+            {
+              "id": "data-mix-t2",
+              "name": "合成数据",
+              "coverage": 0
+            },
+            {
+              "id": "data-mix-t3",
+              "name": "数据蒸馏",
+              "coverage": 0
+            },
+            {
+              "id": "data-mix-t4",
+              "name": "去污染与评测隔离",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "data-align",
+          "name": "对齐数据",
+          "coverage": 1,
+          "series": [
+            "reward-source",
+            "rl-stack",
+            "mdp-grpo"
+          ],
+          "desc": "偏好对、奖励模型数据、RLHF/RLVR 与拒绝采样。",
+          "topics": [
+            {
+              "id": "data-align-t0",
+              "name": "人类偏好数据",
+              "coverage": 1
+            },
+            {
+              "id": "data-align-t1",
+              "name": "Reward Model 数据",
+              "coverage": 1
+            },
+            {
+              "id": "data-align-t2",
+              "name": "RLHF/RLVR 数据",
+              "coverage": 1
+            },
+            {
+              "id": "data-align-t3",
+              "name": "拒绝采样与验证器",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "data-multimodal",
+          "name": "多模态数据",
+          "coverage": 0,
+          "series": [],
+          "desc": "图文对、视频解码、音频与数据增强。",
+          "topics": [
+            {
+              "id": "data-multimodal-t0",
+              "name": "图文对与 Caption",
+              "coverage": 0
+            },
+            {
+              "id": "data-multimodal-t1",
+              "name": "视频解码与抽帧",
+              "coverage": 0
+            },
+            {
+              "id": "data-multimodal-t2",
+              "name": "音频与语音",
+              "coverage": 0
+            },
+            {
+              "id": "data-multimodal-t3",
+              "name": "数据增强",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "data-infra",
+          "name": "数据基础设施",
+          "coverage": 0,
+          "series": [],
+          "desc": "数据湖/仓、版本血缘、特征存储与隐私计算。",
+          "topics": [
+            {
+              "id": "data-infra-t0",
+              "name": "数据湖 / 仓",
+              "coverage": 0
+            },
+            {
+              "id": "data-infra-t1",
+              "name": "版本管理与血缘",
+              "coverage": 0
+            },
+            {
+              "id": "data-infra-t2",
+              "name": "特征存储",
+              "coverage": 0
+            },
+            {
+              "id": "data-infra-t3",
+              "name": "隐私计算与脱敏",
+              "coverage": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "compress",
+      "name": "压缩与部署",
+      "icon": "◇",
+      "color": "#f472b6",
+      "tagline": "更小、更快、更便宜",
+      "desc": "量化、剪枝、蒸馏与参数高效微调：在不显著损失能力的前提下，把模型塞进更小的显存、更低的带宽和更便宜的服务成本。",
+      "subs": [
+        {
+          "id": "compress-quant",
+          "name": "量化基础",
+          "coverage": 2,
+          "series": [
+            "quant"
+          ],
+          "desc": "仿射量化、粒度、校准、舍入与误差分析。",
+          "topics": [
+            {
+              "id": "compress-quant-t0",
+              "name": "仿射量化",
+              "coverage": 2
+            },
+            {
+              "id": "compress-quant-t1",
+              "name": "对称 / 非对称",
+              "coverage": 2
+            },
+            {
+              "id": "compress-quant-t2",
+              "name": "Per-Tensor / Channel / Group",
+              "coverage": 2
+            },
+            {
+              "id": "compress-quant-t3",
+              "name": "校准与 Clip",
+              "coverage": 2
+            },
+            {
+              "id": "compress-quant-t4",
+              "name": "舍入与误差分析",
+              "coverage": 2
+            },
+            {
+              "id": "compress-quant-t5",
+              "name": "量化感知训练 QAT",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "compress-ptq",
+          "name": "PTQ 算法",
+          "coverage": 2,
+          "series": [
+            "quant"
+          ],
+          "desc": "RTN、GPTQ、AWQ、SmoothQuant、OmniQuant、QuIP/AQLM 等。",
+          "topics": [
+            {
+              "id": "compress-ptq-t0",
+              "name": "RTN",
+              "coverage": 2
+            },
+            {
+              "id": "compress-ptq-t1",
+              "name": "GPTQ",
+              "coverage": 2
+            },
+            {
+              "id": "compress-ptq-t2",
+              "name": "AWQ",
+              "coverage": 2
+            },
+            {
+              "id": "compress-ptq-t3",
+              "name": "SmoothQuant",
+              "coverage": 2
+            },
+            {
+              "id": "compress-ptq-t4",
+              "name": "OmniQuant",
+              "coverage": 2
+            },
+            {
+              "id": "compress-ptq-t5",
+              "name": "QuIP / AQLM",
+              "coverage": 2
+            },
+            {
+              "id": "compress-ptq-t6",
+              "name": "SpQR / HQQ",
+              "coverage": 2
+            },
+            {
+              "id": "compress-ptq-t7",
+              "name": "QServe / QQQ",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "compress-lowbit",
+          "name": "低比特与 KV Cache",
+          "coverage": 2,
+          "series": [
+            "quant",
+            "posem"
+          ],
+          "desc": "4/3/2/1-bit、KV Cache 量化、混合精度与低比特 Kernel。",
+          "topics": [
+            {
+              "id": "compress-lowbit-t0",
+              "name": "4/3/2/1-bit",
+              "coverage": 2
+            },
+            {
+              "id": "compress-lowbit-t1",
+              "name": "KV Cache 量化",
+              "coverage": 2
+            },
+            {
+              "id": "compress-lowbit-t2",
+              "name": "混合精度",
+              "coverage": 2
+            },
+            {
+              "id": "compress-lowbit-t3",
+              "name": "低比特推理 Kernel",
+              "coverage": 2
+            },
+            {
+              "id": "compress-lowbit-t4",
+              "name": "1-bit / 三元",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "compress-prune",
+          "name": "剪枝与稀疏",
+          "coverage": 0,
+          "series": [],
+          "desc": "结构化/非结构化剪枝、2:4 稀疏与稀疏 Kernel。",
+          "topics": [
+            {
+              "id": "compress-prune-t0",
+              "name": "非结构化剪枝",
+              "coverage": 0
+            },
+            {
+              "id": "compress-prune-t1",
+              "name": "结构化剪枝",
+              "coverage": 0
+            },
+            {
+              "id": "compress-prune-t2",
+              "name": "2:4 稀疏",
+              "coverage": 0
+            },
+            {
+              "id": "compress-prune-t3",
+              "name": "动态稀疏",
+              "coverage": 0
+            },
+            {
+              "id": "compress-prune-t4",
+              "name": "稀疏 Kernel 与硬件支持",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "compress-distill",
+          "name": "蒸馏",
+          "coverage": 2,
+          "series": [
+            "distill",
+            "distill-rl"
+          ],
+          "desc": "Dark Knowledge、logit/feature、online/on-policy 与蒸馏+RL 统一损失。",
+          "topics": [
+            {
+              "id": "compress-distill-t0",
+              "name": "Dark Knowledge",
+              "coverage": 2
+            },
+            {
+              "id": "compress-distill-t1",
+              "name": "Logit / Feature Distillation",
+              "coverage": 2
+            },
+            {
+              "id": "compress-distill-t2",
+              "name": "Online Distillation",
+              "coverage": 2
+            },
+            {
+              "id": "compress-distill-t3",
+              "name": "On-Policy Distillation",
+              "coverage": 2
+            },
+            {
+              "id": "compress-distill-t4",
+              "name": "蒸馏 + RL 统一损失",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "compress-peft",
+          "name": "参数高效微调",
+          "coverage": 1,
+          "series": [
+            "quant"
+          ],
+          "desc": "LoRA/QLoRA、Adapter、DoRA 与合并部署。",
+          "topics": [
+            {
+              "id": "compress-peft-t0",
+              "name": "LoRA / QLoRA",
+              "coverage": 2
+            },
+            {
+              "id": "compress-peft-t1",
+              "name": "Adapter / Prefix Tuning",
+              "coverage": 0
+            },
+            {
+              "id": "compress-peft-t2",
+              "name": "DoRA / Rank Allocation",
+              "coverage": 0
+            },
+            {
+              "id": "compress-peft-t3",
+              "name": "PEFT 合并与部署",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "compress-deploy",
+          "name": "部署格式与生态",
+          "coverage": 2,
+          "series": [
+            "quant",
+            "serving"
+          ],
+          "desc": "ONNX、TensorRT、GGUF、引擎支持矩阵与硬件感知压缩。",
+          "topics": [
+            {
+              "id": "compress-deploy-t0",
+              "name": "ONNX / TensorRT",
+              "coverage": 2
+            },
+            {
+              "id": "compress-deploy-t1",
+              "name": "OpenVINO",
+              "coverage": 0
+            },
+            {
+              "id": "compress-deploy-t2",
+              "name": "GGUF / FP8 / MXFP4",
+              "coverage": 2
+            },
+            {
+              "id": "compress-deploy-t3",
+              "name": "引擎支持矩阵",
+              "coverage": 2
+            },
+            {
+              "id": "compress-deploy-t4",
+              "name": "硬件感知压缩",
+              "coverage": 0
+            },
+            {
+              "id": "compress-deploy-t5",
+              "name": "精度-延迟-成本权衡",
+              "coverage": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "serve",
+      "name": "推理与服务",
+      "icon": "▷",
+      "color": "#2dd4bf",
+      "tagline": "把模型变成在线产品",
+      "desc": "引擎、调度、KV Cache、解码加速、分布式推理与 SLO：在线服务的每一毫秒和每一分钱，都在这里被决定。",
+      "subs": [
+        {
+          "id": "serve-engine",
+          "name": "推理引擎",
+          "coverage": 2,
+          "series": [
+            "serving"
+          ],
+          "desc": "vLLM、SGLang、TensorRT-LLM、TGI/LMDeploy 与 Triton/KServe。",
+          "topics": [
+            {
+              "id": "serve-engine-t0",
+              "name": "vLLM",
+              "coverage": 2
+            },
+            {
+              "id": "serve-engine-t1",
+              "name": "SGLang",
+              "coverage": 2
+            },
+            {
+              "id": "serve-engine-t2",
+              "name": "TensorRT-LLM",
+              "coverage": 1
+            },
+            {
+              "id": "serve-engine-t3",
+              "name": "TGI / LMDeploy",
+              "coverage": 1
+            },
+            {
+              "id": "serve-engine-t4",
+              "name": "Triton Inference Server",
+              "coverage": 0
+            },
+            {
+              "id": "serve-engine-t5",
+              "name": "Ray Serve / KServe",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "serve-sched",
+          "name": "调度与批处理",
+          "coverage": 2,
+          "series": [
+            "serving"
+          ],
+          "desc": "continuous batching、chunked prefill、PD 分离与请求路由。",
+          "topics": [
+            {
+              "id": "serve-sched-t0",
+              "name": "Continuous Batching",
+              "coverage": 2
+            },
+            {
+              "id": "serve-sched-t1",
+              "name": "Chunked Prefill",
+              "coverage": 2
+            },
+            {
+              "id": "serve-sched-t2",
+              "name": "PD 分离",
+              "coverage": 2
+            },
+            {
+              "id": "serve-sched-t3",
+              "name": "优先级与公平调度",
+              "coverage": 2
+            },
+            {
+              "id": "serve-sched-t4",
+              "name": "请求路由与多模型",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "serve-kv",
+          "name": "KV Cache",
+          "coverage": 2,
+          "series": [
+            "serving"
+          ],
+          "desc": "PagedAttention、prefix caching、radix tree、KV 量化/offload 与驱逐。",
+          "topics": [
+            {
+              "id": "serve-kv-t0",
+              "name": "PagedAttention",
+              "coverage": 2
+            },
+            {
+              "id": "serve-kv-t1",
+              "name": "Prefix Caching",
+              "coverage": 2
+            },
+            {
+              "id": "serve-kv-t2",
+              "name": "Radix Tree",
+              "coverage": 2
+            },
+            {
+              "id": "serve-kv-t3",
+              "name": "KV 量化与 Offload",
+              "coverage": 2
+            },
+            {
+              "id": "serve-kv-t4",
+              "name": "驱逐与共享",
+              "coverage": 2
+            },
+            {
+              "id": "serve-kv-t5",
+              "name": "内存池与碎片",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "serve-decode",
+          "name": "解码与加速",
+          "coverage": 2,
+          "series": [
+            "specdec",
+            "sampling"
+          ],
+          "desc": "采样、beam search、投机解码 EAGLE/Medusa/Lookahead 与约束解码。",
+          "topics": [
+            {
+              "id": "serve-decode-t0",
+              "name": "采样与 Beam Search",
+              "coverage": 2
+            },
+            {
+              "id": "serve-decode-t1",
+              "name": "投机解码",
+              "coverage": 2
+            },
+            {
+              "id": "serve-decode-t2",
+              "name": "EAGLE / Medusa / Lookahead",
+              "coverage": 2
+            },
+            {
+              "id": "serve-decode-t3",
+              "name": "约束解码 / 结构化输出",
+              "coverage": 2
+            },
+            {
+              "id": "serve-decode-t4",
+              "name": "并行解码",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "serve-dist",
+          "name": "分布式推理",
+          "coverage": 1,
+          "series": [
+            "serving",
+            "megatron"
+          ],
+          "desc": "TP/PP/EP 推理、多节点、负载均衡与 PD 拓扑。",
+          "topics": [
+            {
+              "id": "serve-dist-t0",
+              "name": "TP/PP/EP 推理",
+              "coverage": 2
+            },
+            {
+              "id": "serve-dist-t1",
+              "name": "多节点推理",
+              "coverage": 1
+            },
+            {
+              "id": "serve-dist-t2",
+              "name": "专家并行推理",
+              "coverage": 1
+            },
+            {
+              "id": "serve-dist-t3",
+              "name": "负载均衡",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "serve-longctx",
+          "name": "长上下文推理",
+          "coverage": 1,
+          "series": [
+            "posem",
+            "serving"
+          ],
+          "desc": "上下文窗口、KV 压缩、稀疏/线性注意力与长上下文服务。",
+          "topics": [
+            {
+              "id": "serve-longctx-t0",
+              "name": "长上下文窗口",
+              "coverage": 1
+            },
+            {
+              "id": "serve-longctx-t1",
+              "name": "KV 压缩",
+              "coverage": 2
+            },
+            {
+              "id": "serve-longctx-t2",
+              "name": "稀疏 / 线性注意力",
+              "coverage": 1
+            },
+            {
+              "id": "serve-longctx-t3",
+              "name": "Ring Attention",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "serve-mm",
+          "name": "多模态与生成服务",
+          "coverage": 1,
+          "series": [
+            "embodied",
+            "flow"
+          ],
+          "desc": "VLM、视频/图像生成、扩散模型服务与多模态调度。",
+          "topics": [
+            {
+              "id": "serve-mm-t0",
+              "name": "VLM 服务",
+              "coverage": 0
+            },
+            {
+              "id": "serve-mm-t1",
+              "name": "扩散模型服务",
+              "coverage": 1
+            },
+            {
+              "id": "serve-mm-t2",
+              "name": "视频生成服务",
+              "coverage": 0
+            },
+            {
+              "id": "serve-mm-t3",
+              "name": "多模态批处理",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "serve-perf",
+          "name": "性能与 SLO",
+          "coverage": 2,
+          "series": [
+            "perf-analysis",
+            "serving"
+          ],
+          "desc": "TTFT/TPOT/ITL、吞吐/goodput、尾延迟与压测。",
+          "topics": [
+            {
+              "id": "serve-perf-t0",
+              "name": "TTFT / TPOT / ITL",
+              "coverage": 2
+            },
+            {
+              "id": "serve-perf-t1",
+              "name": "吞吐 / Goodput",
+              "coverage": 2
+            },
+            {
+              "id": "serve-perf-t2",
+              "name": "尾延迟",
+              "coverage": 2
+            },
+            {
+              "id": "serve-perf-t3",
+              "name": "Closed/Open Loop",
+              "coverage": 2
+            },
+            {
+              "id": "serve-perf-t4",
+              "name": "基准测试与压测",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "serve-ops",
+          "name": "运维、成本与安全",
+          "coverage": 1,
+          "series": [
+            "serving"
+          ],
+          "desc": "自动扩缩容、灰度回滚、多租户、成本/Token 与安全。",
+          "topics": [
+            {
+              "id": "serve-ops-t0",
+              "name": "自动扩缩容",
+              "coverage": 1
+            },
+            {
+              "id": "serve-ops-t1",
+              "name": "灰度与回滚",
+              "coverage": 1
+            },
+            {
+              "id": "serve-ops-t2",
+              "name": "多租户与限流",
+              "coverage": 0
+            },
+            {
+              "id": "serve-ops-t3",
+              "name": "成本 / Token",
+              "coverage": 1
+            },
+            {
+              "id": "serve-ops-t4",
+              "name": "租户隔离与安全",
+              "coverage": 0
+            },
+            {
+              "id": "serve-ops-t5",
+              "name": "Prompt Injection 防护",
+              "coverage": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "model",
+      "name": "模型架构与算法",
+      "icon": "◉",
+      "color": "#fbbf24",
+      "tagline": "系统为之服务的模型结构",
+      "desc": "Transformer、注意力、MoE、生成模型、多模态与后训练：这些算法结构决定了 Kernel、并行、显存和推理引擎的形状。",
+      "subs": [
+        {
+          "id": "model-transformer",
+          "name": "Transformer 基础",
+          "coverage": 2,
+          "series": [
+            "posem",
+            "megatron",
+            "dit"
+          ],
+          "desc": "Attention、FFN、归一化、残差、GQA/MQA/MLA 与位置编码。",
+          "topics": [
+            {
+              "id": "model-transformer-t0",
+              "name": "Self-Attention",
+              "coverage": 2
+            },
+            {
+              "id": "model-transformer-t1",
+              "name": "FFN / MLP",
+              "coverage": 2
+            },
+            {
+              "id": "model-transformer-t2",
+              "name": "RMSNorm / LayerNorm",
+              "coverage": 2
+            },
+            {
+              "id": "model-transformer-t3",
+              "name": "残差与初始化",
+              "coverage": 2
+            },
+            {
+              "id": "model-transformer-t4",
+              "name": "GQA / MQA / MLA",
+              "coverage": 2
+            },
+            {
+              "id": "model-transformer-t5",
+              "name": "位置编码",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "model-attn",
+          "name": "注意力与长上下文",
+          "coverage": 2,
+          "series": [
+            "flex-attention",
+            "posem",
+            "ttt"
+          ],
+          "desc": "FlashAttention、滑动窗口/稀疏、Ring Attention、RoPE 外推与线性注意力。",
+          "topics": [
+            {
+              "id": "model-attn-t0",
+              "name": "FlashAttention",
+              "coverage": 2
+            },
+            {
+              "id": "model-attn-t1",
+              "name": "滑动窗口 / 稀疏注意力",
+              "coverage": 2
+            },
+            {
+              "id": "model-attn-t2",
+              "name": "Ring Attention",
+              "coverage": 2
+            },
+            {
+              "id": "model-attn-t3",
+              "name": "RoPE 外推（PI/NTK/YaRN）",
+              "coverage": 2
+            },
+            {
+              "id": "model-attn-t4",
+              "name": "线性注意力 / SSM",
+              "coverage": 1
+            },
+            {
+              "id": "model-attn-t5",
+              "name": "无限上下文",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "model-moe",
+          "name": "MoE 架构",
+          "coverage": 1,
+          "series": [
+            "megatron"
+          ],
+          "desc": "Top-K 路由、共享/细粒度专家、容量因子与 MoE 推理。",
+          "topics": [
+            {
+              "id": "model-moe-t0",
+              "name": "Top-K 路由",
+              "coverage": 2
+            },
+            {
+              "id": "model-moe-t1",
+              "name": "共享 / 细粒度专家",
+              "coverage": 2
+            },
+            {
+              "id": "model-moe-t2",
+              "name": "容量因子与负载均衡",
+              "coverage": 2
+            },
+            {
+              "id": "model-moe-t3",
+              "name": "DeepSeekMoE",
+              "coverage": 1
+            },
+            {
+              "id": "model-moe-t4",
+              "name": "MoE 推理",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "model-gen",
+          "name": "生成模型",
+          "coverage": 2,
+          "series": [
+            "flow",
+            "vae",
+            "dit",
+            "diffusion",
+            "diffusion-lm"
+          ],
+          "desc": "Diffusion、Flow Matching、DiT、VAE/Latent Diffusion 与离散扩散。",
+          "topics": [
+            {
+              "id": "model-gen-t0",
+              "name": "Diffusion",
+              "coverage": 2
+            },
+            {
+              "id": "model-gen-t1",
+              "name": "Flow Matching",
+              "coverage": 2
+            },
+            {
+              "id": "model-gen-t2",
+              "name": "DiT",
+              "coverage": 2
+            },
+            {
+              "id": "model-gen-t3",
+              "name": "VAE / Latent Diffusion",
+              "coverage": 2
+            },
+            {
+              "id": "model-gen-t4",
+              "name": "离散扩散",
+              "coverage": 2
+            },
+            {
+              "id": "model-gen-t5",
+              "name": "CFG / Guidance",
+              "coverage": 2
+            },
+            {
+              "id": "model-gen-t6",
+              "name": "采样器",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "model-mm",
+          "name": "多模态与具身",
+          "coverage": 1,
+          "series": [
+            "embodied",
+            "wam"
+          ],
+          "desc": "ViT/CLIP、VLM、视频生成、VLA、Diffusion Policy 与世界模型。",
+          "topics": [
+            {
+              "id": "model-mm-t0",
+              "name": "ViT / CLIP",
+              "coverage": 0
+            },
+            {
+              "id": "model-mm-t1",
+              "name": "VLM",
+              "coverage": 0
+            },
+            {
+              "id": "model-mm-t2",
+              "name": "视频生成",
+              "coverage": 0
+            },
+            {
+              "id": "model-mm-t3",
+              "name": "VLA",
+              "coverage": 2
+            },
+            {
+              "id": "model-mm-t4",
+              "name": "Diffusion Policy",
+              "coverage": 2
+            },
+            {
+              "id": "model-mm-t5",
+              "name": "世界模型",
+              "coverage": 2
+            },
+            {
+              "id": "model-mm-t6",
+              "name": "Sim2Real",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "model-post",
+          "name": "后训练与 RL",
+          "coverage": 2,
+          "series": [
+            "mdp-grpo",
+            "rl-estimation",
+            "reward-source",
+            "rl-stack",
+            "distill-rl"
+          ],
+          "desc": "SFT/DPO、PPO/GRPO、奖励模型、IRL/RLAIF 与 Agentic RL。",
+          "topics": [
+            {
+              "id": "model-post-t0",
+              "name": "SFT / DPO",
+              "coverage": 2
+            },
+            {
+              "id": "model-post-t1",
+              "name": "PPO / GRPO",
+              "coverage": 2
+            },
+            {
+              "id": "model-post-t2",
+              "name": "Reward Model",
+              "coverage": 2
+            },
+            {
+              "id": "model-post-t3",
+              "name": "IRL / RLAIF",
+              "coverage": 2
+            },
+            {
+              "id": "model-post-t4",
+              "name": "Agentic RL",
+              "coverage": 2
+            },
+            {
+              "id": "model-post-t5",
+              "name": "Credit Assignment",
+              "coverage": 2
+            },
+            {
+              "id": "model-post-t6",
+              "name": "RLVR / Verifier",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "model-testtime",
+          "name": "推理时计算",
+          "coverage": 2,
+          "series": [
+            "ttt",
+            "mdp-grpo"
+          ],
+          "desc": "CoT、Best-of-N、搜索、验证器与 Test-Time Training。",
+          "topics": [
+            {
+              "id": "model-testtime-t0",
+              "name": "CoT / 推理模型",
+              "coverage": 2
+            },
+            {
+              "id": "model-testtime-t1",
+              "name": "Best-of-N / Search",
+              "coverage": 2
+            },
+            {
+              "id": "model-testtime-t2",
+              "name": "验证器与过程奖励",
+              "coverage": 2
+            },
+            {
+              "id": "model-testtime-t3",
+              "name": "自适应计算",
+              "coverage": 2
+            },
+            {
+              "id": "model-testtime-t4",
+              "name": "Test-Time Training",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "model-eval",
+          "name": "训练目标与评测",
+          "coverage": 1,
+          "series": [
+            "serving"
+          ],
+          "desc": "Next-Token、Masked LM、对比学习、Diffusion ELBO 与评测污染。",
+          "topics": [
+            {
+              "id": "model-eval-t0",
+              "name": "Next-Token Prediction",
+              "coverage": 2
+            },
+            {
+              "id": "model-eval-t1",
+              "name": "Masked LM",
+              "coverage": 0
+            },
+            {
+              "id": "model-eval-t2",
+              "name": "对比学习",
+              "coverage": 1
+            },
+            {
+              "id": "model-eval-t3",
+              "name": "Diffusion ELBO",
+              "coverage": 2
+            },
+            {
+              "id": "model-eval-t4",
+              "name": "评测基准与污染",
+              "coverage": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "obs",
+      "name": "可观测性与性能工程",
+      "icon": "◌",
+      "color": "#c084fc",
+      "tagline": "把数字算对，把瓶颈找到",
+      "desc": "指标口径、Profiling 工具、归因方法、基准与故障定位：没有可观测性，系统优化就只能靠猜。",
+      "subs": [
+        {
+          "id": "obs-metrics",
+          "name": "性能指标",
+          "coverage": 2,
+          "series": [
+            "perf-analysis"
+          ],
+          "desc": "FLOPs/MFU/HFU、带宽/占用率、延迟/吞吐/goodput 与成本。",
+          "topics": [
+            {
+              "id": "obs-metrics-t0",
+              "name": "FLOPs / MFU / HFU",
+              "coverage": 2
+            },
+            {
+              "id": "obs-metrics-t1",
+              "name": "带宽 / 占用率",
+              "coverage": 2
+            },
+            {
+              "id": "obs-metrics-t2",
+              "name": "延迟 / 吞吐 / Goodput",
+              "coverage": 2
+            },
+            {
+              "id": "obs-metrics-t3",
+              "name": "TTFT / TPOT",
+              "coverage": 2
+            },
+            {
+              "id": "obs-metrics-t4",
+              "name": "成本 / 能效",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "obs-tools",
+          "name": "Profiling 工具",
+          "coverage": 2,
+          "series": [
+            "profiling",
+            "perf-analysis",
+            "op"
+          ],
+          "desc": "nvidia-smi/DCGM、nsys、ncu、PyTorch Profiler、Perfetto/OTel 与 eBPF。",
+          "topics": [
+            {
+              "id": "obs-tools-t0",
+              "name": "nvidia-smi / DCGM",
+              "coverage": 2
+            },
+            {
+              "id": "obs-tools-t1",
+              "name": "Nsight Systems",
+              "coverage": 2
+            },
+            {
+              "id": "obs-tools-t2",
+              "name": "Nsight Compute",
+              "coverage": 2
+            },
+            {
+              "id": "obs-tools-t3",
+              "name": "PyTorch Profiler",
+              "coverage": 2
+            },
+            {
+              "id": "obs-tools-t4",
+              "name": "Perfetto / OTel",
+              "coverage": 2
+            },
+            {
+              "id": "obs-tools-t5",
+              "name": "eBPF",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "obs-attrib",
+          "name": "归因方法",
+          "coverage": 2,
+          "series": [
+            "perf-analysis",
+            "megatron"
+          ],
+          "desc": "kernel timeline、重叠、pipeline bubble、straggler、显存账本与 roofline。",
+          "topics": [
+            {
+              "id": "obs-attrib-t0",
+              "name": "Kernel Timeline",
+              "coverage": 2
+            },
+            {
+              "id": "obs-attrib-t1",
+              "name": "通信/计算重叠",
+              "coverage": 2
+            },
+            {
+              "id": "obs-attrib-t2",
+              "name": "Pipeline Bubble",
+              "coverage": 2
+            },
+            {
+              "id": "obs-attrib-t3",
+              "name": "Straggler 分析",
+              "coverage": 2
+            },
+            {
+              "id": "obs-attrib-t4",
+              "name": "显存账本",
+              "coverage": 2
+            },
+            {
+              "id": "obs-attrib-t5",
+              "name": "Roofline 与 α-β",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "obs-bench",
+          "name": "基准与实验",
+          "coverage": 1,
+          "series": [
+            "serving",
+            "perf-analysis"
+          ],
+          "desc": "MLPerf、serving benchmark、评测、置信区间与容量压测。",
+          "topics": [
+            {
+              "id": "obs-bench-t0",
+              "name": "MLPerf",
+              "coverage": 0
+            },
+            {
+              "id": "obs-bench-t1",
+              "name": "Serving Benchmark",
+              "coverage": 2
+            },
+            {
+              "id": "obs-bench-t2",
+              "name": "lm-eval / 评测",
+              "coverage": 0
+            },
+            {
+              "id": "obs-bench-t3",
+              "name": "置信区间与复现",
+              "coverage": 1
+            },
+            {
+              "id": "obs-bench-t4",
+              "name": "压测与容量",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "obs-debug",
+          "name": "调试与故障",
+          "coverage": 1,
+          "series": [
+            "megatron",
+            "profiling"
+          ],
+          "desc": "OOM、NCCL hang、NaN/loss spike、性能回归与二分定位。",
+          "topics": [
+            {
+              "id": "obs-debug-t0",
+              "name": "OOM",
+              "coverage": 1
+            },
+            {
+              "id": "obs-debug-t1",
+              "name": "NCCL Hang",
+              "coverage": 1
+            },
+            {
+              "id": "obs-debug-t2",
+              "name": "NaN / Loss Spike",
+              "coverage": 2
+            },
+            {
+              "id": "obs-debug-t3",
+              "name": "性能回归",
+              "coverage": 1
+            },
+            {
+              "id": "obs-debug-t4",
+              "name": "二分定位",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "obs-stack",
+          "name": "可观测性栈",
+          "coverage": 1,
+          "series": [
+            "perf-analysis",
+            "profiling"
+          ],
+          "desc": "metrics/logs/traces、dashboard/alert 与 SLO/error budget。",
+          "topics": [
+            {
+              "id": "obs-stack-t0",
+              "name": "Metrics / Logs / Traces",
+              "coverage": 2
+            },
+            {
+              "id": "obs-stack-t1",
+              "name": "Dashboard / Alert",
+              "coverage": 1
+            },
+            {
+              "id": "obs-stack-t2",
+              "name": "SLO / Error Budget",
+              "coverage": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "eco",
+      "name": "框架与生态",
+      "icon": "⬡",
+      "color": "#fb923c",
+      "tagline": "工具链与硬件版图",
+      "desc": "训练/推理框架、分布式库、模型格式、硬件生态、工程工具与云平台：选型决定了你能用哪些能力、被哪些边界锁住。",
+      "subs": [
+        {
+          "id": "eco-train",
+          "name": "训练框架",
+          "coverage": 1,
+          "series": [
+            "megatron",
+            "python-runtime"
+          ],
+          "desc": "PyTorch、JAX、TensorFlow、PaddlePaddle 与 MindSpore。",
+          "topics": [
+            {
+              "id": "eco-train-t0",
+              "name": "PyTorch",
+              "coverage": 2
+            },
+            {
+              "id": "eco-train-t1",
+              "name": "JAX",
+              "coverage": 0
+            },
+            {
+              "id": "eco-train-t2",
+              "name": "TensorFlow",
+              "coverage": 0
+            },
+            {
+              "id": "eco-train-t3",
+              "name": "PaddlePaddle / MindSpore",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "eco-dist",
+          "name": "分布式与编排",
+          "coverage": 2,
+          "series": [
+            "megatron",
+            "dist-train",
+            "fault-tolerance"
+          ],
+          "desc": "Megatron-LM、DeepSpeed、FSDP、Ray、Kubernetes 与 Slurm。",
+          "topics": [
+            {
+              "id": "eco-dist-t0",
+              "name": "Megatron-LM",
+              "coverage": 2
+            },
+            {
+              "id": "eco-dist-t1",
+              "name": "DeepSpeed",
+              "coverage": 2
+            },
+            {
+              "id": "eco-dist-t2",
+              "name": "FSDP",
+              "coverage": 2
+            },
+            {
+              "id": "eco-dist-t3",
+              "name": "Ray",
+              "coverage": 0
+            },
+            {
+              "id": "eco-dist-t4",
+              "name": "Kubernetes / Slurm",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "eco-infer",
+          "name": "推理与部署框架",
+          "coverage": 2,
+          "series": [
+            "serving",
+            "specdec"
+          ],
+          "desc": "vLLM/SGLang、TensorRT-LLM、Triton/KServe。",
+          "topics": [
+            {
+              "id": "eco-infer-t0",
+              "name": "vLLM / SGLang",
+              "coverage": 2
+            },
+            {
+              "id": "eco-infer-t1",
+              "name": "TensorRT-LLM",
+              "coverage": 1
+            },
+            {
+              "id": "eco-infer-t2",
+              "name": "Triton / KServe",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "eco-format",
+          "name": "模型格式与交换",
+          "coverage": 1,
+          "series": [
+            "quant"
+          ],
+          "desc": "safetensors、GGUF、ONNX、TorchScript。",
+          "topics": [
+            {
+              "id": "eco-format-t0",
+              "name": "safetensors",
+              "coverage": 1
+            },
+            {
+              "id": "eco-format-t1",
+              "name": "GGUF",
+              "coverage": 2
+            },
+            {
+              "id": "eco-format-t2",
+              "name": "ONNX",
+              "coverage": 1
+            },
+            {
+              "id": "eco-format-t3",
+              "name": "TorchScript",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "eco-hw",
+          "name": "硬件生态",
+          "coverage": 1,
+          "series": [
+            "chip",
+            "compiler"
+          ],
+          "desc": "CUDA、ROCm、oneAPI、CANN/Ascend、XLA/TPU、Metal。",
+          "topics": [
+            {
+              "id": "eco-hw-t0",
+              "name": "CUDA",
+              "coverage": 2
+            },
+            {
+              "id": "eco-hw-t1",
+              "name": "ROCm",
+              "coverage": 0
+            },
+            {
+              "id": "eco-hw-t2",
+              "name": "oneAPI",
+              "coverage": 0
+            },
+            {
+              "id": "eco-hw-t3",
+              "name": "CANN / Ascend",
+              "coverage": 2
+            },
+            {
+              "id": "eco-hw-t4",
+              "name": "XLA / TPU",
+              "coverage": 1
+            },
+            {
+              "id": "eco-hw-t5",
+              "name": "Metal",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "eco-toolchain",
+          "name": "工程工具链",
+          "coverage": 0,
+          "series": [],
+          "desc": "Docker/Conda/uv、CI/CD、实验追踪、数据版本与模型注册表。",
+          "topics": [
+            {
+              "id": "eco-toolchain-t0",
+              "name": "Docker / Conda / uv",
+              "coverage": 0
+            },
+            {
+              "id": "eco-toolchain-t1",
+              "name": "CI/CD",
+              "coverage": 0
+            },
+            {
+              "id": "eco-toolchain-t2",
+              "name": "实验追踪（W&B/MLflow）",
+              "coverage": 0
+            },
+            {
+              "id": "eco-toolchain-t3",
+              "name": "数据版本（DVC）",
+              "coverage": 0
+            },
+            {
+              "id": "eco-toolchain-t4",
+              "name": "模型注册表",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "eco-platform",
+          "name": "平台与云",
+          "coverage": 0,
+          "series": [],
+          "desc": "公有云 GPU、裸金属/超算、Serverless GPU、混合云与边缘。",
+          "topics": [
+            {
+              "id": "eco-platform-t0",
+              "name": "公有云 GPU",
+              "coverage": 0
+            },
+            {
+              "id": "eco-platform-t1",
+              "name": "裸金属 / 超算",
+              "coverage": 0
+            },
+            {
+              "id": "eco-platform-t2",
+              "name": "Serverless GPU",
+              "coverage": 0
+            },
+            {
+              "id": "eco-platform-t3",
+              "name": "混合云 / 边缘",
+              "coverage": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gov",
+      "name": "工程实践与治理",
+      "icon": "◎",
+      "color": "#94a3b8",
+      "tagline": "从能跑到可运营",
+      "desc": "可靠性、安全、成本、复现、MLOps 与团队流程：把一次成功的训练或上线，变成可重复、可审计、可持续的工程能力。",
+      "subs": [
+        {
+          "id": "gov-reliability",
+          "name": "可靠性与 SLO",
+          "coverage": 1,
+          "series": [
+            "fault-tolerance",
+            "perf-analysis"
+          ],
+          "desc": "SLO/SLA、灰度回滚、混沌工程与事故响应。",
+          "topics": [
+            {
+              "id": "gov-reliability-t0",
+              "name": "SLO / SLA",
+              "coverage": 2
+            },
+            {
+              "id": "gov-reliability-t1",
+              "name": "灰度 / 回滚",
+              "coverage": 1
+            },
+            {
+              "id": "gov-reliability-t2",
+              "name": "混沌工程",
+              "coverage": 0
+            },
+            {
+              "id": "gov-reliability-t3",
+              "name": "事故响应",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "gov-security",
+          "name": "安全与合规",
+          "coverage": 0,
+          "series": [],
+          "desc": "供应链、密钥/权重保护、多租户隔离、Prompt Injection 与隐私合规。",
+          "topics": [
+            {
+              "id": "gov-security-t0",
+              "name": "供应链安全",
+              "coverage": 0
+            },
+            {
+              "id": "gov-security-t1",
+              "name": "密钥与权重保护",
+              "coverage": 0
+            },
+            {
+              "id": "gov-security-t2",
+              "name": "多租户隔离",
+              "coverage": 0
+            },
+            {
+              "id": "gov-security-t3",
+              "name": "Prompt Injection",
+              "coverage": 0
+            },
+            {
+              "id": "gov-security-t4",
+              "name": "数据隐私与合规",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "gov-cost",
+          "name": "成本与能效",
+          "coverage": 1,
+          "series": [
+            "perf-analysis",
+            "serving"
+          ],
+          "desc": "TCO/GPU-hour、利用率、spot 与碳排放。",
+          "topics": [
+            {
+              "id": "gov-cost-t0",
+              "name": "TCO / GPU-hour",
+              "coverage": 1
+            },
+            {
+              "id": "gov-cost-t1",
+              "name": "利用率",
+              "coverage": 1
+            },
+            {
+              "id": "gov-cost-t2",
+              "name": "Spot / 抢占式",
+              "coverage": 0
+            },
+            {
+              "id": "gov-cost-t3",
+              "name": "碳排放 / 绿色 AI",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "gov-repro",
+          "name": "复现与版本",
+          "coverage": 1,
+          "series": [
+            "megatron",
+            "python-runtime"
+          ],
+          "desc": "seed/确定性、环境锁定、数据/模型版本与实验追踪。",
+          "topics": [
+            {
+              "id": "gov-repro-t0",
+              "name": "Seed / 确定性",
+              "coverage": 2
+            },
+            {
+              "id": "gov-repro-t1",
+              "name": "环境锁定",
+              "coverage": 1
+            },
+            {
+              "id": "gov-repro-t2",
+              "name": "数据/模型版本",
+              "coverage": 0
+            },
+            {
+              "id": "gov-repro-t3",
+              "name": "实验追踪",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "gov-mlops",
+          "name": "MLOps / LLMOps",
+          "coverage": 0,
+          "series": [],
+          "desc": "模型注册发布、评测门禁、监控反馈闭环与数据飞轮。",
+          "topics": [
+            {
+              "id": "gov-mlops-t0",
+              "name": "模型注册与发布",
+              "coverage": 0
+            },
+            {
+              "id": "gov-mlops-t1",
+              "name": "评测门禁",
+              "coverage": 0
+            },
+            {
+              "id": "gov-mlops-t2",
+              "name": "监控与反馈闭环",
+              "coverage": 0
+            },
+            {
+              "id": "gov-mlops-t3",
+              "name": "数据飞轮",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "gov-team",
+          "name": "团队与流程",
+          "coverage": 0,
+          "series": [],
+          "desc": "研究-工程协作、代码评审、文档知识库与开源治理。",
+          "topics": [
+            {
+              "id": "gov-team-t0",
+              "name": "研究-工程协作",
+              "coverage": 0
+            },
+            {
+              "id": "gov-team-t1",
+              "name": "代码评审",
+              "coverage": 0
+            },
+            {
+              "id": "gov-team-t2",
+              "name": "文档与知识库",
+              "coverage": 0
+            },
+            {
+              "id": "gov-team-t3",
+              "name": "开源治理",
+              "coverage": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "frontier",
+      "name": "前沿方向",
+      "icon": "✦",
+      "color": "#facc15",
+      "tagline": "正在改写边界的问题",
+      "desc": "超长上下文、低精度与稀疏、新硬件封装、新架构、Agent 基础设施与绿色 AI：这些方向尚未定型，但已经在改变系统设计的前提。",
+      "subs": [
+        {
+          "id": "frontier-longctx",
+          "name": "超大规模与超长上下文",
+          "coverage": 1,
+          "series": [
+            "posem",
+            "serving"
+          ],
+          "desc": "万亿参数、百万 token、无限上下文与长短期记忆。",
+          "topics": [
+            {
+              "id": "frontier-longctx-t0",
+              "name": "万亿参数",
+              "coverage": 0
+            },
+            {
+              "id": "frontier-longctx-t1",
+              "name": "百万 token",
+              "coverage": 2
+            },
+            {
+              "id": "frontier-longctx-t2",
+              "name": "无限上下文",
+              "coverage": 1
+            },
+            {
+              "id": "frontier-longctx-t3",
+              "name": "长短期记忆",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "frontier-lowprec",
+          "name": "低精度与稀疏",
+          "coverage": 2,
+          "series": [
+            "quant",
+            "megatron"
+          ],
+          "desc": "FP4/MX、1-bit/三元、动态稀疏与硬件协同设计。",
+          "topics": [
+            {
+              "id": "frontier-lowprec-t0",
+              "name": "FP4 / MX",
+              "coverage": 2
+            },
+            {
+              "id": "frontier-lowprec-t1",
+              "name": "1-bit / 三元",
+              "coverage": 2
+            },
+            {
+              "id": "frontier-lowprec-t2",
+              "name": "动态稀疏",
+              "coverage": 0
+            },
+            {
+              "id": "frontier-lowprec-t3",
+              "name": "硬件协同设计",
+              "coverage": 1
+            }
+          ]
+        },
+        {
+          "id": "frontier-hw",
+          "name": "新硬件与封装",
+          "coverage": 1,
+          "series": [
+            "chip"
+          ],
+          "desc": "光互连、Chiplet/UCIe、存算一体、晶圆级与量子加速。",
+          "topics": [
+            {
+              "id": "frontier-hw-t0",
+              "name": "光互连",
+              "coverage": 0
+            },
+            {
+              "id": "frontier-hw-t1",
+              "name": "Chiplet / UCIe",
+              "coverage": 2
+            },
+            {
+              "id": "frontier-hw-t2",
+              "name": "存算一体",
+              "coverage": 0
+            },
+            {
+              "id": "frontier-hw-t3",
+              "name": "晶圆级",
+              "coverage": 0
+            },
+            {
+              "id": "frontier-hw-t4",
+              "name": "量子加速",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "frontier-arch",
+          "name": "新架构",
+          "coverage": 1,
+          "series": [
+            "ttt",
+            "flow"
+          ],
+          "desc": "Mamba/SSM、线性注意力、混合专家、递归模型与世界模型。",
+          "topics": [
+            {
+              "id": "frontier-arch-t0",
+              "name": "Mamba / SSM",
+              "coverage": 0
+            },
+            {
+              "id": "frontier-arch-t1",
+              "name": "线性注意力",
+              "coverage": 1
+            },
+            {
+              "id": "frontier-arch-t2",
+              "name": "混合专家",
+              "coverage": 2
+            },
+            {
+              "id": "frontier-arch-t3",
+              "name": "递归 / 循环模型",
+              "coverage": 0
+            },
+            {
+              "id": "frontier-arch-t4",
+              "name": "世界模型",
+              "coverage": 2
+            }
+          ]
+        },
+        {
+          "id": "frontier-agent",
+          "name": "Agent 基础设施",
+          "coverage": 1,
+          "series": [
+            "agentic-rl"
+          ],
+          "desc": "工具调用、沙箱执行、记忆、检索与多 Agent 编排。",
+          "topics": [
+            {
+              "id": "frontier-agent-t0",
+              "name": "工具调用",
+              "coverage": 1
+            },
+            {
+              "id": "frontier-agent-t1",
+              "name": "沙箱与执行",
+              "coverage": 1
+            },
+            {
+              "id": "frontier-agent-t2",
+              "name": "记忆",
+              "coverage": 0
+            },
+            {
+              "id": "frontier-agent-t3",
+              "name": "检索",
+              "coverage": 0
+            },
+            {
+              "id": "frontier-agent-t4",
+              "name": "多 Agent 编排",
+              "coverage": 0
+            }
+          ]
+        },
+        {
+          "id": "frontier-green",
+          "name": "分布式与绿色 AI",
+          "coverage": 0,
+          "series": [],
+          "desc": "联邦学习、分布式推理、能源感知调度与碳足迹。",
+          "topics": [
+            {
+              "id": "frontier-green-t0",
+              "name": "联邦学习",
+              "coverage": 0
+            },
+            {
+              "id": "frontier-green-t1",
+              "name": "分布式推理",
+              "coverage": 1
+            },
+            {
+              "id": "frontier-green-t2",
+              "name": "能源感知调度",
+              "coverage": 0
+            },
+            {
+              "id": "frontier-green-t3",
+              "name": "碳足迹",
+              "coverage": 0
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "hw",
+      "to": "comp",
+      "label": "存储层次与执行模型决定 Kernel 怎么写"
+    },
+    {
+      "from": "hw",
+      "to": "dist",
+      "label": "算力与互连是并行的物理上界"
+    },
+    {
+      "from": "hw",
+      "to": "cluster",
+      "label": "GPU / NVLink 拓扑决定集群形态"
+    },
+    {
+      "from": "hw",
+      "to": "compress",
+      "label": "低比特硬件与格式承载量化"
+    },
+    {
+      "from": "data",
+      "to": "dist",
+      "label": "数据切分与加载是数据并行的前置"
+    },
+    {
+      "from": "data",
+      "to": "model",
+      "label": "数据配比与偏好数据塑造模型能力"
+    },
+    {
+      "from": "comp",
+      "to": "dist",
+      "label": "融合算子与通信 Kernel 支撑并行"
+    },
+    {
+      "from": "comp",
+      "to": "compress",
+      "label": "图改写与融合承载量化 Pass"
+    },
+    {
+      "from": "comp",
+      "to": "serve",
+      "label": "Kernel 与图编译决定引擎能力边界"
+    },
+    {
+      "from": "cluster",
+      "to": "dist",
+      "label": "调度、网络与容错承载训练任务"
+    },
+    {
+      "from": "cluster",
+      "to": "serve",
+      "label": "弹性、多租户与网络承载在线服务"
+    },
+    {
+      "from": "dist",
+      "to": "model",
+      "label": "并行训练把架构与后训练变成可训练系统"
+    },
+    {
+      "from": "dist",
+      "to": "compress",
+      "label": "QAT 与蒸馏在训练栈内完成"
+    },
+    {
+      "from": "model",
+      "to": "compress",
+      "label": "架构与后训练目标决定量化 / 蒸馏可行域"
+    },
+    {
+      "from": "model",
+      "to": "serve",
+      "label": "模型结构与后训练产物决定推理引擎实现"
+    },
+    {
+      "from": "compress",
+      "to": "serve",
+      "label": "量化格式的落地面是引擎支持矩阵"
+    },
+    {
+      "from": "obs",
+      "to": "dist",
+      "label": "指标与归因指导训练优化"
+    },
+    {
+      "from": "obs",
+      "to": "serve",
+      "label": "SLO / 口径是服务评测前提"
+    },
+    {
+      "from": "obs",
+      "to": "cluster",
+      "label": "集群监控与容量规划"
+    },
+    {
+      "from": "eco",
+      "to": "dist",
+      "label": "框架与分布式库提供实现载体"
+    },
+    {
+      "from": "eco",
+      "to": "serve",
+      "label": "引擎与部署框架构成服务栈"
+    },
+    {
+      "from": "gov",
+      "to": "cluster",
+      "label": "多租户、配额与安全治理"
+    },
+    {
+      "from": "gov",
+      "to": "serve",
+      "label": "灰度、限流与合规"
+    },
+    {
+      "from": "gov",
+      "to": "dist",
+      "label": "复现、版本与训练治理"
+    },
+    {
+      "from": "frontier",
+      "to": "hw",
+      "label": "新硬件与封装",
+      "dashed": true
+    },
+    {
+      "from": "frontier",
+      "to": "model",
+      "label": "新架构与新范式",
+      "dashed": true
+    },
+    {
+      "from": "frontier",
+      "to": "serve",
+      "label": "Agent 与超长上下文服务",
+      "dashed": true
+    }
+  ],
+  "paths": [
+    {
+      "name": "AI Infra 全栈主线",
+      "desc": "先懂硬件，再看编译与算子，接着理解训练并行与集群，最后落到压缩、推理服务与可观测性。",
+      "steps": [
+        "hw",
+        "comp",
+        "dist",
+        "cluster",
+        "compress",
+        "serve",
+        "obs"
+      ]
+    },
+    {
+      "name": "训练系统工程师",
+      "desc": "围绕大规模训练：并行策略、集合通信、显存、容错、数据管线与性能归因。",
+      "steps": [
+        "dist",
+        "cluster",
+        "data",
+        "obs",
+        "eco"
+      ]
+    },
+    {
+      "name": "推理优化工程师",
+      "desc": "从模型结构出发，经过量化/蒸馏、引擎调度、KV Cache 与投机解码，最后看 SLO 与成本。",
+      "steps": [
+        "model",
+        "compress",
+        "serve",
+        "obs"
+      ]
+    },
+    {
+      "name": "编译器 / 算子工程师",
+      "desc": "从芯片执行模型到编译原理，再到 LLVM/MLIR/TVM、Triton/CUDA 与 GEMM/FlashAttention。",
+      "steps": [
+        "hw",
+        "comp",
+        "obs",
+        "eco"
+      ]
+    },
+    {
+      "name": "生成模型与具身",
+      "desc": "VAE/扩散/Flow/DiT 生成栈，叠加多模态、世界模型、具身学习与部署。",
+      "steps": [
+        "model",
+        "compress",
+        "serve",
+        "frontier"
+      ]
+    }
+  ]
+}

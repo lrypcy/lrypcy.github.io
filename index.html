@@ -1,273 +1,221 @@
 ---
 layout: default
 title: 首页
+home_atlas: true
 ---
 {% assign graph = site.data.knowledge_graph %}
+{% assign atlas_domains = site.data.atlas.domains %}
+{% assign atlas_subs = 0 %}
+{% assign atlas_topics = 0 %}
+{% for d in atlas_domains %}
+{%- assign atlas_subs = atlas_subs | plus: d.subs.size -%}
+{%- for s in d.subs -%}{%- assign atlas_topics = atlas_topics | plus: s.topics.size -%}{%- endfor -%}
+{% endfor %}
 
 {%- assign is_first_page = true -%}
 {%- if paginator.page > 1 -%}{%- assign is_first_page = false -%}{%- endif -%}
 
-<!-- ============ Hero ============ -->
-{%- if is_first_page -%}
-<div class="blog-hero">
-  <h1 class="blog-hero-title">{{ site.title }}</h1>
-  <p class="blog-hero-subtitle">{{ site.subtitle }}</p>
-  <p class="hero-about">{{ site.about }}</p>
-  <div class="hero-stats">
-    <span class="hero-stat"><b>{{ site.posts | size }}</b> 篇文章</span>
-    <span class="hero-stat-sep">·</span>
-    <span class="hero-stat"><b>{{ graph.series | size }}</b> 个系列</span>
-    <span class="hero-stat-sep">·</span>
-    <span class="hero-stat"><b>{{ site.categories | size }}</b> 个分类</span>
-    <span class="hero-stat-sep">·</span>
-    <span class="hero-stat"><b>{{ site.tags | size }}</b> 个标签</span>
-  </div>
-</div>
-
-{%- endif -%}
-
-<!-- ============ 知识图谱 ============ -->
-{%- if is_first_page -%}
-{%- capture kg_nodes -%}
-{%- assign rendered = 0 -%}
+{%- capture atlas_series -%}
+[
 {%- for s in graph.series -%}
-{%- unless s.node == false -%}
-{%- assign n = 0 -%}
+{%- assign scount = 0 -%}
+{%- assign posts_json = "" -%}
 {%- for p in site.posts -%}
 {%- assign pp = p.relative_path | default: p.path -%}
 {%- assign hit = false -%}
 {%- for pre in s.prefixes -%}{%- if pp contains pre -%}{%- assign hit = true -%}{%- endif -%}{%- endfor -%}
 {%- if hit and s.exclude -%}{%- for ex in s.exclude -%}{%- if pp contains ex -%}{%- assign hit = false -%}{%- endif -%}{%- endfor -%}{%- endif -%}
-{%- if hit -%}{%- assign n = n | plus: 1 -%}{%- endif -%}
+{%- if hit -%}
+{%- assign scount = scount | plus: 1 -%}
+{%- assign pdate = p.date | date: "%Y-%m-%d" -%}
+{%- capture pitem -%}{"title":{{ p.title | jsonify }},"date":{{ pdate | jsonify }},"url":{{ p.url | jsonify }}}{%- endcapture -%}
+{%- if posts_json == "" -%}{%- assign posts_json = pitem -%}{%- else -%}{%- assign posts_json = posts_json | append: "," | append: pitem -%}{%- endif -%}
+{%- endif -%}
 {%- endfor -%}
-{%- assign scolor = '#3b82f6' -%}
-{%- for c in graph.categories -%}{%- if c.name == s.category -%}{%- assign scolor = c.color -%}{%- endif -%}{%- endfor -%}
-{%- if rendered > 0 -%},{%- endif -%}{%- assign rendered = rendered | plus: 1 -%}{"id":{{ s.id | jsonify }},"name":{{ s.name | jsonify }},"short":{{ s.short | jsonify }},"cat":{{ s.category | jsonify }},"count":{{ n }},"layer":{{ s.layer }},"order":{{ s.order }},"desc":{{ s.desc | jsonify }},"color":{{ scolor | jsonify }}}
-{%- endunless -%}
+{"id":{{ s.id | jsonify }},"name":{{ s.name | jsonify }},"short":{{ s.short | default: s.name | jsonify }},"category":{{ s.category | jsonify }},"desc":{{ s.desc | default: "" | jsonify }},"node":{% if s.node == false %}false{% else %}true{% endif %},"count":{{ scount }},"posts":[{{ posts_json }}]}
+{%- unless forloop.last -%},{%- endunless -%}
 {%- endfor -%}
+]
 {%- endcapture -%}
 
-<script type="application/json" id="kg-data">
-{
-  "nodes": [{{ kg_nodes | strip_newlines }}],
-  "links": {{ graph.links | jsonify }},
-  "cats": [{% for c in graph.categories %}{"name":{{ c.name | jsonify }},"color":{{ c.color | jsonify }},"icon":{{ c.icon | jsonify }},"count":{{ site.categories[c.name].size | default: 0 }}}{% unless forloop.last %},{% endunless %}{% endfor %}]
-}
-</script>
+<div class="atlas">
+  {%- if is_first_page -%}
+  <script type="application/json" id="atlas-data">{{ site.data.atlas | jsonify }}</script>
+  <script type="application/json" id="atlas-series">{"posts":{{ site.posts | size }},"series":{{ atlas_series }}}</script>
 
-<section class="home-section">
-  <h2 class="section-title"><span class="section-mark">✦</span> 知识图谱</h2>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow"><span class="pulse"></span> Knowledge Atlas · {{ site.title }}</div>
+      <h1>AI Infra<br><span class="grad">知识全景</span></h1>
+      <p class="lede">{{ site.about }} 这张图谱按 <b>{{ atlas_domains | size }} 个知识域、{{ atlas_subs }} 个子领域、{{ atlas_topics }} 个主题</b> 组织 AI Infra，站内 {{ site.posts | size }} 篇文章逐项标注覆盖状态，没写过的部分也保留位置与依赖关系。</p>
+      <p class="hero-site">{{ site.subtitle }} · {{ site.categories | size }} 个分类 · {{ site.tags | size }} 个标签 · <a href="#latest-section">跳过图谱，直接看最新文章 ↓</a></p>
 
-  <div class="kg-card">
-    <div class="kg-toolbar">
-      <div class="kg-legend" id="kg-legend"></div>
-      <div class="kg-actions">
-        <button class="kg-btn" id="kg-expand" type="button">展开全部文章</button>
-        <button class="kg-btn" id="kg-reset" type="button">重置布局</button>
+      <div class="hero-stats" id="heroStats"></div>
+
+      <div class="cov-wrap">
+        <div class="cov-top"><span>站内覆盖构成 · 按主题计</span><b id="covPct">—</b></div>
+        <div class="covbar" id="heroCovBar"></div>
+        <div class="cov-note" id="heroCovNote"></div>
       </div>
     </div>
-    <div class="kg-scroll">
-      <!-- viewBox 只是无 JS 时的兜底；实际高度由 assets/js/kg-layout.js 按节点行数算出来 -->
-      <svg id="kg-svg" viewBox="0 0 900 650" role="img" aria-label="站点知识图谱"></svg>
+  </header>
+
+  <nav class="topbar">
+    <div class="topbar-inner">
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4.2-4.2"></path></svg>
+        <input id="search" type="search" autocomplete="off" placeholder="在图谱内搜索领域、子领域、主题或系列…">
+        <kbd>/</kbd>
+      </div>
+      <div class="seg" id="covFilter">
+        <button data-cov="all" class="on"><span class="sl">全部</span></button>
+        <button data-cov="2"><span class="cdot cov2"></span><span class="sl">站内专题</span> <b id="fc2"></b></button>
+        <button data-cov="1"><span class="cdot cov1"></span><span class="sl">部分涉及</span> <b id="fc1"></b></button>
+        <button data-cov="0"><span class="cdot cov0"></span><span class="sl">站外补齐</span> <b id="fc0"></b></button>
+      </div>
+      <button class="btn" id="toggleAll">展开领域</button>
+      <button class="btn" id="reset">重置</button>
+      <span id="resultCount"></span>
     </div>
-    <div class="kg-tip" id="kg-tip" hidden></div>
-    <p class="kg-hint">提示：图谱按「硬件与系统底座 → 核心算法 → 前沿专题」三层排布，纵向即学习顺序。</p>
-  </div>
-
-  <details class="kg-links">
-    <summary>关系清单（{{ graph.links | size }} 条依赖）</summary>
-    <ul>
-      {% for l in graph.links %}
-      {% assign sname = '' %}{% assign tname = '' %}
-      {% for s in graph.series %}{% if s.id == l.from %}{% assign sname = s.short %}{% endif %}{% if s.id == l.to %}{% assign tname = s.short %}{% endif %}{% endfor %}
-      <li><b>{{ sname }}</b> → <b>{{ tname }}</b>：{{ l.label }}</li>
-      {% endfor %}
-    </ul>
-  </details>
-</section>
-
-<!-- ============ 分类 × 系列 ============ -->
-<section class="home-section">
-  <h2 class="section-title"><span class="section-mark">✦</span> 分类 × 系列</h2>
-  <p class="section-desc">按分类浏览全部文章，每个分类下按「系列」归拢，系列内按篇序号排列（00 → 01 → …，即阅读顺序）——这是本站的完整阅读地图。</p>
-
-  <div class="cat-tabs" id="cat-tabs">
-    <button class="cat-tab is-active" type="button" data-cat="__all__">全部<em>{{ site.posts | size }}</em></button>
-    {% for c in graph.categories %}
-    <button class="cat-tab" type="button" data-cat="{{ c.name }}">
-      <span class="cat-dot" style="background: {{ c.color }}"></span>{{ c.name }}<em>{{ site.categories[c.name].size | default: 0 }}</em>
-    </button>
-    {% endfor %}
-    <!-- 兜底：站点里出现但 yml 未配置的分类，同样出现在 tab 里 -->
-    {% for cat in site.categories %}
-    {%- assign cname = cat[0] -%}
-    {%- assign is_known = false -%}
-    {%- for c in graph.categories -%}{%- if c.name == cname -%}{%- assign is_known = true -%}{%- endif -%}{%- endfor -%}
-    {%- unless is_known -%}
-    <button class="cat-tab" type="button" data-cat="{{ cname }}">
-      <span class="cat-dot" style="background: #94a3b8"></span>{{ cname }}<em>{{ cat[1] | size }}</em>
-    </button>
-    {%- endunless -%}
-    {% endfor %}
-  </div>
-
-  <div id="cat-panels">
-    {% for c in graph.categories %}
-    {%- assign nseries = 0 -%}
-    {%- for s in graph.series -%}{%- if s.category == c.name -%}{%- assign nseries = nseries | plus: 1 -%}{%- endif -%}{%- endfor -%}
-    <div class="cat-panel" data-cat="{{ c.name }}" style="--cat-color: {{ c.color }}">
-      <div class="cat-panel-head">
-        <span class="cat-panel-icon">{{ c.icon }}</span>
-        <h3>{{ c.name }}<em>{{ site.categories[c.name].size | default: 0 }} 篇 · {{ nseries }} 个系列</em></h3>
-        <p>{{ c.desc }}</p>
-      </div>
-
-      {%- capture claimed -%}{% for s in graph.series %}{% if s.category == c.name %}{% for p in site.posts %}{% assign pp = p.relative_path | default: p.path %}{% assign hit = false %}{% for pre in s.prefixes %}{% if pp contains pre %}{% assign hit = true %}{% endif %}{% endfor %}{% if hit and s.exclude %}{% for ex in s.exclude %}{% if pp contains ex %}{% assign hit = false %}{% endif %}{% endfor %}{% endif %}{% if hit %};{{ p.url }};{% endif %}{% endfor %}{% endif %}{% endfor %}{%- endcapture -%}
-      {%- assign orphans = 0 -%}{% for p in site.categories[c.name] %}{% assign key = p.url | prepend: ';' | append: ';' %}{% unless claimed contains key %}{% assign orphans = orphans | plus: 1 %}{% endunless %}{% endfor %}
-
-      {% for s in graph.series %}
-      {% if s.category == c.name %}
-      {%- capture slist -%}{% for p in site.posts %}{% assign pp = p.relative_path | default: p.path %}{% assign hit = false %}{% for pre in s.prefixes %}{% if pp contains pre %}{% assign hit = true %}{% endif %}{% endfor %}{% if hit and s.exclude %}{% for ex in s.exclude %}{% if pp contains ex %}{% assign hit = false %}{% endif %}{% endfor %}{% endif %}{% if hit %}{% assign pdate = p.date | date: "%Y-%m-%d" %}{% include post-sortkey.html title=p.title date=pdate url=p.url %}||{% endif %}{% endfor %}{%- endcapture -%}
-      {%- assign sitems = slist | split: '||' | sort -%}
-      {%- assign scount = 0 -%}{% for it in sitems %}{% unless it == '' %}{% assign scount = scount | plus: 1 %}{% endunless %}{% endfor %}
-      <div class="series-block" id="series-{{ s.id }}" data-series="{{ s.id }}">
-        <div class="series-head">
-          <span class="series-dot" style="background: {{ c.color }}"></span>
-          <h4>{{ s.name }}</h4>
-          <span class="series-count">{{ scount }} 篇</span>
-        </div>
-        <p class="series-desc">{{ s.desc }}</p>
-        <ol class="series-posts">
-          {% for it in sitems %}{% unless it == '' %}{% assign f = it | split: '@@' %}
-          <li><a href="{{ f[3] }}">{{ f[2] }}</a><time>{{ f[1] }}</time></li>
-          {% endunless %}{% endfor %}
-        </ol>
-        {% if scount > 6 %}<button class="series-toggle" type="button">展开全部 {{ scount }} 篇 ↓</button>{% endif %}
-      </div>
-      {% endif %}
-      {% endfor %}
-
-      {%- if orphans > 0 -%}
-      <div class="series-block series-orphan">
-        <div class="series-head">
-          <span class="series-dot" style="background: #94a3b8"></span>
-          <h4>未归系列的文章</h4>
-          <span class="series-count">{{ orphans }} 篇</span>
-        </div>
-        <p class="series-desc">这些文章还没匹配到任何系列规则，先在分类里兜底展示，不会丢失。若要让它进入知识图谱，在 <code>_data/knowledge_graph.yml</code> 里补一条 series 前缀规则。</p>
-        <ol class="series-posts">
-          {% for p in site.categories[c.name] %}{% assign key = p.url | prepend: ';' | append: ';' %}{% unless claimed contains key %}
-          <li><a href="{{ p.url }}">{{ p.title }}</a><time>{{ p.date | date: "%Y-%m-%d" }}</time></li>
-          {% endunless %}{% endfor %}
-        </ol>
-      </div>
-      {%- endif -%}
-    </div>
-    {% endfor %}
-
-    <!-- 兜底：站点里出现、但 yml 未配置的分类（新增分类时无需先改配置） -->
-    {% for cat in site.categories %}
-    {%- assign cname = cat[0] -%}
-    {%- assign is_known = false -%}
-    {%- for c in graph.categories -%}{%- if c.name == cname -%}{%- assign is_known = true -%}{%- endif -%}{%- endfor -%}
-    {%- unless is_known -%}
-    <div class="cat-panel" data-cat="{{ cname }}" style="--cat-color: #94a3b8">
-      <div class="cat-panel-head">
-        <span class="cat-panel-icon">📌</span>
-        <h3>{{ cname }}<em>{{ cat[1] | size }} 篇 · 待配置</em></h3>
-        <p>这个分类还没写进 <code>_data/knowledge_graph.yml</code>（图标 / 主题色 / 定位描述），首页用兜底样式先展示全部文章。</p>
-      </div>
-      <div class="series-block">
-        <div class="series-head">
-          <span class="series-dot" style="background: #94a3b8"></span>
-          <h4>全部文章</h4>
-          <span class="series-count">{{ cat[1] | size }} 篇</span>
-        </div>
-        <ol class="series-posts">
-          {% for p in cat[1] %}
-          <li><a href="{{ p.url }}">{{ p.title }}</a><time>{{ p.date | date: "%Y-%m-%d" }}</time></li>
-          {% endfor %}
-        </ol>
-        {% if cat[1].size > 6 %}<button class="series-toggle" type="button">展开全部 {{ cat[1] | size }} 篇 ↓</button>{% endif %}
-      </div>
-    </div>
-    {%- endunless -%}
-    {% endfor %}
-  </div>
-</section>
-
-<!-- ============ 学习路线 ============ -->
-<section class="home-section">
-  <h2 class="section-title"><span class="section-mark">✦</span> 学习路线</h2>
-  <p class="section-desc">不知道从哪读起？按下面四条路线走，每条都是一个由浅入深的系列序列。</p>
-  <div class="road-grid">
-    {% for path in graph.paths %}
-    <div class="road-card">
-      <h3>{{ path.name }}</h3>
-      <p>{{ path.desc }}</p>
-      <div class="road-steps">
-        {% for sid in path.steps %}
-        {% for s in graph.series %}{% if s.id == sid %}
-        <a class="road-step" href="#series-{{ s.id }}" data-target="{{ s.id }}">{{ s.short }}</a>
-        <span class="road-arrow">→</span>
-        {% endif %}{% endfor %}
-        {% endfor %}
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-</section>
-
-<!-- ============ 最新文章（分页） ============ -->
-{%- endif -%}
-<section class="home-section">
-  <h2 class="section-title"><span class="section-mark">✦</span> 最新文章</h2>
-  <div class="post-list">
-    {% for post in paginator.posts %}
-    {% assign post_ex = post.excerpt | strip_html | strip %}
-    {% if post_ex contains "系列导航" or post_ex contains "课程路线图" or post_ex contains "TL;DR" %}
-      {% assign ex_line = "" %}
-      {% assign content_lines = post.content | strip_html | newline_to_br | split: "<br />" %}
-      {% for ln in content_lines %}
-        {% assign l = ln | strip %}
-        {% assign bad_line = "" %}
-        {% if l == "" or l.size < 4 or l contains "系列导航" or l contains "TL;DR" or l contains "待写" or l contains "←" or l contains "篇 / 共" %}
-          {% assign bad_line = "y" %}
-        {% endif %}
-        {% if bad_line == "" and ex_line == "" %}
-          {% assign ex_line = l | strip %}
-        {% endif %}
-      {% endfor %}
-      {% if ex_line != "" %}{% assign post_ex = ex_line | truncate: 140 %}{% endif %}
-    {% endif %}
-    <article class="post-card">
-      <header class="post-card-header">
-        <time class="post-card-date" datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%Y-%m-%d" }}</time>
-        {% if post.categories %}<span class="post-card-cat">{{ post.categories | join: " / " }}</span>{% endif %}
-      </header>
-      <h2 class="post-card-title"><a href="{{ post.url }}">{{ post.title }}</a></h2>
-      <p class="post-card-excerpt">{{ post_ex | truncate: 140 }}</p>
-      <footer class="post-card-footer">
-        {% if post.tags %}<span class="post-card-tags">{% for tag in post.tags limit: 4 %}<a href="/tags/?tag={{ tag | url_encode }}">#{{ tag }}</a> {% endfor %}</span>{% endif %}
-        <a class="post-card-more" href="{{ post.url }}">阅读全文 →</a>
-      </footer>
-    </article>
-    {% endfor %}
-  </div>
-
-  {% if paginator.total_pages > 1 %}
-  <nav class="pagination">
-    {% if paginator.previous_page %}
-    <a class="page-btn" href="{{ paginator.previous_page_path | relative_url }}">← 上一页</a>
-    {% else %}
-    <span class="page-btn disabled">← 上一页</span>
-    {% endif %}
-    <span class="page-info">{{ paginator.page }} / {{ paginator.total_pages }}</span>
-    {% if paginator.next_page %}
-    <a class="page-btn" href="{{ paginator.next_page_path | relative_url }}">下一页 →</a>
-    {% else %}
-    <span class="page-btn disabled">下一页 →</span>
-    {% endif %}
   </nav>
-  {% endif %}
-</section>
+
+  <main>
+    <section class="section" id="graph-section">
+      <div class="sec-head">
+        <div>
+          <div class="sec-kicker">01 · System View</div>
+          <h2>基础设施依赖图</h2>
+        </div>
+        <p>{{ atlas_domains | size }} 个领域之间的支撑关系。<b>悬停</b>任意节点追踪上下游，<b>点击</b>进入详情；虚线表示前沿方向对新硬件、新架构与新服务形态的反向塑造。</p>
+      </div>
+      <div class="mobile-hint">← 可左右滑动查看完整依赖图 →</div>
+      <div class="legend">
+        <span class="lg"><span class="cdot cov2"></span>站内专题</span>
+        <span class="lg"><span class="cdot cov1"></span>部分涉及</span>
+        <span class="lg"><span class="cdot cov0"></span>站外补齐</span>
+        <span class="lg"><span class="dot-line"></span>前沿反哺</span>
+      </div>
+      <div class="graph-wrap">
+        <div class="graph" id="graph">
+          <svg id="edges" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M0,0 L8,4 L0,8 z" fill="#94a3b8" opacity=".8"></path>
+              </marker>
+            </defs>
+          </svg>
+        </div>
+      </div>
+      <div class="graph-foot">
+        <span><b>读图</b> · 自下而上是支撑方向：算力 → 编译 / 集群 / 数据 → 训练 → 模型 → 压缩 / 服务 → 观测与治理。</span>
+        <span><b>节点数字</b> · 子领域数 / 主题数 / 站内文章数</span>
+      </div>
+    </section>
+
+    <section class="section" id="atlas-section">
+      <div class="sec-head">
+        <div>
+          <div class="sec-kicker">02 · Full Atlas</div>
+          <h2>完整知识版图</h2>
+        </div>
+        <p>按领域逐层展开到子领域与主题。<b>实线色块</b>为站内专题，<b>虚线</b>为部分涉及或站外补齐；搜索与筛选会自动展开命中项。</p>
+      </div>
+      <div class="atlas-bar">
+        <p class="atlas-hint">默认只展开到领域，点 <b>展开子域</b> 看下一层，再点 <b>展开主题</b> 看全部条目；进入任意领域/子域/主题详情后也可一键定位回版图。</p>
+        <button class="ghost-btn" id="toggleAllTopics">展开全部主题</button>
+      </div>
+      <div class="atlas-index" id="atlasIndex"></div>
+      <div id="atlasGrid"></div>
+    </section>
+
+    <section class="section" id="paths-section">
+      <div class="sec-head">
+        <div>
+          <div class="sec-kicker">03 · Learning Paths</div>
+          <h2>按角色补齐</h2>
+        </div>
+        <p>{{ site.data.atlas.paths | size }} 条路径覆盖全栈、训练、推理、编译与生成模型。点击任一站点直接跳到对应领域。</p>
+      </div>
+      <div class="paths" id="paths"></div>
+    </section>
+  </main>
+
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <button class="icon-btn" id="drawerBack" title="返回" hidden>←</button>
+      <button class="icon-btn" id="drawerClose" title="关闭">✕</button>
+      <span class="drawer-crumb" id="drawerCrumb"></span>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
+  {%- endif -%}
+
+  <section class="section post-section" id="latest-section">
+    <div class="sec-head">
+      <div>
+        <div class="sec-kicker">{% if is_first_page %}04 · Latest Posts{% else %}Archive · Page {{ paginator.page }}{% endif %}</div>
+        <h2>{% if is_first_page %}最新文章{% else %}文章列表{% endif %}</h2>
+      </div>
+      <p>共 <b>{{ site.posts | size }}</b> 篇文章，按发布时间倒序。全部文章见 <a href="/archives/">归档</a>，也可按 <a href="/categories/">分类</a> / <a href="/tags/">标签</a> 浏览。</p>
+    </div>
+
+    <div class="post-grid">
+      {% for post in paginator.posts %}
+      {% assign post_ex = post.excerpt | markdownify | strip_html | normalize_whitespace | strip %}
+      {% if post_ex contains "系列导航" or post_ex contains "课程路线图" or post_ex contains "TL;DR" %}
+        {% assign ex_line = "" %}
+        {% assign content_lines = post.content | markdownify | strip_html | newline_to_br | split: "<br />" %}
+        {% for ln in content_lines %}
+          {% assign l = ln | strip %}
+          {% assign bad_line = "" %}
+          {% if l == "" or l.size < 4 or l contains "系列导航" or l contains "TL;DR" or l contains "待写" or l contains "←" or l contains "篇 / 共" %}
+            {% assign bad_line = "y" %}
+          {% endif %}
+          {% if bad_line == "" and ex_line == "" %}
+            {% assign ex_line = l | strip %}
+          {% endif %}
+        {% endfor %}
+        {% if ex_line != "" %}{% assign post_ex = ex_line | truncate: 140 %}{% endif %}
+      {% endif %}
+      <article class="lp-card">
+        <div class="lp-meta">
+          <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%Y-%m-%d" }}</time>
+          {% if post.categories %}<span>{{ post.categories | join: " / " }}</span>{% endif %}
+        </div>
+        <h3><a href="{{ post.url }}">{{ post.title }}</a></h3>
+        <p>{{ post_ex | truncate: 120 }}</p>
+        <div class="lp-foot">
+          <span class="lp-tags">{% for tag in post.tags limit: 4 %}<a href="/tags/?tag={{ tag | url_encode }}">#{{ tag }}</a>{% endfor %}</span>
+          <a class="lp-more" href="{{ post.url }}">阅读全文 →</a>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+
+    {% if paginator.total_pages > 1 %}
+    <nav class="pagination">
+      {% if paginator.previous_page %}
+      <a class="page-btn" href="{{ paginator.previous_page_path | relative_url }}">← 上一页</a>
+      {% else %}
+      <span class="page-btn disabled">← 上一页</span>
+      {% endif %}
+      <span class="page-info">{{ paginator.page }} / {{ paginator.total_pages }}</span>
+      {% if paginator.next_page %}
+      <a class="page-btn" href="{{ paginator.next_page_path | relative_url }}">下一页 →</a>
+      {% else %}
+      <span class="page-btn disabled">下一页 →</span>
+      {% endif %}
+    </nav>
+    {% endif %}
+
+    <p class="sidebar-note">
+      <a href="/archives/">全部归档</a>
+      <a href="/categories/">分类</a>
+      <a href="/tags/">标签</a>
+      <a href="/about/">关于本站</a>
+      <a href="https://github.com/lrypcy" target="_blank" rel="noopener">GitHub @lrypcy</a>
+      {% unless is_first_page %}<a href="/">← 回到知识全景</a>{% endunless %}
+    </p>
+  </section>
+</div>

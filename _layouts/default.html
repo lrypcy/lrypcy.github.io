@@ -8,6 +8,7 @@
   <link rel="icon" href="/images/favicon-32x32-next.png" sizes="32x32">
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/assets/css/custom.css">
+  {% if page.home_atlas %}<link rel="stylesheet" href="/assets/css/atlas.css">{% endif %}
   <script>
   /* 阅读偏好（正文宽度 / 右侧评论区显隐）尽早落地到 <html> 上，避免首屏闪烁 */
   (function () {
@@ -24,7 +25,7 @@
   <script src="/assets/js/zoom.js" defer></script>
 </head>
 
-<body>
+<body{% if page.home_atlas %} class="home-atlas-page"{% endif %}>
   <header class="header">
     <div class="header-inner">
       <a href="/" class="brand">一身骄傲</a>
@@ -47,13 +48,14 @@
     </div>
   </header>
 
-  <main class="layout-grid{% if page.layout == 'post' %} layout-post{% endif %}">
-    {% include rail.html %}
+  <main class="layout-grid{% if page.layout == 'post' %} layout-post{% endif %}{% if page.home_atlas %} layout-atlas{% endif %}">
+    {% unless page.home_atlas %}{% include rail.html %}{% endunless %}
 
     <div class="layout-main">
       {{ content }}
     </div>
 
+    {% unless page.home_atlas %}
     <aside class="sidebar">
       {% if page.layout == 'post' %}
       {%- assign giscus_id = site.giscus.category_id | default: "" -%}
@@ -119,6 +121,7 @@
       </div>
       {% endif %}
     </aside>
+    {% endunless %}
   </main>
 
   <footer class="footer">
@@ -151,10 +154,7 @@
   <script src="/assets/js/quote-comment.js" defer></script>
   {%- endif -%}
   {% endif %}
-  {% if page.url == '/' or page.url == '/index.html' %}
-  <script src="/assets/js/kg-layout.js" defer></script>
-  <script src="/assets/js/knowledge-graph.js" defer></script>
-  {% endif %}
+  {% if page.home_atlas %}<script src="/assets/js/atlas.js" defer></script>{% endif %}
   {% include analytics.html %}
 </body>
 </html>
