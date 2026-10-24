@@ -2197,6 +2197,32 @@ html.rail-off .rail-head-title { display: none; }
   border-color: var(--primary);
 }
 .pager-btn:disabled { opacity: 0.45; cursor: default; }
+.pager-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-light);
+  margin-left: 8px;
+}
+.pager-jump-input {
+  width: 48px;
+  height: 28px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  text-align: center;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  appearance: textfield;
+  -moz-appearance: textfield;
+  transition: var(--transition);
+}
+.pager-jump-input::-webkit-inner-spin-button,
+.pager-jump-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.pager-jump-input:focus { border-color: var(--primary); }
 /* 单分类页底部：上一个 / 下一个分类 */
 .cat-pn {
   display: flex;

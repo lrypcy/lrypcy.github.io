@@ -18,6 +18,7 @@
         html += '<button type="button" class="pager-num' + (i === cur ? ' is-active' : '') + '" data-page="' + i + '">' + i + '</button>';
       }
       html += '<button type="button" class="pager-btn pager-next"' + (cur === pages ? ' disabled' : '') + '>下一页 →</button>';
+      html += '<span class="pager-jump">跳至<input type="number" class="pager-jump-input" min="1" max="' + pages + '" value="' + cur + '" aria-label="跳转到指定页">页</span>';
       nav.innerHTML = html;
       [].slice.call(nav.querySelectorAll('button')).forEach(function (b) {
         b.addEventListener('click', function () {
@@ -26,6 +27,15 @@
           else { api.goTo(cur + 1); }
         });
       });
+      var jump = nav.querySelector('.pager-jump-input');
+      if (jump) {
+        var doJump = function () {
+          var v = parseInt(jump.value, 10);
+          if (!isNaN(v)) { api.goTo(v); }
+        };
+        jump.addEventListener('keydown', function (e) { if (e.key === 'Enter') { doJump(); } });
+        jump.addEventListener('change', doJump);
+      }
     }
 
     var api = {
