@@ -56,38 +56,41 @@
       {%- assign scount = 0 -%}
       {%- for it in sitems -%}{%- unless it == '' -%}{%- assign scount = scount | plus: 1 -%}{%- endunless -%}{%- endfor -%}
       {%- if scount > 0 -%}
-      <div class="rail-series">
-        <div class="rail-series-head">
-          <span class="rail-series-dot" aria-hidden="true"></span>
+      {%- assign cseries = false -%}
+      {%- for it in sitems -%}{%- unless it == '' -%}{%- assign f = it | split: '@@' -%}{%- if f[3] == page.url -%}{%- assign cseries = true -%}{%- endif -%}{%- endunless -%}{%- endfor -%}
+      <details class="rail-series"{% if cseries %} open data-current-series="1"{% endif %}>
+        <summary class="rail-series-head">
+          <span class="rail-series-arrow" aria-hidden="true">›</span>
           <span class="rail-series-name">{{ s.name }}</span>
           <span class="rail-series-count">{{ scount }}</span>
-        </div>
+        </summary>
         <ol class="rail-posts">
       {%- for it in sitems -%}{%- unless it == '' -%}
       {%- assign f = it | split: '@@' -%}
           <li><a href="{{ f[3] }}"{% if page.url == f[3] %} class="is-current" aria-current="page"{% endif %}>{{ f[2] }}</a></li>
       {%- endunless -%}{%- endfor -%}
         </ol>
-      </div>
+      </details>
       {%- endif -%}
     {%- endif -%}
     {%- endfor -%}
 
     {%- assign orphans = 0 -%}
-    {%- for p in ps -%}{%- assign k = p.url | prepend: ';' | append: ';' -%}{%- unless claimed contains k -%}{%- assign orphans = orphans | plus: 1 -%}{%- endunless -%}{%- endfor -%}
+    {%- assign orphan_cur = false -%}
+    {%- for p in ps -%}{%- assign k = p.url | prepend: ';' | append: ';' -%}{%- unless claimed contains k -%}{%- assign orphans = orphans | plus: 1 -%}{%- if p.url == page.url -%}{%- assign orphan_cur = true -%}{%- endif -%}{%- endunless -%}{%- endfor -%}
     {%- if orphans > 0 -%}
-    <div class="rail-series">
-      <div class="rail-series-head">
-        <span class="rail-series-dot rail-series-dot-plain" aria-hidden="true"></span>
+    <details class="rail-series"{% if orphan_cur %} open data-current-series="1"{% endif %}>
+      <summary class="rail-series-head">
+        <span class="rail-series-arrow" aria-hidden="true">›</span>
         <span class="rail-series-name">散篇</span>
         <span class="rail-series-count">{{ orphans }}</span>
-      </div>
+      </summary>
       <ol class="rail-posts">
         {%- for p in ps -%}{%- assign k = p.url | prepend: ';' | append: ';' -%}{%- unless claimed contains k -%}
         <li><a href="{{ p.url }}"{% if page.url == p.url %} class="is-current" aria-current="page"{% endif %}>{{ p.title }}</a></li>
         {%- endunless -%}{%- endfor -%}
       </ol>
-    </div>
+    </details>
     {%- endif -%}
 
   </div>

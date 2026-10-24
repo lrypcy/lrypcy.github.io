@@ -48,14 +48,14 @@
     </div>
   </header>
 
-  <main class="layout-grid{% if page.layout == 'post' %} layout-post{% endif %}{% if page.home_atlas %} layout-atlas{% endif %}">
+  <main class="layout-grid{% if page.layout == 'post' %} layout-post{% endif %}{% if page.home_atlas %} layout-atlas{% endif %}{% if page.no_sidebar %} layout-nosidebar{% endif %}">
     {% unless page.home_atlas %}{% include rail.html %}{% endunless %}
 
     <div class="layout-main">
       {{ content }}
     </div>
 
-    {% unless page.home_atlas %}
+    {% unless page.home_atlas or page.no_sidebar %}
     <aside class="sidebar">
       {% if page.layout == 'post' %}
       {%- assign giscus_id = site.giscus.category_id | default: "" -%}

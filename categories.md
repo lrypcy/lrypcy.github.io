@@ -1,6 +1,7 @@
 ---
 layout: page
 title: 分类
+no_sidebar: true
 ---
 {% assign graph = site.data.knowledge_graph %}
 {% capture known %}{% for sec in site.data.catalog.sections %}{% for c in sec.categories %};{{ c }};{% endfor %}{% endfor %}{% endcapture %}

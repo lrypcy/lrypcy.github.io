@@ -1,35 +1,32 @@
 ---
 layout: page
 title: 标签
+no_sidebar: true
 ---
-{% assign tag_max = 0 %}
-{% assign tag_min = 9999 %}
-{% for tag in site.tags %}
-  {% assign sz = tag[1] | size %}
-  {% if sz > tag_max %}{% assign tag_max = sz %}{% endif %}
-  {% if sz < tag_min %}{% assign tag_min = sz %}{% endif %}
-{% endfor %}
-{% assign colors = "#3b82f6,#6366f1,#8b5cf6,#a855f7,#ec4899,#e11d48,#ea580c,#d97706,#16a34a,#0d9488,#0891b2,#1d4ed8" | split: "," %}
+{% capture tag_sort %}{% for tag in site.tags %}{% assign n = tag[1] | size %}{{ n | prepend: '0000' | slice: -4, 4 }}@@{{ tag[0] }}@@{{ n }}||{% endfor %}{% endcapture %}
+{% assign tag_items = tag_sort | split: '||' | sort | reverse %}
+{% assign hot_tags = 0 %}
+{% for tag in site.tags %}{% assign n = tag[1] | size %}{% if n >= 2 %}{% assign hot_tags = hot_tags | plus: 1 %}{% endif %}{% endfor %}
 
   <!-- 浏览态：全站标签一览（进入单标签页时整体隐藏） -->
   <div id="tag-nav">
-    <p class="page-desc">共 {{ site.tags | size }} 个标签、{{ site.posts | size }} 篇文章。<b>点击任意标签</b>，进入只列该标签文章的独立页面，地址栏带上 <code>?tag=</code> 参数，复制即可分享。</p>
+    <p class="page-desc">共 {{ site.tags | size }} 个标签、{{ site.posts | size }} 篇文章。默认显示被 2 篇以上文章使用的 {{ hot_tags }} 个标签，可搜索或展开全部。</p>
 
-    <div class="tag-cloud">
-      {% for tag in site.tags %}
-        {% assign tag_size = tag[1] | size %}
-        {% assign span = tag_max | minus: tag_min %}
-        {% if span > 0 %}
-          {% assign ratio = tag_size | minus: tag_min | times: 100 | divided_by: span %}
-        {% else %}
-          {% assign ratio = 50 %}
-        {% endif %}
-        {% assign font_pct = ratio | plus: 100 %}
-        {% assign color_idx = forloop.index0 | modulo: 12 %}
-        {% assign color = colors[color_idx] %}
-        <a class="tag-item" href="/tags/?tag={{ tag[0] | url_encode }}" data-tag="{{ tag[0] }}" style="font-size: {{ font_pct }}%; color: {{ color }};" title="{{ tag_size }} 篇文章">{{ tag[0] }}</a>
-      {% endfor %}
+    <div class="tag-tools">
+      <label class="tag-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4.2-4.2"></path></svg>
+        <input id="tagSearch" type="search" autocomplete="off" placeholder="搜索标签…">
+      </label>
+      <span class="tag-count-info" id="tagCountInfo"></span>
     </div>
+
+    <div class="tag-cloud" id="tagCloud">
+      {% for it in tag_items %}{% unless it == '' %}{% assign f = it | split: '@@' %}{% assign n = f[2] | plus: 0 %}
+      <a class="tag-item" href="/tags/?tag={{ f[1] | url_encode }}" data-tag="{{ f[1] }}" data-count="{{ n }}"{% if n < 2 %} data-low="1"{% endif %}><span class="tag-name">{{ f[1] }}</span><span class="tag-count">{{ n }}</span></a>
+      {% endunless %}{% endfor %}
+    </div>
+
+    <button class="tag-show-all" id="tagShowAll" type="button">显示全部 {{ site.tags | size }} 个标签 ↓</button>
   </div>
 
   <!-- 单标签独立页：URL 带 ?tag= / #tag 时出现 -->
@@ -88,9 +85,9 @@ title: 标签
   function apply(tag, scroll) {
     var g = tag ? groupOf(tag) : null;
     if (tag && !g) { tag = null; g = null; }
-    // 无过滤条件时 g 为 null，此时全部展开；有 g 时只有一个分组可见（独立页模式）
+    // 无过滤条件时不铺开所有标签分组，只保留上方标签云
     groups.forEach(function (el) {
-      el.hidden = !!g && (el !== g);
+      el.hidden = !g || el !== g;
       el.classList.toggle('is-solo', !!g && el === g);
     });
     var items = cloud ? cloud.querySelectorAll('.tag-item') : [];
@@ -145,6 +142,41 @@ title: 标签
     if (tag) { setUrl(tag); }
     apply(tag, false);
   });
+
+  // 标签云：搜索 + 低频标签折叠
+  var search = document.getElementById('tagSearch');
+  var countInfo = document.getElementById('tagCountInfo');
+  var showAllBtn = document.getElementById('tagShowAll');
+  var cloudItems = cloud ? [].slice.call(cloud.querySelectorAll('.tag-item')) : [];
+  var showAll = false;
+
+  function renderCloud() {
+    if (!cloudItems.length) { return; }
+    var q = ((search && search.value) || '').trim().toLowerCase();
+    var shown = 0;
+    cloudItems.forEach(function (a) {
+      var name = (a.getAttribute('data-tag') || '').toLowerCase();
+      var low = a.getAttribute('data-low') === '1';
+      var ok = (!q || name.indexOf(q) >= 0) && (!!q || showAll || !low);
+      a.hidden = !ok;
+      if (ok) { shown++; }
+    });
+    if (countInfo) {
+      countInfo.textContent = q ? '匹配 ' + shown + ' 个' : (showAll ? '全部 ' + cloudItems.length + ' 个' : '常用 ' + shown + ' 个');
+    }
+    if (showAllBtn) {
+      showAllBtn.hidden = !!q;
+      showAllBtn.textContent = showAll ? '收起低频标签 ↑' : '显示全部 ' + cloudItems.length + ' 个标签 ↓';
+    }
+  }
+  if (search) { search.addEventListener('input', renderCloud); }
+  if (showAllBtn) {
+    showAllBtn.addEventListener('click', function () {
+      showAll = !showAll;
+      renderCloud();
+    });
+  }
+  renderCloud();
 
   apply(currentTag(), false);
 })();
