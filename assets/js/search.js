@@ -82,13 +82,20 @@
   }
 
   function renderResults(matches, query) {
-    if (matches.length === 0) {
-      results.innerHTML = '<div class="search-empty">未找到匹配「' + escapeHtml(query) + '」的文章</div>';
+    var filtered = matches.filter(function (p) {
+      if (typeFilter === 'all') { return true; }
+      return p.type === (typeFilter === 'news' ? '资讯' : '文章');
+    });
+    var html = typeChipsHtml(matches);
+    if (filtered.length === 0) {
+      var scope = typeFilter === 'news' ? '资讯' : (typeFilter === 'post' ? '文章' : '内容');
+      html += '<div class="search-empty">该类型下未找到匹配「' + escapeHtml(query) + '」的' + scope + '</div>';
+      results.innerHTML = html;
+      activeIndex = -1;
       return;
     }
-    var html = '';
-    for (var i = 0; i < matches.length; i++) {
-      var p = matches[i];
+    for (var i = 0; i < filtered.length; i++) {
+      var p = filtered[i];
       var snippet = highlight(p.content, query, 120);
       var typeBadge = p.type ? '<span class="search-result-type' + (p.type === '资讯' ? ' is-news' : '') + '">' + p.type + '</span>' : '';
       html += '<a class="search-result-item" href="' + p.url + '" data-idx="' + i + '">' +
@@ -103,6 +110,17 @@
     }
     results.innerHTML = html;
     activeIndex = -1;
+  }
+
+  function typeChipsHtml(matches) {
+    var counts = { all: matches.length, post: 0, news: 0 };
+    for (var i = 0; i < matches.length; i++) {
+      if (matches[i].type === '资讯') { counts.news++; } else { counts.post++; }
+    }
+    function chip(key, label, n) {
+      return '<button type="button" class="search-type-chip' + (typeFilter === key ? ' is-active' : '') + '" data-type="' + key + '">' + label + ' ' + n + '</button>';
+    }
+    return '<div class="search-type-bar">' + chip('all', '全部', counts.all) + chip('post', '文章', counts.post) + chip('news', '资讯', counts.news) + '</div>';
   }
 
   input.addEventListener('input', function () {
