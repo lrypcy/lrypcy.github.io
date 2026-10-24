@@ -2082,6 +2082,8 @@ html.rail-off .rail-head-title { display: none; }
   cursor: pointer;
   box-shadow: var(--shadow-sm);
 }
+/* 整卡是 <a>，别吃 .post-body a 的虚线下划线 */
+.post-body a.cat-nav-card { border-bottom: none; }
 .category-card.cat-nav-card:hover {
   transform: translateY(-2px);
   background: var(--card-bg);
