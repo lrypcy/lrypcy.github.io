@@ -49,7 +49,7 @@
   </header>
 
   <main class="layout-grid{% if page.layout == 'post' %} layout-post{% endif %}{% if page.home_atlas %} layout-atlas{% endif %}{% if page.no_sidebar %} layout-nosidebar{% endif %}">
-    {% unless page.home_atlas %}{% include rail.html %}{% endunless %}
+    {% unless page.home_atlas or page.no_sidebar %}{% include rail.html %}{% endunless %}
 
     <div class="layout-main">
       {{ content }}

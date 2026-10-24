@@ -175,11 +175,8 @@ html.rail-off .rail-head-title { display: none; }
 }
 .layout-main { min-width: 0; }
 
-/* 分类 / 标签页：不放右栏，左目录 + 正文两列 */
-.layout-grid.layout-nosidebar { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
-@media (max-width: 1199px) {
-  .layout-grid.layout-nosidebar { grid-template-columns: minmax(0, 1fr); }
-}
+/* 分类 / 标签页：左右栏都不放，正文单列铺排 */
+.layout-grid.layout-nosidebar { grid-template-columns: minmax(0, 1fr); }
 
 .sidebar {
   position: sticky;
