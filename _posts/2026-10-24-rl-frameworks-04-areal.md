@@ -17,7 +17,8 @@ mathjax: true
 > * **AReaL 是 BRIEF 四级异步定义里唯一落在最高一级的框架**：训练端与推理端是**两个独立服务**，用**样本队列**连接，staleness 由队列深度而不是全局屏障控制。`max_head_offpolicyness=0` 时它退化成同步系统，官方文档自述同步比异步慢约 2 倍 `[官方]`。
 > * **队列不是一个数据结构，而是一个「准入控制器」**。§4 拆开的 `StalenessManager.get_capacity()` 是全文最核心的一行：容量 $$=\min(\text{并发槽},\;(\eta+v+1)B-N_{\rm accepted+running})$$。超限的样本**既不丢弃也不降权，而是让生产者停下来**——限流点在入口，不在出口。
 > * **可中断 rollout 与 slime 的 partial rollout 是两件不同的事**。AReaL 中断后**丢 KV、把已生成前缀当 prompt 重算**，整条轨迹的每个 token 都记着自己的生成版本（`versions` 张量）；slime 中断后**把未完成样本回收进 buffer 续跑**，可选地把跨版本前缀的 `loss_mask` 置零。前者保留数据、承担陈旧；后者丢弃陈旧 token、承担样本浪费。
-> * **off-policy 修正落在损失函数里，不在数据管道里**。AReaL 实现的是 decoupled PPO：行为策略 $$\pi_{\rm behav}$$、近端策略 $$\pi_{\rm prox}$$、当前策略 $$\pi_\theta$$ 三者分离，$$\pi_{\rm prox}/\pi_{\rm behav}$$ 作为行为重要性权重乘进 PPO 的裁剪目标；额外的 token 过滤由 `rejection_sampling` 做（`ratio` / `kl_k1` / `kl_k2` / `kl_k3` / `binary_kl`，`mask` 或 `clamp`）。
+> * **off-policy 修正落在损失函数里，不在数据管道里**。AReaL 实现的是 decoupled PPO：行为策略 $$\pi_{\rm behav}$$、近端策略 $$\pi_{\rm prox}$$、当前策略 $$\pi_\theta$$ 三者分离，额外的 token 过滤由 `rejection_sampling` 做（`ratio` / `kl_k1` / `kl_k2` / `kl_k3` / `binary_kl`，`mask` 或 `clamp`）。
+> * **但那个行为重要性权重默认不生效**。`pg_loss = pg_loss * behave_imp_weight` 这行被包在 `if rejection_sampling is not None:` 里，而 `rejection_sampling` 默认是 `None`——所以**只开 `use_decoupled_loss=True` 拿到的是「以 $$\pi_{\rm prox}$$ 为中心、但不做行为重要性修正」的普通 PPO**，不是论文里的 decoupled PPO。框架只给一条 warning，且文案只说「staleness filtering is disabled」，没说加权项也没了（§6.4.1）。
 > * **2.x 的目录结构已经不只是「api / engine / controller」三层**：`areal/v2/` 下另有 `training_service` `inference_service` `agent_service` `weight_update` 四个**微服务**，每个都带 `gateway / router / guard / worker` 四件套。1.x 的 `infra/controller` 仍在，两套并存。
 > * **论文口径的加速比必须带着前提读**：`[论文]` 端到端最快 **2.77×**（LiveCodeBench，32B，48 节点），但**同一张表里 7B 数学任务是 2.27×，1.5B 是 2.77×**；强扩展（strong scaling）口径下最多 **2.5×**。所有数字都在 H800 + 75/25 推理/训练卡比 + `rollout.n=32` + 32K 上限下取得，**跨框架横向引用只在论文同一张表内成立**。
 
@@ -308,6 +309,40 @@ $$
 
 副作用也很清楚：**队列会在长尾上卡住**。论文自己承认「当 $$\eta$$ 太小时，正在生成某些极长轨迹时生成吞吐会被拖慢；因此经验上建议采用较大的 $$\eta$$」`[论文]`。这等于说：**限流参数必须松到让长尾也能跑完，否则吞吐崩**。
 
+这个反馈环的完整时序：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant DL as dataloader
+    participant PT as 生产线程<br>_commit_loop
+    participant SM as StalenessManager
+    participant RQ as 执行队列<br>Queue(maxsize=qsize)
+    participant RW as rollout worker<br>+ 推理引擎
+    participant RES as 结果队列<br>_pending_results
+    participant TR as 训练端
+
+    loop 每轮尝试提交
+        PT->>SM: get_capacity()
+        SM-->>PT: min(并发槽, staleness 槽)
+        alt capacity <= 0
+            PT->>PT: _input_cv.wait() 挂起
+        else capacity > 0
+            PT->>RQ: put(task)
+            RQ->>RW: 异步协程执行生成
+            RW->>RES: 完成后写入 TimedResult
+            RW->>SM: accepted += 1, running -= 1
+        end
+    end
+
+    TR->>RES: wait_results(count=B)
+    RES-->>TR: 取走 B 条
+    TR->>SM: _input_cv.notify() 释放容量
+    SM-->>PT: 唤醒，进入下一轮
+```
+
+**注意 `wait_results` 与 `notify` 的先后**：训练端必须先真的把结果取走，容量才会释放。如果只是「生成了但没消费」，`accepted + running` 仍在增长，`staleness_capacity` 会持续下降直到归零，生产端停摆。**这把「生成得太多」这类失控转成了「生成暂时停下」，而不是内存爆炸**——这是入口限流相对丢弃策略的另一层好处。
+
 ### 4.4 两个边界处理
 
 参数交换里还有两处容易忽略的实现细节，都是 bug 驱动出来的：
@@ -432,6 +467,33 @@ if args.partial_rollout and args.mask_offpolicy_in_partial_rollout and sample.re
 
 一句话概括：**AReaL 选择「让一条轨迹横跨多个策略版本，然后用算法消化」，slime 选择「让一条轨迹在同一轮内完成，跨轮的部分要么丢要么不算」**。
 
+```mermaid
+sequenceDiagram
+    participant G as 生成进程
+    participant K as KV cache
+    participant T as 训练进程
+
+    Note over G,T: AReaL：中断 → 丢 KV → 前缀当 prompt 重算
+    G->>K: 版本 v1 生成 tokens 0..56（KV 保留）
+    T->>T: 权重更新到 v2
+    G->>G: pause_generation(clear_cache=True)
+    K-->>K: 【KV 丢弃】
+    G->>K: 重发 prompt + tokens 0..56，prefill 重算
+    G->>K: 版本 v2 继续生成 57..127
+    Note over G: versions = [v1]*57 + [v2]*71
+
+    Note over G,T: slime：保留 KV，换权重后原地续跑
+    G->>K: 版本 r1 生成 tokens 0..56（KV 保留）
+    T->>T: 权重更新到 r2
+    G->>K: 【KV 保留】原地续用
+    G->>K: 版本 r2 继续生成 57..127
+    Note over G: 跨版本前缀可 loss_mask=0 屏蔽
+```
+
+**图里最关键的是两个 `【】` 标注**：AReaL 丢 KV 换来「每个 token 的版本都是真的」，slime 保 KV 换来「不重算」，代价是前缀部分由两个版本共同决定，只能靠 mask 切断。
+
+**这一条直接决定了**：AReaL 敢把每个 token 的版本喂进 loss（因为版本是真的），slime 只能「全留或全 mask」（因为同一条 KV 前缀跨了版本，切不干净）。前者的 off-policy 负担由算法承担，后者由数据承担。
+
 这个差别不是风格问题，而是**算法-系统联合设计**与**系统优化**的分野。论文自己有一句判词：「我们的可中断生成技术概念上类似同步 RL 系统中的 partial rollout。但 AReaL 不是设一个固定的长度预算，而是动态中断生成，同时通过缓冲维持一致的训练 batch 大小，从而保持 PPO 的稳定性」`[论文]`。
 
 「通过缓冲维持一致 batch 大小」指的是 `active_submit_and_wait` 保证返回**恰好 `batch_size` 条结果**（`dynamic_bs=False` 时），即使中间有大量 rejected。这一条在 slime 里对应 `dynamic_sampling` + `over_sampling_batch_size` 的机制，是不同形状的同一个目标。
@@ -500,6 +562,111 @@ $$
 
 注意这个选择带来的一个隐含约束：`recompute` 方法下**近端策略的版本必须就是「当前训练引擎里的权重」**。这要求 `update_weights` 之后、下一次 `compute_logp` 之前，训练侧与推理侧的版本记账必须一致——落到 §7.2 的权重层问题。
 
+### 6.2.1 `loglinear` 到底插值了什么
+
+`loglinear` 是 AReaL 2.1 里最省的一次优化：它把「$\pi_{\rm prox}$ 的一次完整前向」换成了**一次按版本号做的线性插值**。官方文档给出的近似式是
+
+$$
+\alpha = \frac{v_{\rm prox} - v_{\rm behave}}{v_\theta - v_{\rm behave}}, \qquad
+\log \pi_{\rm prox} \approx \log \pi_{\rm behave} + \alpha\bigl(\log \pi_\theta - \log \pi_{\rm behave}\bigr)
+$$
+
+其中 $v$ 是每个 token 生成时的策略版本号。直觉上：**log-prob 随策略版本近似线性漂移**，那么已知两端（旧的行为策略、当前策略）就能估出中间那一点（近端策略）。
+
+源码把这个式子和两个边界条件写得很完整（`areal/trainer/ppo/actor.py` L768-L860，约 90 行）。关键在于三段保护：
+
+```python
+# Assume proximal version is current_version - 1 (last broadcast)
+# In AReaL, proximal policy is the last updated/broadcast policy version
+v_proximal = current_version - 1
+
+# CRITICAL: Only approximate generated tokens (version >= 0)
+# Prompt tokens (version < 0) must NOT be approximated - they have no generation version
+generated_tokens_mask = versions >= 0
+
+version_diff = v_theta - v_behave
+version_gap = v_proximal - v_behave
+# Avoid division by zero AND exclude prompt tokens
+alpha = torch.where(
+    (version_diff > 0) & generated_tokens_mask,
+    version_gap / version_diff,
+    torch.zeros_like(v_behave),
+)
+alpha = torch.clamp(alpha, 0.0, 1.0)
+```
+
+三个保护各自防一类错：
+
+| 保护 | 防什么 | 不这么做的后果 |
+| --- | --- | --- |
+| `versions >= 0` 掩码 | prompt token 没有「生成版本」 | 用负版本号算出 α 为负，插值跑到区间外 |
+| `version_diff > 0` | $$v_\theta = v_{\rm behave}$$ 时除零 | 分母为零得 `inf`/`NaN`，再传播进梯度 |
+| `clamp(0, 1)` | 版本记录错乱导致 α 越界 | 插值出的系数跑出 $$[0,1]$$ 区间，等价于外推 |
+
+**这三个保护里第一个最容易被忽略**：prompt token 与 generated token 在同一个张量里，如果不用掩码分开，prompt 部分的 log-prob 会被错误插值——而 prompt 部分本不该有重要性比可言（它不参与策略梯度）。
+
+α 的语义边界正好对着两个端点：
+
+$$
+\alpha = \begin{cases} 0, & v_{\rm behave} = v_{\rm prox} \;\Rightarrow\; \log\pi_{\rm prox} = \log\pi_{\rm behave} \\ 1, & v_{\rm behave} = v_\theta \;\Rightarrow\; \log\pi_{\rm prox} = \log\pi_\theta \end{cases}
+$$
+
+也就是说**完全同版本的样本免于任何近似**——这是最理想的情况；只有真正跨版本的样本才用插值。
+
+### 6.2.2 三种近似法的对照
+
+`compute_prox_logp_approximations` 不只实现 `loglinear`，它同时提供了三种方法（`method=None` 时全部计算，供 `metrics` 模式做对照）：
+
+| 方法 | 数学形式 | 概率空间中的含义 | 开销 |
+| --- | --- | --- | --- |
+| `loglinear` | $$\log p_{\rm prox} = \log p_{\rm behave} + \alpha(\log p_\theta - \log p_{\rm behave})$$ | 几何插值 | 一次乘加 |
+| `linear` | $$\log p_{\rm prox} = \log\bigl[(1-\alpha)p_{\rm behave} + \alpha p_\theta\bigr]$$ | 算术插值 | 两次 `exp` + 一次 `log` |
+| `rollout` | $$p_{\rm prox} = p_{\rm behave}$$ | 不近似，直接用行为策略 | 零 |
+
+三者的差别全在「插值在哪个空间做」：
+
+```python
+if m == PROX_APPROX_METHOD_LOGLINEAR:
+    # Method 1: Log-linear interpolation in log-space (geometric mean in probability space)
+    # log(p_prox) = (1-α)·log(p_behave) + α·log(p_theta)
+    approximations[PROX_APPROX_METHOD_LOGLINEAR] = old_logp + alpha * (
+        logprobs - old_logp
+    )
+
+elif m == PROX_APPROX_METHOD_LINEAR:
+    # Method 2: Linear interpolation in probability space (arithmetic mean)
+    p_behave = torch.exp(old_logp)
+    p_theta = torch.exp(logprobs)
+    p_arithmetic = (1 - alpha) * p_behave + alpha * p_theta
+    approximations[PROX_APPROX_METHOD_LINEAR] = torch.log(p_arithmetic + 1e-10)
+```
+
+**为什么默认选 `loglinear` 而不是 `linear`**：`linear` 要做 `exp` 再 `log`，两处都是数值敏感操作——`p` 极小（长序列尾部 token 常见）时 `exp(logp)` 会下溢，加 `1e-10` 再取 `log` 得到的是一个与真实值无关的常数。**`loglinear` 全程留在 log 空间，完全避开下溢**。这是一个典型的「数学上更简单的那个反而数值上更稳」的例子。
+
+源码注释也点明了 `linear` 的定位：*Method 2: Linear interpolation in probability space (arithmetic mean)*，它存在主要是为了在 `metrics` 模式下**量化近似误差**，而不是作为生产选项。
+
+### 6.2.3 官方量化：省下一次前向值多少
+
+文档给出的 GSM8K 实测（Qwen2.5-1.5B-Instruct，300 步）`[官方]`：
+
+| 指标 | `recompute` | `loglinear` | 变化 |
+| --- | --- | --- | --- |
+| 训练时间 | 207 min | **163 min** | **−21.3%（官方表述 "27% faster"）** |
+| 评估奖励 | 0.795 | 0.799 | +0.004 |
+| 任务奖励 | 0.954 | 0.937 | −0.017（约 2%） |
+
+**这里有一个必须指出的口径问题**：表格按 (207−163)/207 算是 21.3%，而文档正文写的是 "27% faster"。两个数都对，只是分母不同——27% = (207−163)/163，即「相对 fast 版本的比率」。**引用时必须说清用哪个分母**，否则与别人的数字对不上。
+
+这也解释了为什么这个优化值得做：**一次前向的代价不是「1/训练步数」，而是「相对于整个 step 的固定比例」**。在 `ppo_epochs` 较小、模型较小时，这次额外 forward 的占比会显著上升。
+
+### 6.2.4 近似带来的新风险
+
+`loglinear` 把「数值正确」换成了「统计近似」，代价落在三处：
+
+1. **`metrics` 模式必须能对照**。文档专门提供了 `prox_logp_method=metrics`：用 ground truth 训练、同时算近似值只做指标。**换到生产前应该先跑一遍这个模式看误差分布**，而不是直接开 `loglinear`。
+2. **近似误差随 staleness 增长**。α 的插值区间是 $$[v_{\rm behave}, v_\theta]$$，两端差距越大，线性假设越不可靠。`max_head_offpolicyness` 调大时应该重新评估。
+3. **与 `rejection_sampling` 叠加**。过滤用的是 $$r = \pi_{\rm prox}/\pi_{\rm behave}$$，而 `loglinear` 下这个比是插值出来的——**过滤决策建立在一个近似量上**。文档给定的典型 `max_head_offpolicyness` 范围是 2-8（`docs/en/algorithms/async.md`），这个范围内近似尚可接受；再大就只剩 `recompute` 一条路。
+
 ### 6.3 `rejection_sampling`：第二个修正层
 
 除了 decoupled 目标，AReaL 还有一层**逐 token 的离群过滤**，配置类是 `RejectionSamplingConfig`（<a href="#ref-rsconfig">[19]</a>），实现是 `apply_rejection_sampling`（<a href="#ref-rs">[20]</a>）。它有两个正交的维度：
@@ -555,7 +722,67 @@ versions ────┐ │                                          │
                                                           pg_loss *= behave_imp_weight   ← 行为重要性权重
 ```
 
-注意 `behave_imp_weight` 是**乘在 PPO 裁剪目标外面的**，不是替代 ratio。也就是说 AReaL 是「decoupled PPO 的裁剪 + 行为重要性的外层加权」的组合，而不是单一的 TIS 截断。源码 docstring 对两者关系的表述很明确：`importance_sampling_level` 控制 $$\pi_\theta/\pi_{\rm prox}$$ 的聚合粒度（GSPO），与 `rejection_sampling.level` 控制 $$\pi_{\rm prox}/\pi_{\rm behav}$$ 的过滤粒度**是正交的**<a href="#ref-ppoactorloss">[21]</a>。
+注意 `behave_imp_weight` 是**乘在 PPO 裁剪目标外面的**，不是替代 ratio。源码 docstring 对两者关系的表述很明确：`importance_sampling_level` 控制 $$\pi_\theta/\pi_{\rm prox}$$ 的聚合粒度（GSPO），与 `rejection_sampling.level` 控制 $$\pi_{\rm prox}/\pi_{\rm behav}$$ 的过滤粒度**是正交的**<a href="#ref-ppoactorloss">[21]</a>。
+
+### 6.4.1 但这一项默认不生效——一个必须知道的语义落差
+
+上面那张数据流图里 `pg_loss *= behave_imp_weight` 这一行，**被包在一个条件里**（`areal/utils/functional/functional.py`）：
+
+```python
+# Apply behavioural importance weight from rejection sampling
+if rejection_sampling is not None:
+    behave_approx_kl = proximal_logprobs.detach() - old_logprobs.detach()
+    behave_mask = (behave_imp_weight > 0).logical_and(loss_mask.bool())
+    behave_approx_kl = torch.where(behave_mask, behave_approx_kl, 0.0)
+    pg_loss = pg_loss * behave_imp_weight
+```
+
+而 `rejection_sampling` 的默认值是 `None`：
+
+```python
+rejection_sampling: RejectionSamplingConfig | None = field(
+    default=None,
+    metadata={
+        "help": "Rejection sampling configuration for filtering stale samples. "
+        "None disables filtering (equivalent to old behave_imp_weight_mode='disabled'). "
+```
+
+**于是出现一个后果明确的退化**：
+
+| 配置 | $$\pi_{\rm prox}/\pi_{\rm behav}$$ 是否进 loss | 实际算法 |
+| --- | --- | --- |
+| `use_decoupled_loss=True`，`rejection_sampling=None`（**默认**） | **不进** | **以 $$\pi_{\rm prox}$$ 为中心的普通 PPO** |
+| `use_decoupled_loss=True` + 配了 `rejection_sampling` | 进 | 论文式 (4) 的 decoupled PPO |
+| `use_decoupled_loss=False` | 不进 | 标准 PPO（见 6.5） |
+
+**也就是说：只开 `use_decoupled_loss=True` 拿到的不是论文里的 decoupled PPO，而是「把裁剪中心从 behavior 换成 proximal」的普通 PPO。** 两者的差别正在于那个行为重要性权重——它是修正「样本由更旧的策略生成」的因子。
+
+框架自己**知道**这件事，但只给了 warning：
+
+```python
+if self.use_decoupled_loss and self.rejection_sampling is None:
+    logger.warning(
+        "use_decoupled_loss=True with rejection_sampling=None: "
+        "staleness filtering is disabled. If you previously relied on "
+        "the default behave_imp_weight_cap=5.0 with token_mask mode, "
+        "restore equivalent behavior with:\n"
+        "  rejection_sampling:\n"
+        "    level: token\n"
+        "    action: mask\n"
+        "    metric: ratio\n"
+        "    upper: 5.0"
+    )
+```
+
+**注意警告文案只说「staleness filtering is disabled」，没有说「行为重要性权重本身也消失了」**。这两件事在实现上绑在一起，但在语义上是一件事的两个副作用——前者是「过滤掉太旧的样本」，后者是「对没过滤掉的按重要性加权」。**只看警告会以为只是少了过滤，实际上连修正项也没了。**
+
+实践建议：**开 `use_decoupled_loss` 就必须同时配 `rejection_sampling`**，否则你以为的算法与跑起来的算法不是同一个。判断方法很直接——看训练日志里有没有 `behave_imp_weight` 相关的指标（见 §8），没有就说明那个分支没进。
+
+### 6.4.2 这个模式在三个 loss 里都成立
+
+同一个 `if rejection_sampling is not None:` 的写法在 `cispo_loss_fn` 等处复现，所以这不是 GRPO 的特例，而是**三个 loss 函数共用的约定**：行为重要性权重由 `rejection_sampling` 这个配置的存在与否决定，而不是由 `use_decoupled_loss` 决定。
+
+从设计意图推测，这是把「过滤」与「加权」合并成一个配置面的结果——**它们确实该一起用**（过滤掉离群样本、对留下的加权）。但两个配置项的独立性没有在参数校验里强制，于是留下了「开了一半」的状态。
 
 ### 6.5 `use_decoupled_loss=False` 时的退化
 

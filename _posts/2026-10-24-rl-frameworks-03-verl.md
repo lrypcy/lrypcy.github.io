@@ -258,6 +258,101 @@ self.nnodes = self.world_size // self.gpus_per_replica_node
 
 **权重从来没经过控制器。** 这一条决定了后面 §5 的八步流程，也决定了 §9 里「权重同步时间」这个指标到底在测什么。
 
+### 3.4 colocate 是怎么实现的：把 N 个 Worker 类压进一个 Ray actor
+
+这一节回答一个被大多数人跳过的问题：**colocate 要求「训练与推理在同一张卡上」，但 Ray 的 actor 模型里一个 actor 就是一个进程**。两个角色要么是两个进程共享一张卡，要么是**一个进程里跑两种角色**。veRL 选的是后者。
+
+实现是动态生成一个多角色类（[`ray/base.py` L984-L1025](https://github.com/verl-project/verl/blob/1876b06d0a3e4e71e06230be10af14492ca8a75b/verl/single_controller/ray/base.py#L984-L1025)）：
+
+```python
+def create_colocated_worker_cls(class_dict: dict[str, RayClassWithInitArgs]):
+    worker_cls = _determine_fsdp_megatron_base_class(
+        [cls.cls.__ray_actor_class__.__mro__ for cls in class_dict.values()]
+    )
+    assert issubclass(worker_cls, Worker), f"worker_cls {worker_cls} should be a subclass of Worker"
+
+    class WorkerDict(worker_cls):
+        def __init__(self):
+            super().__init__()
+            self.worker_dict = {}
+            for key, user_defined_cls in cls_dict.items():
+                user_defined_cls = _unwrap_ray_remote(user_defined_cls)
+                # directly instantiate the class without remote
+                # when DISABLE_WORKER_INIT == 1 it will return immediately
+                with temp_env_var("DISABLE_WORKER_INIT", "1"):
+                    self.worker_dict[key] = user_defined_cls(*args, **kwargs)
+
+    # now monkey-patch the methods from inner class to WorkerDict
+    for key, user_defined_cls in cls_dict.items():
+        _bind_workers_method_to_parent(WorkerDict, key, _unwrap_ray_remote(user_defined_cls))
+
+    remote_cls = ray.remote(WorkerDict)
+    return RayClassWithInitArgs(cls=remote_cls)
+```
+
+```mermaid
+flowchart TB
+    subgraph before["合并前：k 个独立 Ray 类"]
+        W1["ActorWorker<br>（自己的 __init__ + 进程组）"]
+        W2["CriticWorker"]
+        W3["RefWorker"]
+    end
+    subgraph merge["create_colocated_worker_cls"]
+        D1["① 沿 MRO 选基类<br>_determine_fsdp_megatron_base_class"]
+        D2["② 定义 WorkerDict(基类)<br>内层实例化，DISABLE_WORKER_INIT=1"]
+        D3["③ monkey-patch<br>_bind_workers_method_to_parent"]
+        D4["④ ray.remote(WorkerDict)"]
+        D1 --> D2 --> D3 --> D4
+    end
+    before --> merge
+    D4 --> after["一个 Ray actor 进程<br>worker_dict = {actor, critic, ref}<br>每个方法都挂在同一个对象上"]
+```
+
+三个关键设计点：
+
+**① `DISABLE_WORKER_INIT=1` 是一个必须的开关。** 注释原文是 *when DISABLE_WORKER_INIT == 1 it will return immediately*。如果不加它，**每个内层 Worker 实例化时都会再执行一遍 Ray actor 侧的初始化**（建进程组、连 rank），而分布式初始化只能做一次——第二次会直接崩，或者更糟：建出两套进程组。
+
+**② `_determine_fsdp_megatron_base_class` 沿 MRO 选基类**，所以 colocate 之后只保留**一条** `Worker.__init__` 路径。这也是为什么 `WorkerDict` 能 `super().__init__()`。
+
+**③ 方法用 monkey-patch 挂到父类上**，所以合并后的对象**同时拥有所有角色的方法**：
+
+| 方法名 | 来自哪个子 worker |
+| --- | --- |
+| `update_actor` | ActorWorker |
+| `compute_log_prob` | ActorWorker |
+| `generate_sequences` | RolloutWorker |
+| `compute_ref_log_prob` | RefWorker（若 ref 独立） |
+| `sleep` / `wake_up` | 基础 Worker |
+
+从外面看，它就是一个拥有全部方法的普通 worker。
+
+**⚠️ 这个函数已经被标记为 deprecated。** 源码里两处注释都写着 `# deprecated, switching to FusedWorker`（L912 与 L983）。新路径是 `create_colocated_worker_cls_fused`，它用 `FusedWorker._fuw_execute("{class_name}_fwmn_{method_name}")` 的复合方法名，并且**给每个子 worker 互相注入 `fused_worker_dict`**，让它们能直接调用彼此：
+
+> injecting fused_worker to each sub worker so they can be aware of existence of each other
+
+这意味着**在 V1 路径下读 `create_colocated_worker_cls` 可能读的是一个不再被使用的实现**。判断依据要看当前 `trainer` 用的是哪一个——这一条是「experimental 区漂移」之外的另一种漂移：**同一个文件里两套并存的实现**。
+
+### 3.5 colocate 的资源账：actor 数不变，GPU 份额也不变
+
+以官方 V1 `separate_async` 示例（`trainer.nnodes=2, n_gpus_per_node=8`）为例：
+
+| 池 | PG 数 | 每 PG bundle | 每 bundle 的 actor | 总 Ray actor | GPU/actor |
+| --- | --- | --- | --- | --- | --- |
+| `global_pool`（训练） | 2 | 8 | 1 | **16** | 1.0 |
+| `reward_pool`（若独立） | `rm.nnodes` | `rm.n_gpus_per_node` | 1 | 同上乘积 | 1.0 |
+| standalone rollout 池 | 由 `LLMServerManager` 建 | — | — | `rollout.nnodes × n_gpus_per_node` | 1.0 |
+
+**关键结论：无论 `class_dict` 里有几个 role（k 个），actor 数不变、每个 actor 的 GPU 份额也不变（恒为 1.0）。** 多出来的角色是**进程内**的事，不改变 Ray 的资源账。
+
+这与 slime 的做法形成对照：slime 用 `num_gpus_per_actor=0.4` 把卡分数化，让多个 actor 共享一张卡；veRL 用「一个 actor 独占一张卡，但进程内有多个角色」。**两种路线的资源账完全不同**——veRL 的账干净（1 actor = 1 GPU），代价是所有角色共享同一个 CUDA context 与 caching allocator。
+
+三个由此而来的坑：
+
+1. **`max_colocate_count` 决定的是 bundle 的 CPU 份额，不是 GPU 份额。** 设成 3 意味着每张卡最多 3 个 actor；V1 colocate 实际只用 1 个，**浪费了 2/3 的 CPU 名额**——Ray 侧看不出问题，但会阻止其他任务抢这块 GPU。
+2. **colocate 的前提是所有 role 共享同一 DP 形状。** `ray_trainer.py` 的注释警告：*if you want to use a different resource pool for each role, which can support different parallel size, you should not use `create_colocated_worker_cls`.*
+3. **`_check_resource_available` 只比较总 GPU 数，不检查拓扑。** 跨节点不均等时会在 PG 创建阶段阻塞，而不是提前报错。
+
+
 ---
 
 ## 4. 数据与样本流：一条样本的完整生命周期
@@ -340,6 +435,33 @@ batch = upsample_batch_to_divisible_size(batch, batch_multiple, self.tokenizer.e
 
 注意第 3 步的 `equal_size=True`：切出来每份**样本数相等**，但 token 数只是尽量均衡。这两条约束与 `batch_multiple` 三者共同决定了有效批大小通常大于 `train_batch_size`——padding 样本会进 `_compute_metrics`，但在那里被 `is_padding` 标记过滤掉（[L1885-L1887](https://github.com/verl-project/verl/blob/1876b06d0a3e4e71e06230be10af14492ca8a75b/verl/trainer/ppo/v1/trainer_base.py#L1885-L1887)）。
 
+**但这里有两套 padding，它们的生效条件完全不同，混为一谈会读错代码**：
+
+| 机制 | 在哪 | 什么时候生效 | 谁负责补齐 |
+| --- | --- | --- | --- |
+| `upsample_batch_to_divisible_size` | `_balance_batch` 显式调用 | **总是生效** | 控制器主动 upsample |
+| `dispatch_fn` 里的 auto padding | `_split_args_kwargs_data_proto_with_auto_padding` | **默认关闭** | 切分时发现不整除才补 |
+
+第二套的开关是 `DataProtoConfig.auto_padding`，它的实现是：
+
+```python
+@classmethod
+def auto_padding(cls):
+    enabled_by_env = os.getenv("VERL_AUTO_PADDING", "FALSE").upper() in ["TRUE", "1"]
+    return enabled_by_env or cls._config.get(cls.auto_padding_key, False)
+```
+
+**默认 `FALSE`，而且训练路径里没有任何地方去设它**——`git grep auto_padding` 在 `verl/protocol.py` 之外零命中，唯一打开它的是测试文件。也就是说：**「dispatch 时自动 padding 兜底」在默认运行下是不生效的**，真正起作用的是 `_balance_batch` 里那次显式 upsample；如果 batch 绕过了 `_balance_batch` 直接进 dispatch，`DataProto.chunk` 的整除断言会直接抛异常：
+
+```python
+if not self.is_padding_enabled():
+    assert len(self) % chunks == 0, (
+        f"only support equal chunk. Got size of DataProto {len(self)} and chunk {chunks}."
+    )
+```
+
+这个区分很重要：**「veRL 会自动帮你补齐」是一个只在 `_balance_batch` 这个显式调用点成立的说法，不是整个 dispatch 层的性质**。
+
 聚合方向相反：worker 返回 `TensorDict` 形式的指标字典，控制器用 `rename_dict` 加前缀、`reduce_metrics` 跨 rank 归约（[L1866-L1875](https://github.com/verl-project/verl/blob/1876b06d0a3e4e71e06230be10af14492ca8a75b/verl/trainer/ppo/v1/trainer_base.py#L1866-L1875)）。
 
 ---
@@ -373,6 +495,28 @@ README 的表格给了每个后端的通信库、拓扑、硬件、性能、弹�
 `delta_sharded` 的定位与上面六个不同：它不换传输层，改的是**传多少**。v0.9.1 release note 记了它的两处扩展——`delta_sharded` 增加 vLLM 消费端（#7227），以及覆盖 TorchTitan 引擎的 FSDP / FSDP+TP / FSDP+EP / HSDP 组合（#7324，**A800、GSM8K GRPO、TorchTitan → SGLang 分离部署下，Qwen3-8B / 32 卡上权重同步 3.34 s vs 34.26 s，10.3×；16 卡上 3.7×**）`[官方]`。这组数字的不可比原因见 §9。
 
 ### 5.3 `naive` 与其他：一条 if 分开两种物理世界
+
+#### 5.3.0 一个必须先说清楚的前提：`sync` / `colocate_async` 的 backend 是硬编码的
+
+在讲八步之前，有一行代码决定了这个机制的实际适用范围（[`trainer_base.py` L395-L396](https://github.com/verl-project/verl/blob/1876b06d0a3e4e71e06230be10af14492ca8a75b/verl/trainer/ppo/v1/trainer_base.py#L395-L396)）：
+
+```python
+checkpoint_engine_config = omega_conf_to_dataclass(self.config.actor_rollout_ref.rollout.checkpoint_engine)
+checkpoint_engine_config.backend = "naive"
+```
+
+**这是在基类 `_setup` 里无条件覆写的**——`omega_conf_to_dataclass` 出来之后立刻改成 `"naive"`，没有任何条件判断。
+
+后果很直接：**用户在 yaml 里给 `sync` 或 `colocate_async` 配 `backend: nccl` 会被静默丢弃**，`CheckpointEngineManager.update_weights` 走到 `naive` 分支直接 return。只有 `separate_async` 会走真八步（它在构造函数里 `assert backend != "naive"`，这个断言就是分界线）。
+
+| 训练器模式 | 实际 backend | 走八步吗 | 在 yaml 里改 backend 有效吗 |
+| --- | --- | --- | --- |
+| `sync` | **强制 `naive`** | 否 | **否（被静默覆写）** |
+| `colocate_async` | **强制 `naive`** | 否 | **否（被静默覆写）** |
+| `separate_async` | 用户配置 | **是** | 是 |
+
+**这一条对读文档的人特别容易误导**：`checkpoint_engine/README.md` 列了十条后端与它们的拓扑，看起来像一个通用的可插拔层，**但实际只有分离部署的那条路径才用得上**。colocate 场景下权重同步就是一次进程内的 `update_weights` 调用，与后端选择无关。
+
 
 `CheckpointEngineManager.update_weights` 的第一段就是分水岭（[`base.py` L497-L607](https://github.com/verl-project/verl/blob/1876b06d0a3e4e71e06230be10af14492ca8a75b/verl/checkpoint_engine/base.py#L497-L607)）：
 

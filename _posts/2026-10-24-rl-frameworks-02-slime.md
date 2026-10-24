@@ -145,6 +145,45 @@ parse_args
 
 注意 `num_gpus_per_actor=0.4` 这个默认值：训练 actor 只占 0.4 张卡，剩下的 0.6 留给同 bundle 上的 SGLang 引擎。这是 colocate 的显式编码——**Ray 层面就把「一张卡要同时装下两个进程」这件事写进了资源账本**。
 
+### 2.5 这个 0.4 是一个「乐观配额」，没有上界检查
+
+`allocate_train_group` 把 `num_gpus_per_actor=0.4` 传给 `RayTrainGroup`，而后者在起 actor 时**同时把它当成 CPU 与 GPU 两份配额**（`slime/ray/actor_group.py` L125-L131）：
+
+```python
+for rank in range(world_size):
+    actor = TrainRayActor.options(
+        num_cpus=num_gpus_per_actor,
+        num_gpus=num_gpus_per_actor,
+        scheduling_strategy=PlacementGroupSchedulingStrategy(
+            placement_group=pg,
+            placement_group_bundle_index=reordered_bundle_indices[rank],
+        ),
+```
+
+而 placement group 的 bundle 是 `{"GPU": 1, "CPU": 1}`（`_create_placement_group` 里那行 `bundles = [{"GPU": 1, "CPU": 1} for _ in range(num_gpus)]`）。
+
+**于是每张卡上能塞几个训练 actor，完全由 0.4 这个分数反推**：
+
+$$
+\text{每 bundle 可容纳的 actor 数} = \left\lfloor \frac{1.0}{0.4} \right\rfloor = 2
+$$
+
+问题在于**实际需要的 actor 数取决于配置，而配置可以让它超过 2**：
+
+| 条件 | 该 bundle 上的 actor | 需要 0.4 × 数量 | 结果 |
+| --- | --- | --- | --- |
+| 只要 actor | 1 | 0.4 | 放得下 |
+| actor + critic（`use_critic`） | 2 | 0.8 | 放得下 |
+| actor + ref（`kl_coef != 0`） | 2 | 0.8 | 放得下 |
+| **actor + critic + ref** | **3** | **1.2 > 1.0** | **超配** |
+| **actor + teacher（`use_opd`）+ critic** | **3** | **1.2 > 1.0** | **超配** |
+
+代码里**没有任何断言检查这件事**。超配的表现在 Ray 侧是「placement group 放不下 → 永久 pending」，也就是 §2.2 里那个「每 30 秒打印一次集群资源」的循环会一直打下去，看起来像卡住。
+
+**对照组**：veRL 用的是相反的思路——`max_colocate_count` 是一个显式的**最大值声明**，`num_gpus = 1 / max_colocate_count`，语义是「我承诺最多叠这么多个」。slime 的 `0.4` 是一个**隐式的经验值**，它编码的其实是「通常有 2 个角色」，而不是「最多 2 个角色」。
+
+这个差异值得记下来：**两个框架都在用分数配额表达 colocate，但一个把它当上界，一个把它当典型值**。
+
 ---
 
 ## 3. 模块初始化逻辑（下）：起 actor
@@ -264,18 +303,65 @@ rollout 侧的封装则走了另一个极端：**它不是一个 actor 类，而
 
 ## 6. 权重同步：五种实现与它们的选择条件
 
-### 6.1 选择逻辑是一个断言链
+### 6.1 选择逻辑是一棵判定树，不是一张平行表
 
-`create_weight_updater` 是理解整个同步机制的入口，它用四个分支选出实现：
+`create_weight_updater` 是理解整个同步机制的入口。**关键在于它是一棵有顺序的 `if/elif` 树，而不是一张任意的交叉表**：
 
-| `--update-weight-mode` | `--update-weight-transport` | `--colocate` | 实现 | 传输 |
-| --- | --- | --- | --- | --- |
-| `delta` | **必须** `disk` | **必须** False | `UpdateWeightFromDiskDelta` | 主机本地 checkpoint + delta 应用 |
-| `full` | `disk` | 任意 | `UpdateWeightFromDisk` | 落盘，引擎 `update_weights_from_disk` |
-| `full` | `nccl` | False | `UpdateWeightFromDistributed` | GPU NCCL broadcast |
-| `full` | `nccl` | **True** | `UpdateWeightFromTensor` | GPU→CPU 序列化 → Gloo 收集 → Ray IPC |
+```python
+if update_weight_mode == "delta":
+    # Delta sync is disk-transport only: each engine's /pull_weights applies the published
+    # deltas into a host-local checkpoint on every host it spans, and the engines reload
+    # via vanilla update_weights_from_disk.
+    assert not args.colocate, "--update-weight-mode=delta is not supported with --colocate"
+    assert update_weight_transport == "disk", "--update-weight-mode=delta requires --update-weight-transport=disk"
+    from .update_weight_from_disk_delta import UpdateWeightFromDiskDelta
+    update_weight_cls = UpdateWeightFromDiskDelta
+elif update_weight_transport == "disk":
+    from .update_weight_from_disk import UpdateWeightFromDisk
+    update_weight_cls = UpdateWeightFromDisk
+elif args.colocate:
+    from .update_weight_from_tensor import UpdateWeightFromTensor
+    update_weight_cls = UpdateWeightFromTensor
+else:
+    assert update_weight_mode == "full"
+    assert update_weight_transport == "nccl", f"unsupported weight sync mode/transport: {update_weight_mode!r}/{update_weight_transport!r}"
+    from .update_weight_from_distributed import UpdateWeightFromDistributed
+    update_weight_cls = UpdateWeightFromDistributed
+```
 
-两个断言值得单独记：`delta` 模式**禁止 colocate**，理由是它的实现方式要求每台 host 上有本地 checkpoint 目录供引擎直接读；`delta` 也**强制 disk 传输**，因为它传的是差量文件而不是张量。
+```mermaid
+flowchart TD
+    A["create_weight_updater"] --> B{"update_weight_mode<br>== delta ?"}
+    B -->|yes| C["assert not colocate<br>assert transport == disk"]
+    C --> D["UpdateWeightFromDiskDelta"]
+    B -->|no| E{"update_weight_transport<br>== disk ?"}
+    E -->|yes| F["UpdateWeightFromDisk<br>（colocate 也会走到这里）"]
+    E -->|no| G{"args.colocate ?"}
+    G -->|yes| H["UpdateWeightFromTensor<br>CUDA IPC + Gloo gather"]
+    G -->|no| I["assert mode == full<br>assert transport == nccl"]
+    I --> J["UpdateWeightFromDistributed<br>NCCL broadcast"]
+```
+
+**这里藏着一个静默优先级坑**：`elif update_weight_transport == "disk"` **排在 `elif args.colocate` 前面**。所以 `--colocate --update-weight-transport disk` 不会走最快的 CUDA IPC，而是静默地走「写共享盘 + HTTP reload」。
+
+判断这句话的重要性：colocate 的字面意思就是「同一张卡」，而 IPC 正是同卡之间唯一不需要经过网络的路径。**用户以为指定了 colocate 就自动走 IPC，实际上被 transport 参数截走了**。两者代价差了三个量级（见 6.2 的量化表）。
+
+### 6.1.1 两个断言给出的硬约束
+
+`delta` 分支的两行 `assert`：
+
+| 断言 | 理由 |
+| --- | --- |
+| `not args.colocate` | 官方文档给的理由是「CUDA IPC handles 下 delta 不减小实际传输」——colocate 下本来就不走网络，delta 省不到东西 |
+| `transport == "disk"` | delta 传的是**文件里的变化字节**，不是一个张量；只有 disk 传输能承载这种载体 |
+
+**第二条断言背后是一个架构选择**：delta 同步绕过了「张量搬运」这一整层抽象，直接在字节层面做 diff。这带来了 §6.5 要讲的编码问题。
+
+### 6.1.2 一个 `isinstance` 陷阱
+
+`UpdateWeightFromDiskDelta` 的**父类是 `UpdateWeightFromDistributed`，不是 `UpdateWeightFromDisk`**（虽然名字里有 Disk）。原因是 delta 要复用的「连接 / 断开 / 元数据交换」那套逻辑在 distributed 类里。
+
+后果很具体：`isinstance(updater, UpdateWeightFromDistributed)` 对 delta 路径**返回 True**。下游任何用它来判断「这是 NCCL 路径」的代码都会误判。**要区分四条路径只能用 `type()`，不能用 `isinstance`**。
 
 ### 6.2 colocate 路径：为什么要绕地球一圈
 
@@ -295,6 +381,105 @@ Distributed: GPU NCCL broadcast to remote engines.
 2. **PP/EP 必须先 broadcast**。流水线并行下只有首个 stage 持有 embedding、末个 stage 持有 lm_head，中间层的参数也只在自己 stage 上；EP 同理。broadcast 让每个 rank 都拿到完整视图。
 3. **收集到 CPU 是因为 IPC 只能传 CPU 指针**。CUDA IPC 在跨进程场景下传递的是可映射的显存句柄，而 Ray 的 object store 只存 CPU 字节。所以最终形态必然是「GPU → CPU（`MultiprocessingSerializer` 序列化）→ Ray 传输 → 引擎侧反序列化回 GPU」。
 
+### 6.2.1 四段流水线，四种通信设施
+
+把这四步拆开，会发现**每一段用的通信设施都不同**，而且每一段的必要性都能从并行语义或进程边界推出来：
+
+| 段 | 做什么 | 代码位置 | 通信设施 |
+| --- | --- | --- | --- |
+| ① load + PP/EP broadcast | 把「本 rank 有分片」和「本 rank 只有空壳」统一成每个 rank 都有完整值 | `hf_weight_iterator_direct.py` L73-L134 | NCCL（PP 组 / EP 组） |
+| ② gather TP | 把 TP 分片拼成 full | 同上 L131-L134 → `common.py` L59-L126 | NCCL（TP 组） |
+| ③ convert HF | Megatron 布局 → HF 布局（GLU 重排、MoE 维度修正） | `hf_weight_iterator_direct.py` L53-L70 | 无通信 |
+| ④ serialize + gather + IPC | flatten → 序列化句柄 → Gloo 聚到 src → Ray 调引擎 | `update_weight_from_tensor.py` L378-L443 | Gloo `gather_object` + Ray + CUDA IPC |
+
+### 6.2.2 为什么 TP 必须 gather：一个具体的例子
+
+**不是「因为要完整参数」这么简单**。真正的原因是 Megatron 与 SGLang 的 TP 分片编号没有任何约定关系，而且**某些参数的切法必须重新排列**。
+
+`common.py` 里处理 GLU 的那段代码说明了问题：
+
+```python
+partition_dim = param.partition_dim
+assert param.partition_stride == 1 or (
+    param.partition_stride == 2 and "linear_fc1" in name
+), "partition_stride != 1 is not supported"
+# TODO: here we did an extra copy during concat, maybe merge this with convert_to_hf is better?
+# TODO: check only GLU is used.
+if "linear_fc1.weight" in name or "linear_fc1.bias" in name:
+    param_partitions = [p.chunk(2, dim=0) for p in param_partitions]
+    param_partitions = [p[0] for p in param_partitions] + [p[1] for p in param_partitions]
+```
+
+**Megatron 的 `linear_fc1` 切法是「每个 rank 拿到 `[gate; up]` 的同一段」，而 HF 要的是「前一半全是 gate、后一半全是 up」**。
+
+举例：`intermediate_size = 4d`，`TP = 2`：
+
+| 布局 | rank 0 上 | rank 1 上 | 能否直接给引擎 |
+| --- | --- | --- | --- |
+| Megatron 分片 | `[gate_0..gate_d ; up_0..up_d]` | `[gate_{d+1}..gate_{2d} ; up_{d+1}..up_{2d}]` | 不能 |
+| 直接 concat（错） | `[gate_0..d ; up_0..d ; gate_{d+1}..2d ; up_{d+1}..2d]` | — | **顺序交错，错的** |
+| rechunk 后 concat（对） | `[gate_0..2d ; up_0..2d]` | — | 正确 |
+
+**这个重排只能在一个 rank 上对完整张量做**。如果各 TP rank 直接各发本地分片，引擎拼出来的 `linear_fc1` 权重就是交错错位的——**而且不会报错**。
+
+### 6.2.3 为什么 PP/EP 必须先 broadcast：`torch.empty` 的陷阱
+
+PP 场景下每个 rank 只持有自己那段层的权重，其余层在它手里是**空壳**。源码里那个空壳是 `torch.empty`：
+
+```python
+else:
+    params.append(torch.empty(info.shape, dtype=info.dtype, device=accelerator.current_device()))
+```
+
+**`torch.empty` 分配的内存里是上一轮遗留的权重（或任何垃圾）**。如果不先 broadcast 就直接 gather，拼出来的张量会**一半是新的、一半是上一轮的**——这是最坏的一类 bug：不崩溃、不报错，权重看似合理。
+
+EP 那边还有一段更精细的处理：
+
+```python
+# broadcast params across ep ranks
+if ep_size > 1:
+    handles = []
+    for info, param in zip(megatron_local_param_infos, params, strict=False):
+        if ".experts." in info.name:
+            src_rank = (
+                info.src_rank
+                if info.src_rank in dist.get_process_group_ranks(mpu.get_expert_model_parallel_group())
+                else rank
+            )
+            handles.append(torch.distributed.broadcast(param, src=src_rank, group=mpu.get_expert_model_parallel_group(), async_op=True))
+```
+
+**`else rank` 是一个「自广播」占位**：如果这个专家参数的权威 rank 不在这条 EP 链路里，就让**本 rank 自己当 src**。语义上是 no-op，作用是**让所有 rank 参与同样的集合调用次数**，避免 NCCL 集合通信挂死。
+
+这是一个典型的「用自指向 broadcast 占位」的防御写法——**在集合通信里，「跳过」不是一个选项，因为集合操作要求全员参与**。
+
+### 6.2.4 权重丢了也不报错的那条路
+
+`_ipc_gather_group` 的建立逻辑里有一段最值得警惕的代码：
+
+```python
+# Placeholder ranks (GPU slots reserved but no engine) have no gather group.
+# gather_object is only collective among group members, so we skip entirely.
+if ipc_gather_group is None:
+    return [], None
+```
+
+**占位 rank（在 placement group 里留了 GPU slot 但没配引擎）拿不到 gather group，函数直接返回空**。没有断言、没有告警、没有任何日志。
+
+这条路径的设计动机是合理的（它确实不该参与 gather），但后果是：**如果 `engine_gpu_offsets` 配置错了，某些训练 rank 会被静默判成占位 rank，它们那一份权重就永远送不到引擎**。而训练继续跑，只有 loss 会歪。
+
+更隐蔽的是映射逻辑用的是半开区间匹配：
+
+```python
+for i, engine in enumerate(self.rollout_engines):
+    start = colocate_gpu_offsets[i]
+    end = start + colocate_gpu_counts[i]
+    if start <= self.rank < end:
+        self._ipc_engine = engine
+```
+
+**如果两个 engine 的区间重叠，后写的那次会静默覆盖前一次**——源码里没有任何断言校验 `engine_gpu_offsets` 互不重叠。
+
 ### 6.3 一个真实的竞态与它的注释
 
 `_build_flattened_tensor_data` 里有一段少见的「解释为什么不能这么做」的注释：
@@ -302,6 +487,33 @@ Distributed: GPU NCCL broadcast to remote engines.
 > Do not reuse the IPC-facing flattened tensor. SGLang returns from the HTTP/Ray request after enqueueing GPU copies into model weights, but it does not guarantee a CUDA-device sync before the response. Reusing and overwriting the same producer buffer immediately after `ray.get` can race with the consumer-side copy and corrupt weights.
 
 拆开讲：SGLang 收到 IPC 句柄后会**把拷贝任务 enqueue 到 GPU 上**就返回，并不等 CUDA 同步完成。如果训练端在 `ray.get` 返回后立刻复用同一块缓冲区去装下一批参数，GPU 上还没执行完的上一次拷贝会读到被覆盖的数据——**权重就静默地错了，而所有 barrier 都通过**。这条注释对应的正是训推一致的「权重层」最难查的一类 bug：它不会报错，只会让训练曲线莫名其妙地抖。
+
+两个关键词值得单独拎出来：`enqueueing`（入队，不是完成——`cudaMemcpyAsync` 函数返回不等于数据到齐）与 `corrupt weights`（失败模式是内容错，不是崩溃）。
+
+竞态的时间线：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as "生产者（训练 rank，step k）"
+    participant C as "消费者（SGLang engine）"
+    participant S as "CUDA stream（GPU 执行队列）"
+
+    P->>S: FlattenedTensorBucket 新建 buffer B_k
+    P->>S: 本 rank 的 TP 分片 flatten 进 B_k
+    P->>P: serialize（只序列化 B_k 的 IPC handle）
+    P->>C: Ray: update_weights_from_tensor(handle_k)
+    C->>S: 打开 handle_k，发 cudaMemcpyAsync(model_w, B_k)
+    Note over S: 拷贝仍在 GPU 队列里，尚未执行
+    C-->>P: 返回 ObjectRef（未做 device sync）
+    P->>P: ray.get 返回
+    P->>P: del long_live_tensors → 引用归零
+    Note over P,S: 若复用缓冲：下一 chunk 拿到同一块显存 B_k 并开始覆写
+    S-->>S: 【危险窗口】B_k 的拷贝可能尚未执行
+    Note over S: 覆写后引擎读到 chunk k+1 的字节 → 权重错位
+```
+
+**关键的不对称**：`ray.get` 返回与 `cudaMemcpyAsync` 的执行之间**没有任何顺序保证**。两者唯一的同步点是「同一 CUDA device 上 stream 之间的隐式顺序」——但那只在**同一个进程内**成立，**跨进程（训练进程 vs 引擎进程）不适用**。
 
 对应的防御措施在 `update_weights` 的循环尾部：
 
@@ -316,7 +528,19 @@ accelerator.ipc_collect()
 accelerator.empty_cache()
 ```
 
-**每个 chunk 送完就 `del` + `ipc_collect` + `empty_cache`**，而不是攒到最后一次性释放。这样做的原因是 IPC 句柄不释放的话，PyTorch 的 caching allocator 无法复用那些块，显存会随 chunk 数线性膨胀——一个 70B 模型分 8 个 chunk 送，就是 8 倍的临时显存峰值。
+**每个 chunk 送完就 `del` + `ipc_collect` + `empty_cache`**，而不是攒到最后一次性释放。这样做的原因是 IPC 句柄不释放的话，PyTorch 的 caching allocator 无法复用那些块，显存会随 chunk 数膨胀。
+
+**这里有一个容易算错的账，值得单列一张表**。以 70B bf16（140 GB）分 8 个 chunk、`TP=8` 为例，每 chunk 每 rank 摊 $$17.5/8 \approx 2.19$$ GB：
+
+| 策略 | 每 rank 的 flattened 显存峰值 | 倍数 |
+| --- | --- | --- |
+| 复用同一块缓冲（危险，见 6.3 竞态） | 2.19 GB | 1× |
+| **每 chunk 新建 + 每 chunk 回收（实际策略）** | 2.19 GB，最坏时上一块与下一块短暂共存 | **1× ~ 2×** |
+| 每 chunk 新建且**不回收** | 2.19 × 8 = 17.5 GB | 8× |
+
+**「不过复用」的真实代价是 1–2 倍，不是 8 倍**——因为 `ipc_collect` + `empty_cache` 让显存能及时回池。8 倍只出现在「既不回收又不复用」这种假想实现里。
+
+**但这张表真正的用处是反推**：如果把 L527-L528 两行删掉只留 `del`，就会退化成 8 倍。判断方法是看 `print_memory("after update_weights")` 的打点是否随 chunk 数线性增长——**这是一个不需要 GPU 也能设计出来的验证**。
 
 ### 6.4 暂停、刷缓存、版本号
 
@@ -363,6 +587,41 @@ slime 的数值层策略是「**宁可多一次转换，也不要两套模型定
 - **`--rollout-temperature` 与训练时的采样温度必须一致**，否则重要性比的分母从一开始就是错的
 - **logprob 复用**：rollout 时让 SGLang 一并返回 `prompt_logprobs` / `input_token_logprobs`，而不是训练端再前向算一遍。这一条直接消灭了「同一批 token 在两套 kernel 下算两次」的问题
 
+### 7.1.1 官方给出的「逐位对齐」条件清单
+
+上面的说法是「差异不可消除」。但 slime 的文档里有一份更硬的答案：**在特定条件下，训练端与 rollout 端的 logprob 可以逐位对齐**（`docs/en/advanced/reproducibility.md`）。
+
+先说单侧逐位复现，需要同时满足六件事：
+
+| 类别 | 配置 | 作用 |
+| --- | --- | --- |
+| SGLang | `--sglang-enable-deterministic-inference` | 推理侧确定性 |
+| SGLang | `--sglang-attention-backend flashinfer` | 换成有确定性实现的 attention 后端 |
+| Megatron | `--deterministic-mode` | 训练侧确定性 |
+| NCCL | `NCCL_ALGO=Ring` | 固定集合通信算法 |
+| Transformer Engine | `NVTE_ALLOW_NONDETERMINISTIC_ALGO=0` | 禁用非确定性 kernel |
+| cuBLAS | `CUBLAS_WORKSPACE_CONFIG=:4096:8` | 固定 GEMM 工作区，避免算法选择抖动 |
+
+**还有一个不在配置里的前置动作：卸载 FlashAttention 3**（`pip uninstall flash_attn_3 -y`）。FA3 的 kernel 是非确定性的，留着它上面那六条都不生效。
+
+再说**训推之间的 logprob 对齐**，限制更严：**目前只支持 GLM-5 结构**（MLA + DSA 稀疏注意力），且需要 batch-invariant DeepGEMM / DeepEP 构建加上 `megatron-sglang-aligned.patch`。文档逐条列了对齐所依赖的东西：
+
+| 依赖 | 具体内容 |
+| --- | --- |
+| 注意力 | DSA 稀疏注意力（`flashmla_sparse` prefill/decode），含确定性的 NSA RadixCache / prefix cache |
+| GEMM | DeepGEMM 的 batch-invariant block-FP8 前向（稠密与 grouped-MoE 层），**反向仍用 BF16** |
+| MoE 路由 | **fp32 router** |
+| MoE 通信 | SGLang 侧 DeepEP 低延迟 rollout + Megatron 侧 DeepEP normal 训练；**普通 Megatron all-to-all 不能作为对齐后端** |
+| KV cache | bf16 或 FP8-E4M3 |
+
+其中 MoE 路由那条有一个反直觉的细节，值得原文引用：
+
+> fp32 MoE router (the LM head stays bf16 on both train and rollout — matching precision, not fp32, is what aligns)
+
+**「对齐的是精度的匹配，而不是 fp32 本身」**。这句话纠正了一个常见误解：很多人以为「都开 fp32 就能对齐」，实际上如果一侧 fp32 一侧 bf16 反而不对齐。**判据是两侧一致，不是两侧都高精度**。
+
+这张清单的实践意义：**训推一致的「数值层」不是靠调参逼近的，是靠把两侧的数值路径在每一个分叉点上都统一**。这也是为什么只有 GLM-5 一条路径做成了——每加一个模型族，就要把它所有的 kernel 分叉重新对齐一遍。
+
 ### 7.2 权重层
 
 第 6 节的协议本身就是权重层的全部内容。这里补三条容易漏的：
@@ -370,6 +629,27 @@ slime 的数值层策略是「**宁可多一次转换，也不要两套模型定
 1. **初始化时就已经同步过一次**。`train()` 的第一段在进入循环之前就调用了 `actor_model.update_weights()`，注释写得很直白：`# Always push actor weights to rollout once weights are loaded.`。如果漏了这一步，第一次 rollout 用的是 SGLang 从磁盘加载的原始权重，而训练端加载的 checkpoint 可能不同（尤其是 `--finetune` 场景）。
 2. **重启会导致连接失效**。`update_weights` 里有这样一段判断：当 `num_new_engines > 0` 或者需要重连时，必须重新 `connect_rollout_engines`，因为「上一个 trainer 的 rank 建的 update group 已经随它一起死了」。跨 rank 的 `dist.barrier(group=get_gloo_group())` 保证所有 rank 都连上了才清掉标记位。
 3. **`check_weights` 是一个可选的端到端校验**。初始化阶段有 `ray.get(rollout_manager.check_weights.remote(action="compare"))`，它把训练端与引擎侧的权重逐项比对。这是本文提到的所有机制里**唯一一个能端到端证明「权重真的同步到位」的动作**——其余靠的都是「接口返回成功」。
+
+### 7.2.1 delta 同步：`xor` 是不可逆对合，`overwrite` 是幂等
+
+delta 路径（`--update-weight-mode delta`，字节级 diff）的编码选择里有一个容易被忽略的正确性陷阱，官方文档写得非常直接：
+
+| 编码 | 写什么 | 关键性质 | 适用 |
+| --- | --- | --- | --- |
+| `xor`（默认） | `new ^ old` | **对合式（involution）：必须恰好应用一次，应用两次会回退** | 追求最小传输量 |
+| `overwrite` | 变化位置的新绝对值 | **幂等：重复应用结果不变** | 需要可重放时 |
+
+**「应用两次会回退」是一类极其隐蔽的失效**：如果某次 apply 因为超时被重试，`xor` 编码会把已经正确的权重 XOR 回旧值。`overwrite` 没有这个性质——它写的是绝对值，重放多少次都收敛到同一状态。
+
+**一个正确性设计值得学：版本链不允许乱序**。文档原文是 *The apply also refuses to run out of order: a version only applies on top of its declared base version.* 也就是说每个版本目录里记着自己的 base 版本，apply 时校验——**这正好把 `xor` 的对合性质绑在了「恰好一次」上**，重放被 base 校验挡住。
+
+**校验与失败语义也是显式的**：
+
+> The trainer stores a per-tensor checksum of each tensor's new state in the version. After applying, every host recomputes the checksum and **raises on any mismatch** — the failure propagates through the `/pull_weights` response, so a corrupt delta or a wrong base fails loud instead of serving bad weights.
+
+**「fail loud instead of serving bad weights」**——这句话正好是 §6.2.4 那条「静默跳过」的反面。同一个框架里，delta 路径做了逐 tensor 校验 + 抛错，IPC 路径的占位 rank 却是静默 `return [], None`。**这不是疏忽，而是两种路径的正确性成本不同**：delta 需要校验是因为它有版本链与跨主机状态，IPC 每 chunk 都是全量、无状态。
+
+**一个非配置项的工程判断**：delta 数据恒用 zstd level 1 压缩，文档说 **profiling 证明它在传输体积与解压速度上都胜过 lz4 / gzip / snappy / brotli**，所以直接做成常量，不给开关。这是一个「实测替代调参」的例子——**把不需要用户决策的东西固定下来，本身是一种设计质量**。
 
 ### 7.3 样本层
 
@@ -434,6 +714,27 @@ GRPO 的 `n`（同一 prompt 采几条）直接除在并发上限上。原因是
 | staleness | 不产生（同一步内） | 由队列深度决定 |
 
 一句话区分：**partial rollout 省的是「被截断的生成」，全异步省的是「训练等待生成的空闲」**。
+
+### 8.5 一个容易漏掉的动机：PD 分离是为了绕开 EP 的硬件上限
+
+大多数人把 PD 分离理解成「把 prefill 与 decode 拆到不同卡以匹配各自的计算特性」。slime 的官方 GLM-5.2 744B 配置里给出了**另一个更硬的理由**：
+
+> The rollout side runs with **prefill/decode (PD) disaggregation**: 1 prefill engine (64 GPU) + 3 decode engines (192 GPU) = 256 GPUs total (which must equal the colocated `rollout_num_gpus`). Each engine spans 64 GPUs with DP attention and `EP=64` (**DeepEP's dispatch config map supports up to 160 EP ranks, so a single 256-GPU engine would be invalid**).
+
+拆开看这个约束：
+
+| 量 | 值 |
+| --- | --- |
+| 总 rollout GPU | 256 |
+| DeepEP dispatch config map 上限 | **160 EP ranks** |
+| 单引擎 256 GPU 配 EP=256 | **超过上限，无效配置** |
+| 实际拆法 | 1 × 64（prefill，EP=64）+ 3 × 64（decode，EP=64） |
+
+**所以 PD 分离在 slime 里承担了一个额外职责：把「一个需要 256 卡的大引擎」拆成多个都在 EP 上限内的引擎**。
+
+这条对选型的启示：**当你的模型规模让单引擎 EP 超过 DeepEP 上限时，PD 分离不是优化项，而是唯一可行解**。反过来，如果模型规模没到这个量级，PD 分离只带来复杂度。
+
+**注意配置里那句约束**：`256 GPUs total (which must equal the colocated rollout_num_gpus)`——**拆开之后总数必须与 colocate 的 `rollout_num_gpus` 相等**，否则 §2 的摆卡逻辑与 §6 的 `engine_gpu_offsets` 映射就对不上。
 
 ---
 

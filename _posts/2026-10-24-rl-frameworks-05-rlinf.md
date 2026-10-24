@@ -117,6 +117,131 @@ M2Flow 的代价很明确：
 
 **特性三：权重与批量提取**。`get_batch` 按权重取一批消息。这在多环境异步推进时用来做「按优先级取」，避免慢环境饿死。
 
+### 2.2.1 key 路由是怎么实现的：一致性哈希 + 按节点副本
+
+`_get_channel_rank_by_key` 只有十几行，但它决定了整个路由语义：
+
+```python
+def _get_channel_rank_by_key(self, key: Any) -> int:
+    """Get the rank of the channel actor that should handle the given key."""
+    if self._local_channel is not None:
+        return -1
+    if not self._distributed:
+        return 0
+    if key not in self._key_to_channel_rank_cache:
+        src_node_rank = self._get_src_node_rank()
+        target_rank = (
+            self._channel_worker_group.execute_on(0)
+            .ensure_key_replica(key=key, src_node_rank=src_node_rank)
+            .wait()[0]
+        )
+        self._key_to_channel_rank_cache[key] = target_rank
+    return self._key_to_channel_rank_cache[key]
+```
+
+三层语义：
+
+| 分支 | 返回 | 含义 |
+| --- | --- | --- |
+| `_local_channel is not None` | `-1` | **单节点优化**：channel 就在本进程里，不走 RPC |
+| `not self._distributed` | `0` | 分布式但只有一个 channel actor，全部路由到它 |
+| 其余 | `ensure_key_replica(...)` 的结果 | **让 rank 0 决定这个 key 该落在哪个副本上** |
+
+**注意 `ensure_key_replica` 是交给 `execute_on(0)` 做的**——也就是说**「key → rank」这个映射由 rank 0 集中决定**，其余节点通过 `_key_to_channel_rank_cache` 缓存结果。这是一个有意的设计：
+
+- 集中决定 → **全局一致**（所有节点对同一个 key 算出同一个 rank）
+- 本地缓存 → **后续访问零 RPC**
+
+而 `_get_channel_actor` 的 fallback 暴露了副本策略：
+
+```python
+def _get_channel_actor(self, rank: int) -> ray.actor.ActorHandle:
+    """Get the actor handle for a channel rank, falling back to the main actor."""
+    return self._channel_actors_by_rank.get(rank, self._main_channel_worker_actor)
+```
+
+**找不到指定 rank 的 actor 时回退到主 actor**。配合 `ensure_key_replica(key, src_node_rank=...)` 里的 `src_node_rank` 参数可以看出：副本是按**节点**建的（同一节点上的多个 worker 共享一个副本），这正好匹配具身场景——**同一台机器上的多个仿真器进程共享一个 channel 副本，跨节点才走网络**。
+
+```mermaid
+flowchart TB
+    subgraph n0["节点 0"]
+        W00["worker 0"] --> R0[("channel 副本 @rank0")]
+        W01["worker 1"] --> R0
+    end
+    subgraph n1["节点 1"]
+        W10["worker 2"] --> R1[("channel 副本 @rank1")]
+        W11["worker 3"] --> R1
+    end
+    R0 <-.->|"跨节点同步"| R1
+    K["put(key=episode_42)"] --> H{"_get_channel_rank_by_key"}
+    H -->|"rank0 决定归属并缓存"| R0
+    H --> R1
+```
+
+**这套机制的一个隐含代价**：`ensure_key_replica` 是**首次访问时**才决定的，所以第一个 `put` 会多一次跨节点 RPC。对「每个 episode 只 put 一次」的模式没问题，对「每步都 put」的模式就是常态开销——这也是为什么它需要本地缓存。
+
+### 2.2.2 `get_batch` 的权重语义
+
+```python
+def get_batch(
+    self,
+    target_weight: int = 0,
+    key: Any = DEFAULT_KEY,
+    async_op: bool = False,
+) -> AsyncWork | list[Any]:
+    """Get a batch of items from the channel queue based on the set batch weight.
+
+    It will try to get items until the total weight of the items is about to (i.e., the next item will) exceed the set batch weight.
+    """
+```
+
+**语义是「取到再加一个就超」为止**，也就是**不超过 `target_weight` 的最大前缀**。这与「取够 target_weight 为止」不同——后者会超。
+
+这个 API 的用途在多环境并行下很清楚：**给不同难度的任务分配不同的 weight**（长的 episode weight 大、短的 weight 小），`get_batch(target_weight=B)` 就能拿到「一个大致等量的批次」，而不是「固定条数的批次」。**它是按工作量而不是按条数组批的**。
+
+#### 2.2.3 `get_batch` 的两个边界行为
+
+实现里的循环只有五行，但藏着两个容易踩空的边界：
+
+```python
+queue = self._queue_for_get(key, dst_addr.get_name())
+batch = []
+current_weight = 0
+while True:
+    next_item: WeightedItem = await queue.peek()
+    if next_item is None or current_weight + next_item.weight > target_weight:
+        break
+    current_weight += next_item.weight
+    item = await queue.get()
+    batch.append(item.item)
+    if current_weight >= target_weight:
+        break
+```
+
+**边界一：`weight=0`（默认值）会让它把队列取空。**
+
+判断式是 `current_weight + next_item.weight > target_weight`。当每条的 `weight` 都是默认的 `0`、`target_weight` 也取默认 `0` 时：
+
+$$
+0 + 0 > 0 \;\Rightarrow\; \text{False}
+$$
+
+条件永远不成立，循环只由第二个出口 `current_weight >= target_weight` 结束——而 `current_weight` 一直是 0，`0 >= 0` 首轮就成立……但**首轮之前已经先把这项 `get()` 出来放进 batch 了**，所以第二轮再判时依旧不成立。**实际效果是：`weight` 全为 0 时 `get_batch` 退化成「不设上界地连续取」**。
+
+**这不是 bug，而是「weight 与 target 必须成对使用」的隐含契约**：只设 `target_weight` 而不给 item 设 `weight`，限流就不生效。
+
+**边界二：队首一个超长样本会让它返回空列表，且不回填。**
+
+`peek` 拿到队首后，如果 `current_weight + next_item.weight > target_weight`（例如队首那条的 weight 是 10、`target_weight` 是 5），**直接 `break`，返回空 batch**。它不会跳过这一条去取后面更小的，也不会等。
+
+对具身场景的含义很具体：**如果一个超长 episode 堵在队首，`get_batch(target_weight=B)` 会一直返回空**，直到它被消费或被别的路径取走。用 weight 表达「工作量」的代价是——**队首阻塞变成了批次饥饿**。
+
+#### 2.2.4 一个容易误读的类型标注
+
+`WeightedItem` 带了 `@dataclass(order=True)`，看起来像优先队列。但底层是 `asyncio.Queue`，**是 FIFO**。`order=True` 只让 `WeightedItem` 之间可比较，**不影响取出的顺序**——`weight` 从不参与排序，只参与上面那个累加判断。
+
+**这是一个「类型标注暗示了一个不存在的性质」的例子**：读代码时看到 `order=True` + `weight` 字段，很容易以为它是优先队列。
+
 ### 2.3 放置策略：机器人也是硬件
 
 `FlexiblePlacementStrategy` 的文档第一句就点明了它的野心：

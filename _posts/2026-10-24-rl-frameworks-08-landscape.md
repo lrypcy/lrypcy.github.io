@@ -116,6 +116,36 @@ zero orchestration                                            full orchestration
 | **RLinf** | `rlinf/scheduler/` 八个子模块 | `Worker` / `WorkerGroup` / `Placement` / `Channel` | 异构硬件、仿真器一等公民 | 中高：四个概念 |
 | **veRL** | `single_controller` + V1 trainer | WorkerGroup / ResourcePool / decorator | **最强**：colocate / 分离 / 混合 | **最高**：调的是 placement 与 resharding |
 
+横着看是厚度，竖着看是**每个框架怎么表达 colocate**：
+
+```mermaid
+flowchart TB
+    subgraph thin["编排层薄：可读、可 fork"]
+        S["slime<br>slime/ray 六个文件<br>布局 = 一个布尔 --colocate"]
+    end
+    subgraph mid["编排层中"]
+        A["AReaL<br>双控制器 + 三层队列<br>布局 = 两个独立服务"]
+        R["RLinf<br>scheduler 八个子模块<br>布局 = Placement 策略"]
+    end
+    subgraph thick["编排层厚：表达力最强、调试成本最高"]
+        V["veRL<br>single_controller + V1 trainer<br>布局 = resource_pool_spec + hook"]
+    end
+    S -.->|"被「不能有全局屏障」逼出来"| A
+    A -.->|"被「仿真器也是一等资源」逼出来"| R
+    R -.->|"被「同一份算法跑任意布局」逼出来"| V
+```
+
+**虚线不是「升级关系」，而是「需求递进」**——每一层厚度都被一个具体需求逼出来：
+
+| 框架 | 被什么需求逼出来 | 买到的抽象 | 付的代价 |
+| --- | --- | --- | --- |
+| slime | 「要快、主循环要能直接读」 | 几乎没有 | 布局不可表达 |
+| AReaL | 「不能有全局屏障」 | 三队列 + staleness 准入 | 同步模式反而变慢 |
+| RLinf | 「仿真器与真机也是一等资源」 | Placement 把机器人当硬件 | 四个概念的上手门槛 |
+| veRL | 「同一份算法要跑在任意布局上」 | dispatch/collect + hook | 调试对象变成图 |
+
+**厚度不是线性的**。slime 到 AReaL 只是加了一层队列；RLinf 到 veRL 才是真正的分水岭——**veRL 的厚度来自它把函数调用本身变成了可配置对象**（`@register` 把 `dispatch_fn` / `collect_fn` 成对注册，见 [03 veRL](/2026/10/24/rl-frameworks-03-verl/) §1）。
+
 ### 3.2 这张谱的读法
 
 **越靠左，代码越可读、越容易被 fork；越靠右，能力越强、越难 debug。**
@@ -266,6 +296,31 @@ vLLM 的 `sleep(level)` 不是「省不省显存」的二选一，而是两种�
 | **Megatron 原生 RL** | **零** | **0 类** |
 
 **Megatron 原生 RL 栈的「零接缝」是它唯一但决定性的优势**：训练与推理同进程、同格式、同布局，3D-HybridEngine 那笔搬运账直接归零。代价是 HF 模型必须经 Bridge 转换、算法与环境基本要自己写。
+
+把这些接缝画出来，会看到一件容易忽略的事：**接缝不是一条线，而是四条并行的通道**，每条都可能单独出错。
+
+```mermaid
+flowchart LR
+    subgraph T["训练端"]
+        W["Megatron/FSDP 分片权重"]
+    end
+    subgraph seams["四条接缝（每条都可能单独断）"]
+        S1["① 权重格式<br>megatron_to_hf / MappingRegistry"]
+        S2["② 并行重排<br>5D → 推理端 TP"]
+        S3["③ 传输载体<br>NCCL / CUDA IPC / 磁盘"]
+        S4["④ 版本与暂停<br>pause + flush + weight_version"]
+    end
+    subgraph I["推理引擎"]
+        E["SGLang / vLLM 权重"]
+    end
+    W --> S1 --> S2 --> S3 --> S4 --> E
+    S1 -.->|"错了：QKV 交错错位"| X1["不报错，梯度歪"]
+    S2 -.->|"错了：head 整体偏移"| X2["不报错，logprob 差 1e-2"]
+    S3 -.->|"错了：缓冲复用竞态"| X3["不报错，权重静默污染"]
+    S4 -.->|"错了：刷缓存被跳过"| X4["不报错，旧 KV 被复用"]
+```
+
+**四条接缝的失效模式有一个共同点：全都不报错。** 这就是为什么本文第 10.1 节把「refit 无端到端校验」列为全行业未解问题之一——**唯一能证明权重真的到位的手段，是逐项比对或算 logprob，而绝大多数框架默认不做**。
 
 **矩阵三：默认搭档**
 

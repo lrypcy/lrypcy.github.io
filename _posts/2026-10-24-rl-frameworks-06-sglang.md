@@ -12,7 +12,7 @@ mathjax: true
 
 **TL;DR**
 
-> * **SGLang 相对 vLLM 最有信息量的差异是暂停语义的三档**：`abort` / `retract` / `in_place`。三者的区别不在「停不停」，而在**停下之后在途请求的命运**——被杀死、被退回等待队列、还是原地冻住并把 KV 留着。**这是 RL 换权重时唯一需要精确语义的地方**，选错会导致要么丢样本、要么 KV 失效、要么刷缓存直接失败。
+> * **SGLang 相对 vLLM 最有信息量的差异是暂停语义的三档**：`abort` / `retract` / `in_place`。三者的区别不在「停不停」，而在**停下之后在途请求的命运**——被杀死、被退回等待队列、还是原地冻住并把 KV 留着。**这是 RL 换权重时唯一需要精确语义的地方**，选错会导致要么丢样本、要么 KV 失效、要么刷缓存被**静默跳过**。
 > * **`in_place` 模式与 `flush_cache` 是互斥的，这一点写在类型定义里**：*Note: In 'inplace' mode, flush_cache will fail if there are any requests in the running_batch.* —— 想保住在途请求就别想刷缓存，这是硬约束不是建议。
 > * **`retract` 是唯一「能刷缓存又能保住请求」的档位**：请求被退回 `waiting_queue`，KV 被丢弃，`continue_generation` 之后**自动重算**。代价是重算那部分前缀。
 > * **权重热更新有三条路径，且分布式的那个有完整的建组协议**：`init_weights_update_group`（含 `master_address` / `master_port` / `rank_offset` / `world_size`）→ 推权重 → `destroy_weights_update_group`。**建组是显式的、有生命周期的**，不是隐式连接。
@@ -209,11 +209,49 @@ class PauseGenerationReqInput(BaseReq, kw_only=True):
 
 ### 4.2 三档对照表
 
-| 档位 | 在途请求 | KV cache | 能否 flush_cache | 代价 |
-| --- | --- | --- | --- | --- |
-| `abort`（默认） | **被杀死** | 可清 | 能 | 已完成的计算全丢 |
-| `retract` | **退回 waiting_queue** | 可清 | 能 | 唤醒后**重算**前缀 |
-| `in_place` | **原地冻住** | 保留 | **不能** | 长尾请求会一直占着 |
+| 档位 | 在途请求 | KV cache | 已生成 token | 能否 flush_cache | 恢复成本 |
+| --- | --- | --- | --- | --- | --- |
+| `abort`（默认） | **被杀死** | 可清 | **丢弃** | 能 | 不存在（调用方重发） |
+| `retract` | **退回 waiting_queue** | **已释放** | 保留（`output_ids`） | 能 | **重算整段 prefix** |
+| `in_place` | **原地冻住** | 保留 | 保留 | **被静默跳过** | **0**（但长尾会一直占着） |
+
+从「请求」的视角看，三档把请求导向三个不同的终态：
+
+```mermaid
+stateDiagram-v2
+    [*] --> WAITING: add to waiting_queue
+    WAITING --> RUNNING: schedule
+    RUNNING --> WAITING: pause(retract)<br>释放 KV，保留 output_ids
+    RUNNING --> RUNNING: pause(in_place)<br>只设标志，KV 保留
+    RUNNING --> ABORTED: pause(abort)<br>tokenizer.abort_request(all)
+    WAITING --> ABORTED: pause(abort)
+    WAITING --> WAITING: pause(in_place)<br>不动
+    ABORTED --> [*]: 返回调用方
+    RUNNING --> FINISHED: 正常完成
+    WAITING --> FINISHED: 正常完成
+    FINISHED --> [*]
+```
+
+**注意 `RUNNING --> RUNNING` 这条自环**：`in_place` 下请求**根本没有离开 running_batch**。这不是图示简化，而是源码的行为——`in_place` 分支只设一个标志位就返回（见 4.3）。
+
+更值得注意的是三档**走的是不同的进程**：
+
+```mermaid
+flowchart TB
+    A["POST /pause_generation<br>mode in {abort, retract, in_place}"] --> B{"mode == abort ?"}
+    B -->|yes| C["TokenizerManager.pause_generation<br>is_pause = True"]
+    C --> D["循环: abort_request(abort_all=True)<br>asyncio.sleep(1.0) 直到锁空闲"]
+    D --> E["ABORTED<br>KV 全释放，请求消失"]
+    B -->|no| F["dispatch 到 Scheduler<br>_engine_paused = True"]
+    F --> G{"mode == in_place ?"}
+    G -->|yes| H["PAUSED_IN_PLACE<br>running_batch 原样，KV 保留"]
+    G -->|no| I["PAUSED_RETRACT<br>drain result_queue<br>retract_all，req 回 waiting_queue"]
+    H --> J["event_loop 只处理非推理请求"]
+    I --> J
+    J --> K["continue_generation<br>可选 torch_empty_cache<br>_engine_paused = False"]
+```
+
+**`abort` 在 tokenizer 进程里完成，`retract` / `in_place` 在 scheduler 进程里完成**。这个差别决定了一件事：`abort` 那一档有 `asyncio.sleep(1.0)` 的轮询粒度——**最快也要 1 秒才退出循环**，且它在 `is_pause_cond` 锁内，这 1 秒里 `continue_generation` 拿不到锁。
 
 ### 4.3 `in_place` 的实现解释了为什么它便宜
 
@@ -244,7 +282,21 @@ if recv_req.mode == "in_place":
 | 希望保住长尾生成、且不刷缓存 | `in_place` | 零重算 |
 | 紧急停服 | `abort` | 立刻释放 |
 
-**最容易踩的坑**：想「既保住请求又刷缓存」，于是选 `in_place` 并传 `flush_cache=True`——**这会直接失败**，如果 `running_batch` 非空的话。类型定义里那句 `Note` 就是在警告这件事。
+**最容易踩的坑，而且它的真实行为比 docstring 说的更糟**。想「既保住请求又刷缓存」，于是选 `in_place` 并传 `flush_cache=True`。docstring 写的是 *flush_cache will fail*，但源码里的实际行为是**静默跳过**：
+
+```python
+def flush_cache(self, empty_cache: bool = True):
+    """Flush memory pools (e.g., KV cache, Mamba cache) and optionally empty device allocator cache."""
+    if self.is_fully_idle(ignore_waiting=self._engine_paused):
+        self.cur_batch_for_debug = None
+        self.last_batch = None
+        self.tree_cache.reset()
+        ...
+```
+
+`flush_cache` 整个函数体都在 `is_fully_idle(...)` 的条件里。`in_place` 模式下 `running_batch` 非空 → `is_fully_idle` 为 False → **整个 flush 被跳过，不报错、不告警、调用方拿不到任何失败信号**。
+
+**这意味着「用 `in_place` 保住请求」和「用 `flush_cache` 清掉旧权重 KV」是互斥的，而且第二个被静默丢弃。** 如果你以为刷了、实际没刷，旧权重的 KV 会继续被复用——这是训推一致的样本层与数值层的双重污染。
 
 ---
 
@@ -290,6 +342,106 @@ class UpdateWeightVersionReqInput(BaseReq, kw_only=True):
 - **两步模式**：先更新权重，再调 `update_weight_version` → 有窗口，但可以显式控制
 
 **推荐原子模式**，因为中间的窗口里引擎会用新权重 + 旧版本号继续接单，产出的样本版本标记是错的。
+
+### 5.4 版本号怎么进到每条样本里：六跳链路
+
+这是 SGLang 在 RL 场景下最实用、也最少被讲的一块。**版本号不是一个全局变量，它会被切成每请求的 token 区间**：
+
+```text
+POST /update_weights_*  {weight_version: "42"}
+  │
+  ├─ ① tokenizer_manager: _update_weight_version_if_provided("42")
+  ├─ ② record_config_updates("tokenizer.weight_version", ...)
+  ├─ ③ dispatch 到 scheduler → Scheduler.record_weight_version_change("42")
+  │      get_context().override("scheduler.weight_version", weight_version="42")
+  │      对每个 live req 追加 WeightVersionEvent(old="41", num_output_tokens=k)
+  ├─ ④ 生成结束时 compute_weight_version_spans(events, current_version, num_out)
+  ├─ ⑤ BatchStrOut.weight_versions ← 每请求的 spans
+  └─ ⑥ tokenizer_manager: add_weight_versions_to_meta_info(...)
+```
+
+第 ③ 步的 `record_weight_version_change` 是关键：
+
+```python
+def record_weight_version_change(self, new_version: Optional[str]) -> None:
+    if new_version is None or new_version == get_serving().weight_version:
+        return
+
+    old_version = get_serving().weight_version
+    get_context().override("scheduler.weight_version", weight_version=new_version)
+
+    live_reqs = {
+        *self.collect_inflight_reqs(),
+        *self.waiting_queue,
+```
+
+**「对每个在途请求记一条事件」** 是这整条链的核心：它把「版本切换」从一个全局时刻变成了一串 per-request 的切点。
+
+最终 `meta_info` 里长这样（官方文档示例）：
+
+```json
+"weight_version": "42",
+"weight_versions": [
+    {"version": "41", "start": 0,  "end": 57},
+    {"version": "42", "start": 57, "end": 128}
+]
+```
+
+文档对该格式的说明值得逐字读：
+
+> Ranges are half-open `[start, end)` over output-token indices, prompt excluded. The usual case is a single span.
+
+```mermaid
+sequenceDiagram
+    participant T as Trainer（RL）
+    participant TM as TokenizerManager
+    participant S as Scheduler
+    participant R as Req（在途请求）
+
+    T->>TM: POST /pause_generation {mode: retract}
+    TM->>S: dispatch
+    S->>S: retract_all，req 回 waiting_queue
+    T->>TM: POST /update_weights_from_distributed {weight_version: "42"}
+    TM->>TM: _update_weight_version_if_provided("42")
+    TM->>S: record_weight_version_change("42")
+    S->>R: append WeightVersionEvent(old="41", n_out=57)
+    S->>S: context.override(weight_version="42")
+    T->>TM: POST /continue_generation
+    S->>R: 重新 schedule，继续生成到 128 token
+    S->>S: compute_weight_version_spans → [{41,0,57},{42,57,128}]
+    S-->>TM: BatchStrOut.weight_versions
+    TM-->>T: meta_info.weight_version = "42"<br>meta_info.weight_versions = 两个 span
+```
+
+三个对 RL 侧直接有用的细节：
+
+| 细节 | 含义 | RL 侧怎么用 |
+| --- | --- | --- |
+| **半开区间 `[start, end)`** | 与 Python 切片语义一致 | 直接 `response_ids[start:end]` |
+| **`prompt excluded`** | 区间只覆盖 output token，prompt 不占位 | **不需要减 `len(prompt)`**——这是个很容易写错的地方 |
+| **通常只有一个 span** | 没跨版本时 `[{v, 0, len}]` | 用 `len(spans) == 1` 快速判断「这条轨迹干净」 |
+
+### 5.5 但版本号本身不保证任何东西
+
+这一节要泼一盆冷水，因为版本号很容易被误当成一致性证明：
+
+| 事实 | 后果 |
+| --- | --- |
+| `weight_version` 是 **`str`，只存 metadata** | 它不参与任何计算或校验 |
+| scheduler 记的是**自己当前版本**，不是请求声明的版本 | 两个版本窗口内的并发请求，都按同一条边界切 |
+| 默认值是 `None` | **不传版本号时 `meta_info` 里根本没有这个字段** |
+
+**最要命的是第一条与第 5.4 节的结合**：`weight_versions` 记录的是「在哪个时刻引擎自认为换了版本」，**而不是「这些 token 真的由那个版本的权重生成」**。
+
+两者的差别在 PD 分离 + `retract` 场景下会真实发生——如果 retract 没有真正重建 KV（源码里这条路径有 TODO），被 retract 的请求会**带着旧权重的 KV 前缀继续生成**，但事件里记的却是新版本。
+
+所以正确的用法是把版本号当成**观测材料**而不是**正确性保证**：
+
+| 想回答的问题 | 该看什么 |
+| --- | --- |
+| 这条样本跨了几个版本？ | `len(weight_versions)` |
+| 权重是否全部推送到位？ | `/get_weights_by_name` 或逐项比对 |
+| token 真的来自那个版本吗？ | **无法从版本号得知**，只能靠 `retract` 的语义正确 |
 
 ---
 
@@ -486,7 +638,7 @@ slime 的 `_build_flattened_tensor_data` 有一段关键注释：
 
 ### 10.3 三处最容易踩的坑
 
-1. **`in_place` + `flush_cache=True`** → 直接失败（`running_batch` 非空时）
+1. **`in_place` + `flush_cache=True`** → **静默跳过**（`is_fully_idle` 为 False 时整个 flush 不执行，无报错）
 2. **复用发送缓冲** → 静默权重污染，所有 barrier 都通过，只有训练曲线会歪
 3. **`rank_offset` 算错** → NCCL 挂住或给出诡异行为，而且报错位置离根因很远
 

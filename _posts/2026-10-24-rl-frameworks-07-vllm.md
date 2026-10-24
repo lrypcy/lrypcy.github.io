@@ -305,6 +305,45 @@ if weight_version is not None:
 
 （[`offline.py:25-60`](https://github.com/vllm-project/vllm/blob/2365177ddda7714502e4df7a1669cc79c0a4dfd0/vllm/entrypoints/rl/offline.py#L25-L60)）
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant T as 训练侧<br>WeightTransferTrainer
+    participant E as LLMEngine
+    participant W0 as Worker rank0
+    participant W1 as Worker rank1
+    participant P as 数据面<br>（NCCL / IPC）
+
+    Note over T,P: ① 初始化（一次性）
+    T->>E: POST /init_weight_transfer_engine
+    E->>W0: collective_rpc("init_weight_transfer_engine")
+    E->>W1: collective_rpc("init_weight_transfer_engine")
+    W0-->>T: 打开 rank-0 端点（双方进场）
+
+    Note over T,P: ② 每轮权重更新
+    T->>E: start_weight_update
+    E->>W0: collective_rpc("start_weight_update")
+    E->>W1: collective_rpc("start_weight_update")
+    Note over W0,W1: _weight_update_active = True<br>重复 start 直接 RuntimeError
+
+    T->>E: update_weights（1..N 次）
+    E->>W0: collective_rpc("update_weights")
+    E->>W1: collective_rpc("update_weights")
+    par 数据面并发传输
+        T->>P: 分片发送
+        P->>W0: 写入本地权重
+        P->>W1: 写入本地权重
+    end
+
+    T->>E: finish_weight_update
+    E->>W0: collective_rpc("finish_weight_update")
+    E->>W1: collective_rpc("finish_weight_update")
+    Note over W0,W1: _weight_update_active = False
+    T->>E: set_weight_version（可选）
+```
+
+**这张图里最值得盯的是那条 `par` 分支**：控制面走 `collective_rpc`（Ray/HTTP），数据面走 NCCL 或 IPC——**两者并发而非串行**。所以「`update_weights` 返回」不代表数据到位，它只代表控制面 RPC 返回。
+
 worker 侧的实现把这些状态收得很紧。`_start_weight_update` 里有一条硬检查：
 
 ```python
@@ -1048,6 +1087,28 @@ llm.wake_up(tags=["kv_cache"])
 **为什么这个顺序能省显存**：如果先 `wake_up()` 全部，那么「权重已恢复、KV 池已分配」
 和「传输引擎的接收缓冲/打包缓冲」会同时驻留，峰值 = 权重 + KV + 传输缓冲。
 先只恢复权重、传完再恢复 KV，就把峰值压到 max(权重 + 传输缓冲, KV)，而不是两者之和。
+
+```mermaid
+flowchart TB
+    subgraph naive["朴素顺序：峰值 = 权重 + KV + 传输缓冲"]
+        direction TB
+        A1["sleep(level=2)<br>权重与 KV 都不驻留"] --> A2["wake_up()<br>全部唤醒"]
+        A2 --> A3["权重 + KV + 传输缓冲<br>三者同时驻留 ← 峰值"]
+        A3 --> A4["传权重"]
+    end
+    subgraph sel["选择性唤醒：峰值 = max(权重+缓冲, KV)"]
+        direction TB
+        B1["sleep(level=2)"] --> B2["wake_up(tags=['weights'])<br>只恢复权重"]
+        B2 --> B3["权重 + 传输缓冲<br>KV 仍不驻留"]
+        B3 --> B4["传权重"]
+        B4 --> B5["wake_up(tags=['kv_cache'])<br>再恢复 KV"]
+    end
+    naive ~~~ sel
+```
+
+**关键在于两次唤醒之间的不交集**：`DEFERRABLE_TAGS = ("weights", "kv_cache")` 让 KV 可以独立延后，
+而 `runtime` / `cudagraph` 这些非延迟 tag 在第一次唤醒时就被无条件恢复（见 §9.1 第二层）。
+所以两次唤醒之间存在一个「权重在、KV 不在」的中间态——**这个中间态就是省下来的显存**。
 
 文档里的另一句必须注意：
 

@@ -61,46 +61,192 @@ Megatron 系列已经把并行机制讲透了。本文刻意**不重复**这些�
 
 ### 2.1 三层结构
 
-一份 JSONL 语料要变成一张卡上的一个 batch，中间隔三层：
+一份 JSONL 语料要变成一张卡上的一个 batch，中间隔三层，而**三层之间只靠一个整数 idx 通信**：
 
-```text
-JSONL / HF dataset
-   │  ① 索引：按 document + shuffle 索引做采样（不把全量读进内存）
-   ▼
-GPTDataset[idx]  →  一个长度为 seq_len 的 token 序列
-   │  ② 打包：把连续文档拼到恰好 seq_len，跨越边界的地方记 document_lengths
-   ▼
-按 DP rank 分配样本下标
-   │  ③ 分片：sampler 决定 idx 的分布
-   ▼
-micro-batch → 前向
+```mermaid
+flowchart LR
+    DS["JSONL / HF 语料"] -->|"① 混合：BlendedDataset<br>在 idx 空间查表"| IDX["全局 idx"]
+    IDX -->|"② 切分：sampler<br>按 m × dp 切窗口"| RIDX["rank r 的 idx 列表"]
+    RIDX -->|"③ 物化：GPTDataset.__getitem__<br>查 shuffle 索引 + 拼文档"| TOK["长度 seq_len 的 token"]
+    TOK --> MB["micro-batch → 前向"]
 ```
 
-三层的代码位置完全不同：① 在 `GPTDataset._query_document_sample_shuffle_indices`，② 在 `GPTDataset.__getitem__`，③ 在 `megatron/training/datasets/data_samplers.py` 的 sampler 构造里。
+三层的代码位置完全不同：
 
-### 2.2 第一层：按索引采样而不是预切
+| 层 | 职责 | 代码位置 |
+| --- | --- | --- |
+| ① 混合 | 多数据集按权重混合，**不搬数据**，只决定 idx 落在哪个数据集 | `BlendedMegatronDatasetBuilder` |
+| ② 切分 | 决定「哪个 rank 读哪几个 idx」 | `MegatronPretrainingSampler.__iter__` |
+| ③ 物化 | idx → token 序列（含文档边界） | `GPTDataset.__getitem__` |
 
-`GPTDataset.__getitem__` 的第一件事是查索引，不是读缓存：
+**这个「只传整数」的设计是这个数据管线最重要的性质**：任一层都可以单独替换（换成 HF dataset、换成自定义 sampler），因为接口就是一个 `int`。
+
+### 2.2 第二层是真正的分片点：`MegatronPretrainingSampler.__iter__`
+
+分片不在 DataLoader 里做，而在这个 sampler 的迭代器里：
+
+```python
+def __iter__(self):
+    batch = []
+    # Last batch will be dropped if drop_last is not set False
+    for idx in range(self.consumed_samples, self.total_samples):
+        batch.append(idx)
+        if len(batch) == self.micro_batch_times_data_parallel_size:
+            start_idx, end_idx = self.get_start_end_idx()
+            yield batch[start_idx:end_idx]
+            batch = []
+
+    # Check the last partial batch and see drop_last is set
+    if len(batch) > 0 and not self.drop_last:
+        start_idx, end_idx = self.get_start_end_idx()
+        yield batch[start_idx:end_idx]
+```
+
+其中 `get_start_end_idx` 只有两行：
+
+```python
+start_idx = self.data_parallel_rank * self.micro_batch_size
+end_idx = start_idx + self.micro_batch_size
+```
+
+**读法**：这是**一条全局 idx 流，每凑满 `m × dp` 个就切成 `dp` 片，第 `r` 片给 rank `r`**。所以：
+
+$$
+\text{idx}(t, k, r) = tG + k(m \cdot dp) + r m + [0, m)
+$$
+
+其中 $$t$$ 是 iteration、$$k$$ 是 microbatch 序号、$$G$$ 是 global batch size。
+
+**注意 sampler 完全不知道「一个 step 有几个 microbatch」**——它拿不到 `global_batch_size`。这个量被拆成独立的 `num_microbatches` 在别处维护（见 2.4）。
+
+### 2.3 一个具体例子：G=32, m=2, dp=4
+
+代入：每 rank 每 step 样本数 $$G/dp = 8$$，每 rank 每 step microbatch 数 $$G/(m \cdot dp) = 4$$。
+
+step 0（`base = 0`）的 idx 分配：
+
+| microbatch $$k$$ | 全局窗口 $$[k md, (k+1)md)$$ | rank 0 | rank 1 | rank 2 | rank 3 |
+| --- | --- | --- | --- | --- | --- |
+| 0 | `[0, 8)` | 0, 1 | 2, 3 | 4, 5 | 6, 7 |
+| 1 | `[8, 16)` | 8, 9 | 10, 11 | 12, 13 | 14, 15 |
+| 2 | `[16, 24)` | 16, 17 | 18, 19 | 20, 21 | 22, 23 |
+| 3 | `[24, 32)` | 24, 25 | 26, 27 | 28, 29 | 30, 31 |
+
+按 rank 汇总（这是 rank 在一次 `for mb in range(num_microbatches)` 里依次拿到的四个 list）：
+
+| DP rank | 本 step 的 8 个 idx（按 microbatch 顺序） |
+| --- | --- |
+| 0 | `[0,1] [8,9] [16,17] [24,25]` |
+| 1 | `[2,3] [10,11] [18,19] [26,27]` |
+| 2 | `[4,5] [12,13] [20,21] [28,29]` |
+| 3 | `[6,7] [14,15] [22,23] [30,31]` |
+
+**这张表能直接回答一个常见困惑**：为什么 rank 0 拿到的是 `0,1` 而不是连续的 `0..7`？因为 DP 切分的语义是「**同一 microbatch 内**按 rank 均分」，而不是「按 rank 连续分段」。**这意味着任意两个 rank 在同一 microbatch 看到的样本天然不同**——这正是 DP 的定义。
+
+### 2.4 `consumed_samples` 游标：一个跨三处维护的隐式状态
+
+续训的正确性全靠这个游标，而它在三处被读写：
+
+**（a）每 step 推进**（`training.py` L3936-L3942）：
+
+```python
+batch_size = (
+    _dp_world_size() * args.micro_batch_size * get_num_microbatches()
+)
+iteration_sequences = batch_size
+# Update consumed samples (always means sequences now)
+args.consumed_train_samples += iteration_sequences
+```
+
+**（b）按 iteration 反推**（`training.py` L4523-L4528）：
+
+```python
+if args.iteration > 0 and args.consumed_train_samples == 0:
+    assert (
+        args.train_samples is None
+    ), 'Only backward compatiblity support for iteration-based training'
+
+    args.consumed_train_samples = args.iteration * args.global_batch_size
+```
+
+**（c）载入 checkpoint 时重算 microbatch 数**（`checkpointing.py` L2499-L2501）：
+
+```python
+args.consumed_train_samples = getattr(checkpoint_args, 'consumed_train_samples', 0)
+...
+update_num_microbatches(consumed_samples=args.consumed_train_samples, verbose=True)
+```
+
+由此得到恒等式：
+
+$$
+G = m \cdot dp \cdot n_{\rm mb}, \qquad
+\text{consumed\_samples}(t) = t \cdot G, \qquad
+\text{窗口}(t) = [tG,\ (t+1)G)
+$$
+
+**这里有一个没有任何机制保证的一致性约束**：(b) 里的 `assert` 只校验了「`consumed_train_samples` 为 0 时按 `iteration × global_batch_size` 反推」。如果 checkpoint 里的 `consumed_train_samples` 与 `iteration × G` **对不上**（例如中途改过 `global_batch_size`），数据会被重复读或跳过，而**训练不会报错**——只是收敛曲线莫名其妙地变差。
+
+这是 Megatron 数据管线里最隐蔽的一类 bug，也是为什么 `rl-variables-in-frameworks` 第 10 节把「改了并行度必须验 loss 不变」列为必查项。
+
+### 2.5 `num_microbatches` 在不整除时怎么办
+
+$$G$$ 与 $$m \cdot dp$$ 不一定整除（例如 $$G = 100$$、$$m \cdot dp = 24$$）。`update_num_microbatches` 的处理是**向上取整再标记尾批**：
+
+$$
+n_{\rm mb} = \left\lceil \frac{G}{m \cdot dp} \right\rceil
+$$
+
+尾批不足时由 `GPTDataset` 的 `idx is None` 分支补 padding 样本，并把 loss mask 全清零：
 
 ```python
 if idx is None:
     # Batch padding sequence so the index does not matter
     text, _, document_lengths = self._query_document_sample_shuffle_indices(0)
-else:
-    text, _, document_lengths = self._query_document_sample_shuffle_indices(idx)
-```
-
-`idx is None` 是一个专门为**流水线尾部的 padding 样本**留的分支：当 micro-batch 不足以填满时，Megatron 会用 `None` 索引取一条padding 样本并把 loss mask 全清零：
-
-```python
+...
 # Batch padding sequence so we mask the loss
 if idx is None:
     loss_mask = torch.zeros_like(loss_mask)
 ```
 
-这个设计意味着**padding 样本也走完整的 tokenize 与 mask 构造流程**，只是最后把 loss 抹掉。好处是形状与真实样本完全一致，不需要为 padding 单独写一条前向路径。
+**padding 样本走完整的 tokenize 与 mask 构造流程**，只是最后把 loss 抹掉。这个设计的好处是形状与真实样本完全一致，不需要为 padding 写单独的前向路径；**代价是 padding 样本仍然消耗一次完整的前向+反向算力**（梯度为零但仍要算），所以 `G` 应该尽量被 `m · dp` 整除。
 
-### 2.3 第二层：tab 与 label 的错位
+### 2.6 第三层：`idx → token` 与文档边界
+
+`GPTDataset.__getitem__` 拿到 idx 后做四件事，其中第 2 步的**错位**最容易被忽略：
+
+```python
+text = torch.from_numpy(text).long()
+if self.config.add_extra_token_to_sequence:
+    tokens = text[:-1].contiguous()
+    labels = text[1:].contiguous()
+else:
+    tokens = text
+    labels = torch.roll(text, shifts=-1, dims=0)
+    labels[-1] = self._pad_token_id
+```
+
+| 分支 | 样本长度 | 语料消耗 | 说明 |
+| --- | --- | --- | --- |
+| `add_extra_token_to_sequence=True` | `seq_len + 1` | **`seq_len + 1`** | 多取一个 token 供错位 |
+| `=False` | `seq_len` | `seq_len` | 用 `roll` 循环移位，末位补 pad |
+
+**这个 `+1` 直接决定了「一条样本消耗多少语料」**。它对 `drop_last` 与总样本数的计算有影响，是数据管线里经常被忽略的一处差一。
+
+跨文档的边界记在 `document_lengths` 里，当 `inter_document_masking` 打开时转成 `cu_seqlens`。转换前必须减一：
+
+```python
+if self.config.add_extra_token_to_sequence:
+    document_lengths[-1] -= 1
+    if document_lengths[-1] == 0:
+        document_lengths.pop()
+# If the sample was padded (e.g., the last validation sample),
+# fold the padding into the last document so cu_seqlens[-1]
+# equals sequence_length.
+```
+
+注释说明了理由：取的是 `seq_len + 1` 个 token，多出来的那个被追加到最后一个文档里（用来造 label），所以算 `cu_seqlens` 之前必须减掉。**这是「两个子系统各自正确、接口处差一」的典型例子**，只能靠注释守。
+
 
 样本拿到之后的第二件事是造 `tokens` / `labels` 的错位：
 
@@ -308,6 +454,77 @@ $$\underbrace{q_1 q_2 q_3 q_4}_{\text{group 1}},\, k_1,\, v_1,\, \underbrace{q_5
 
 这个布局**不是任何一个简单维度上的 concat**，它要求先 reshape 再 transpose 再 flatten。这就是为什么每个模型族都需要自己的转换器，而不能用一个通用规则解决。
 
+### 6.1.1 把排列算清楚：32 头 / 8 组 / head_dim=128
+
+设 $$n_{\rm heads}=32$$、$$n_{\rm query\_groups}=8$$、$$d_{\rm head}=128$$、`hidden = 32 × 128 = 4096`。则：
+
+- `heads_per_group = 32 / 8 = 4`
+- Q 总行数 $$32 \times 128 = 4096$$；K/V 各 $$8 \times 128 = 1024$$
+- Megatron `linear_qkv` 输出维 $$= 4096 + 2 \times 1024 = 6144$$
+- 每个 group 占 $$4 \times 128 + 128 + 128 = 768$$ 行，$$8 \times 768 = 6144$$ 对得上
+
+HF 侧三个独立矩阵：
+
+| 矩阵 | 形状 | 行区间语义 |
+| --- | --- | --- |
+| `q_proj.weight` | `(4096, 4096)` | 32 个头，每头 128 行 |
+| `k_proj.weight` | `(1024, 4096)` | 8 个 KV 头，每头 128 行 |
+| `v_proj.weight` | `(1024, 4096)` | 8 个 KV 头，每头 128 行 |
+
+合并后 `linear_qkv` 的 6144 行排列：
+
+| group $$g$$ | 行区间 `[g*768, (g+1)*768)` | 内容（按子块） |
+| --- | --- | --- |
+| 0 | `[0, 768)` | q 头 0-3（512 行）│ k 头 0（128）│ v 头 0（128） |
+| 1 | `[768, 1536)` | q 头 4-7 │ k 头 1 │ v 头 1 |
+| 2 | `[1536, 2304)` | q 头 8-11 │ k 头 2 │ v 头 2 |
+| 3 | `[2304, 3072)` | q 头 12-15 │ k 头 3 │ v 头 3 |
+| 4 | `[3072, 3840)` | q 头 16-19 │ k 头 4 │ v 头 4 |
+| 5 | `[3840, 4608)` | q 头 20-23 │ k 头 5 │ v 头 5 |
+| 6 | `[4608, 5376)` | q 头 24-27 │ k 头 6 │ v 头 6 |
+| 7 | `[5376, 6144)` | q 头 28-31 │ k 头 7 │ v 头 7 |
+
+**逐行映射公式**（写转换器或自检时可直接用）：
+
+```text
+对 Megatron linear_qkv 的第 r 行：
+    g   = r // 768
+    off = r %  768
+    if   off < 512:   来源 = q_proj 第 (g*512 + off) 行          # 4 个 q 头
+    elif off < 640:   来源 = k_proj 第 (g*128 + (off-512)) 行
+    else:             来源 = v_proj 第 (g*128 + (off-640)) 行
+```
+
+举两个例子自检：
+
+- Megatron 第 1000 行 → `g = 1000//768 = 1`、`off = 232 < 512` → `q_proj` 第 `1×512 + 232 = 744` 行
+- Megatron 第 1450 行 → `g = 1`、`off = 682`、`682 − 640 = 42` → `v_proj` 第 `1×128 + 42 = 170` 行
+
+```mermaid
+flowchart LR
+    subgraph HF["HF 侧：3 个独立矩阵"]
+      Q["q_proj (4096, 4096)<br>q0 q1 ... q31"]
+      K["k_proj (1024, 4096)<br>k0 ... k7"]
+      V["v_proj (1024, 4096)<br>v0 ... v7"]
+    end
+    subgraph MG["Megatron linear_qkv (6144, 4096)"]
+      G0["group0 行 0-767<br>q0 q1 q2 q3 + k0 + v0"]
+      G1["group1 行 768-1535<br>q4 q5 q6 q7 + k1 + v1"]
+      G7["group7 行 5376-6143<br>q28 q29 q30 q31 + k7 + v7"]
+    end
+    Q -->|"行 g*512 .. g*512+511"| G0
+    K -->|"行 g*128 .. g*128+127"| G0
+    V -->|"行 g*128 .. g*128+127"| G0
+    Q --> G1
+    K --> G1
+    V --> G1
+    Q --> G7
+    K --> G7
+    V --> G7
+```
+
+**这张表的实践价值**：验证转换器时不需要跑前向，**拿几个行号按公式反算来源、再直接比对张量即可**。这比端到端跑一遍快两个数量级，而且能定位到具体是哪一行的交错写错了。
+
 ### 6.2 gate 让事情更复杂
 
 `QKVGMapping` 处理的是带额外 scalar gate（`g_proj`）的变体。文档说明 Megatron 一侧有两种布局：
@@ -332,22 +549,125 @@ $$\underbrace{q_1 q_2 q_3 q_4}_{\text{group 1}},\, k_1,\, v_1,\, \underbrace{q_5
 
 ## 7. 自动切分的三个静默边界
 
-### 7.1 边界一：`num_query_groups` 不能被 TP 整除
+### 7.1 边界一：`num_query_groups` 与 TP 必须「整除或为其因数」
 
-GQA 模型的 KV 头数通常很小（Llama-3-8B 是 8、Qwen2.5-7B 是 4、更小的模型是 1 或 2）。而 TP 通常是 8。
+GQA 模型的 KV 头数通常很小（Llama-3-8B 是 8、Qwen2.5-7B 是 4、更小的模型是 1 或 2）。Megatron 对此有一条**入学考试**：
 
-- $$n_{\rm query\_groups} = 8$$、TP = 8：每卡 1 个 KV 头，正好
-- $$n_{\rm query\_groups} = 4$$、TP = 8：**每卡 0.5 个 KV 头**
-- $$n_{\rm query\_groups} = 2$$、TP = 8：**每卡 0.25 个 KV 头**
+```python
+if (
+    self.num_query_groups % self.tensor_model_parallel_size != 0
+    and self.tensor_model_parallel_size % self.num_query_groups != 0
+):
+    raise ValueError(
+        f"num_query_groups ({self.num_query_groups}) must be a multiple or divisor of "
+        f"tensor_model_parallel_size ({self.tensor_model_parallel_size})."
+    )
+```
 
-Megatron 的 `ColumnParallelLinear` 在 QKV 上切分时，切的是「输出维」，而输出维的构成是 $$n_{\rm heads} \cdot d_{\rm head} + 2 \cdot n_{\rm query\_groups} \cdot d_{\rm head}$$。当 TP 大于 $$n_{\rm query\_groups}$$ 时，一种做法是让每个 KV 头被复制到多个 rank 上（**KV 头重复**），另一种是直接报错。
+**两个方向任一成立即可**：
 
-**问题在于「重复」这件事不会报错**。它会带来两个后果：
+$$
+n_{\rm qg} \bmod tp = 0 \quad \text{或} \quad tp \bmod n_{\rm qg} = 0
+$$
 
-1. 显存里 KV 头被重复存放，TP 越大冗余越多
-2. **推理端（SGLang / vLLM）如果按「KV 头数 = 全局头数 / TP」去理解，恢复出来的布局会与训练端不同**
+注意这是 `raise ValueError` 而不是 `assert`，所以 `python -O` 也拦得住。以 $$n_{\rm qg} = 8$$ 为例：
 
-第二条正是 RL 训推不一致的一个真实来源。排查时的判据是：**看 SGLang 侧收到的 KV 权重是否在多个 rank 间完全相同**。
+| TP | 关系 | 结论 | 每 rank 的 KV 组数 | KV 复制倍数 |
+| --- | --- | --- | --- | --- |
+| 1 / 2 / 4 / 8 | $$8 \bmod tp = 0$$ | 均分 | 8 / 4 / 2 / 1 | 1 |
+| 16 / 32 / 64 | $$tp \bmod 8 = 0$$ | **复制** | 1 | 2 / 4 / 8 |
+| 3 / 5 / 6 / 7 / 12 | 都不成立 | **报错** | — | — |
+
+### 7.1.1 路径 A（$$n_{\rm qg} \ge tp$$）：直接均分
+
+```python
+else:
+    # When num_kv_heads >= tp_size, each TP rank produces activations for
+    # (num_kv_heads / tp_size) kv_heads and (num_q_heads / tp_size) q_heads.
+    self.num_query_groups_per_partition = divide(self.config.num_query_groups, world_size)
+    self.num_attention_heads_per_partition = divide(
+        self.config.num_attention_heads, world_size
+    )
+```
+
+`divide()` 内部是 `assert n % d == 0`——6.1 已经保证过，这里不会炸。
+
+### 7.1.2 路径 B（$$n_{\rm qg} < tp$$）：用通信换「无除尽约束」
+
+这条路径才是真正要小心的。源码先说清楚为什么不能简单切：
+
+```python
+if self.config.num_query_groups < world_size:
+    # When num_kv_heads < tp_size, each TP rank (post AG) initially produces
+    # activations for 1 kv_head and (num_q_heads / num_kv_heads) q_heads.
+    # We then pull out the appropriate (num_q_heads / tp_size) q_heads.
+    self.num_query_groups_per_partition = 1
+    self.num_attention_heads_per_partition = divide(
+        self.config.num_attention_heads, self.config.num_query_groups
+    )
+```
+
+**注意 `num_attention_heads_per_partition` 被设成 $$n_h / n_{\rm qg}$$（一个完整的组），不是 $$n_h / tp$$**。
+
+前向里靠一次 all-gather 把局面救回来：
+
+```python
+if self.config.num_query_groups < self.world_size:
+    # Note that weights are interleaved in the following manner:
+    # q1 q2 k1 v1 | q3 q4 k2 v2 | q5 q6 k3 v3 | ...
+    # When tp_size > num_kv_heads, we split "q1 q2 k1 v1" over multiple
+    # ranks, so a rank does not have a clean partitioning of just the q_heads
+    # it needs. Instead, we perform the following steps:
+    # 1. Assemble the full "q1 q2 k1 v1 | q3 q4 k2 v2 | ..."
+    #    through an AG.
+    # 2. Pull out the right slice (e.g., "q1 q2 k1 v1" or "q3 q4 k2 v2").
+    # 3. Split q_heads (e.g., q1, q2), k_heads (e.g., k1), v_heads (e.g., v1).
+    # 4. Further index into query to get only the q_heads that this rank is
+    #    responsible for (e.g., q1).
+    mixed_qkv = all_gather_last_dim_from_tensor_parallel_region(
+        mixed_qkv, group=self.pg_collection.tp
+    )
+    idx = get_pg_rank(self.pg_collection.tp) // (
+        self.world_size // self.config.num_query_groups
+    )
+    size = mixed_qkv.size()[-1] // self.config.num_query_groups
+    mixed_qkv = mixed_qkv[:, :, idx * size : (idx + 1) * size]
+```
+
+`idx = tp_rank // (tp_size / n_qg)` 的含义是：**每 $$tp/n_{\rm qg}$$ 个 rank 共享同一个 KV 组**（它们手上的 KV 权重是复制品），AG 之后各自切出自己那一段 q。
+
+### 7.1.3 这条路径的真实代价：算一遍
+
+设 $$n_{\rm qg} = 8$$、$$tp = 32$$、$$d_{\rm head} = 128$$、`hidden = 4096`，序列长度 $$s = 8192$$、batch = 1、bf16。
+
+一次 AG 搬运的是**一个完整组的 qkv 输出**：
+
+$$
+\text{宽度} = \underbrace{4 \times 128}_{q} + \underbrace{128}_{k} + \underbrace{128}_{v} = 768
+$$
+
+$$
+\text{每层每 microbatch 流量} = 8192 \times 768 \times 4096 \times 2\ \text{B} \approx 48\ \text{GiB}
+$$
+
+**32 层就是约 1.5 TiB**。这就是文档里「$$tp > n_{\rm kv\_heads}$$ 时别开」的真正含义——**复制带来的显存节省，被 AG 的气泡和流量全吃光**。
+
+### 7.1.4 还有一个更隐蔽的坑：`num_query_groups` 被临时改写
+
+```python
+if self.config.num_query_groups < world_size:
+    # TE throws an assertion error if num_kv_heads / num_query_groups
+    # is not divisible by TP size.
+    # TODO(rwaleffe/dnarayanan): Clean this up eventually.
+    tmp_config = copy.deepcopy(self.config)
+    tmp_config.num_query_groups = world_size
+```
+
+**为了让 Transformer Engine 的 fused attention 不 assert，代码临时把 `num_query_groups` 改写成 `world_size`**。
+
+后果：在 $$n_{\rm qg} < tp$$ 时，**「配置里写的 ng」与「attention 实现看到的 ng」不是同一个数**。任何基于 `config.num_query_groups` 反推 shape 的外部代码（权重转换脚本、推理引擎的权重加载器）都会拿到错的值。
+
+**这一条对 RL 的影响是直接的**：训练端按 `ng=4` 造张量，SGLang 按 `ng=8` 恢复布局，于是 KV 权重在推理侧的排布与训练端不同——而两边都不会报错。
 
 ### 7.2 边界二：`sequence_parallel` 对激活切分的隐含要求
 
