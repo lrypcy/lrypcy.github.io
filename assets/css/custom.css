@@ -2101,16 +2101,18 @@ html.rail-off .rail-head-title { display: none; }
 .cat-nav-card[data-desc]::after {
   content: attr(data-desc);
   position: absolute;
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: calc(100% + 10px);
-  transform: translateX(-50%);
+  margin: 0 auto;
+  width: max-content;
+  max-width: 280px;
   background: #1e293b;
   color: #fff;
   font-size: 12px;
   line-height: 1.7;
   text-align: center;
   white-space: normal;
-  max-width: 260px;
   padding: 8px 12px;
   border-radius: 8px;
   box-shadow: var(--shadow-md);
