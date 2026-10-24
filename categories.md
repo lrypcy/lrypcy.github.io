@@ -5,6 +5,10 @@ no_sidebar: true
 ---
 {% assign graph = site.data.knowledge_graph %}
 {% capture known %}{% for sec in site.data.catalog.sections %}{% for c in sec.categories %};{{ c }};{% endfor %}{% endfor %}{% endcapture %}
+{%- comment -%} 单分类页「上一个 / 下一个」用的全站分类顺序：catalog 分层在前，兜底分类殿后 {%- endcomment -%}
+{%- assign cat_order = '' | split: ',' -%}
+{%- for sec in site.data.catalog.sections -%}{%- for cname in sec.categories -%}{%- if site.categories[cname].size > 0 -%}{%- assign cat_order = cat_order | push: cname -%}{%- endif -%}{%- endfor -%}{%- endfor -%}
+{%- for cat in site.categories -%}{%- assign k = cat[0] | prepend: ';' | append: ';' -%}{%- unless known contains k -%}{%- assign cat_order = cat_order | push: cat[0] -%}{%- endunless -%}{%- endfor -%}
 <!-- 浏览态：全站分类一览（进入单分类页时整体隐藏） -->
 <div id="cat-home">
 <p class="page-desc">共 {{ site.categories | size }} 个分类、{{ site.posts | size }} 篇文章。<b>点击任意分类</b>，进入按系列归拢的独立页面，地址栏带上 <code>?cat=</code> 参数，可直接分享。</p>
@@ -17,9 +21,9 @@ no_sidebar: true
       {% for cname in sec.categories %}
       {%- assign cnt = site.categories[cname].size | default: 0 -%}
       {%- if cnt > 0 -%}
-      {%- assign icon = '📁' -%}{%- assign color = '#94a3b8' -%}
-      {%- for c in graph.categories -%}{%- if c.name == cname -%}{%- assign icon = c.icon -%}{%- assign color = c.color -%}{%- endif -%}{%- endfor -%}
-      <a class="category-card cat-nav-card" href="/categories/?cat={{ cname | url_encode }}" data-cat="{{ cname }}" style="--cat-color: {{ color }}">
+      {%- assign icon = '📁' -%}{%- assign color = '#94a3b8' -%}{%- assign cdesc = '' -%}
+      {%- for c in graph.categories -%}{%- if c.name == cname -%}{%- assign icon = c.icon -%}{%- assign color = c.color -%}{%- assign cdesc = c.desc -%}{%- endif -%}{%- endfor -%}
+      <a class="category-card cat-nav-card" href="/categories/?cat={{ cname | url_encode }}" data-cat="{{ cname }}" data-desc="{{ cdesc | strip }}" style="--cat-color: {{ color }}">
         <span class="category-card-icon">{{ icon }}</span>
         <h3 class="category-card-name">{{ cname }}</h3>
         <span class="category-card-count">{{ cnt }} 篇</span>
@@ -106,6 +110,19 @@ no_sidebar: true
           </ol>
         </div>
         {%- endif -%}
+
+        {%- assign myidx = 0 -%}
+        {%- for o in cat_order -%}{%- if o == c.name -%}{%- assign myidx = forloop.index0 -%}{%- endif -%}{%- endfor -%}
+        {%- assign pn_prev = '' -%}{%- assign pn_next = '' -%}
+        {%- if myidx > 0 -%}{%- assign pn_prev = cat_order[myidx | minus: 1] -%}{%- endif -%}
+        {%- assign pn_last = cat_order.size | minus: 1 -%}
+        {%- if myidx < pn_last -%}{%- assign pn_next = cat_order[myidx | plus: 1] -%}{%- endif -%}
+        {%- if pn_prev != '' or pn_next != '' -%}
+        <nav class="cat-pn">
+          {%- if pn_prev != '' -%}<a class="cat-pn-link prev" href="/categories/?cat={{ pn_prev | url_encode }}" data-pn="{{ pn_prev }}">← {{ pn_prev }}</a>{%- else -%}<span></span>{%- endif -%}
+          {%- if pn_next != '' -%}<a class="cat-pn-link next" href="/categories/?cat={{ pn_next | url_encode }}" data-pn="{{ pn_next }}">{{ pn_next }} →</a>{%- else -%}<span></span>{%- endif -%}
+        </nav>
+        {%- endif -%}
       </div>
       {% endfor %}
 
@@ -132,6 +149,19 @@ no_sidebar: true
             {% endfor %}
           </ol>
         </div>
+
+        {%- assign myidx = 0 -%}
+        {%- for o in cat_order -%}{%- if o == cname -%}{%- assign myidx = forloop.index0 -%}{%- endif -%}{%- endfor -%}
+        {%- assign pn_prev = '' -%}{%- assign pn_next = '' -%}
+        {%- if myidx > 0 -%}{%- assign pn_prev = cat_order[myidx | minus: 1] -%}{%- endif -%}
+        {%- assign pn_last = cat_order.size | minus: 1 -%}
+        {%- if myidx < pn_last -%}{%- assign pn_next = cat_order[myidx | plus: 1] -%}{%- endif -%}
+        {%- if pn_prev != '' or pn_next != '' -%}
+        <nav class="cat-pn">
+          {%- if pn_prev != '' -%}<a class="cat-pn-link prev" href="/categories/?cat={{ pn_prev | url_encode }}" data-pn="{{ pn_prev }}">← {{ pn_prev }}</a>{%- else -%}<span></span>{%- endif -%}
+          {%- if pn_next != '' -%}<a class="cat-pn-link next" href="/categories/?cat={{ pn_next | url_encode }}" data-pn="{{ pn_next }}">{{ pn_next }} →</a>{%- else -%}<span></span>{%- endif -%}
+        </nav>
+        {%- endif -%}
       </div>
       {%- endunless -%}
       {% endfor %}
@@ -214,6 +244,14 @@ no_sidebar: true
   });
 
   if (back) { back.addEventListener('click', close); }
+
+  // 单分类页底部的「上一个 / 下一个分类」
+  [].slice.call(document.querySelectorAll('#cat-panels .cat-pn-link')).forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      open(a.getAttribute('data-pn'), true);
+    });
+  });
 
   window.addEventListener('hashchange', function () {
     var cat = currentCat();

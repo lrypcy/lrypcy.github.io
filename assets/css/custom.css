@@ -2096,7 +2096,58 @@ html.rail-off .rail-head-title { display: none; }
   transform: none;
 }
 .cat-nav-card.is-active .category-card-name { color: var(--primary); }
+/* 卡片 hover 显示分类一句话简介（knowledge_graph 的 desc） */
+.cat-nav-card { position: relative; }
+.cat-nav-card[data-desc]::after {
+  content: attr(data-desc);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+  white-space: normal;
+  max-width: 260px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s;
+  z-index: 30;
+}
+.cat-nav-card[data-desc]:hover::after { opacity: 1; }
 .cat-detail { margin-top: 30px; }
+/* 单分类页底部：上一个 / 下一个分类 */
+.cat-pn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 32px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--border);
+}
+.cat-pn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-light);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 14px;
+  transition: var(--transition);
+}
+.cat-pn-link:hover {
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: rgba(59, 130, 246, 0.35);
+}
 .cat-detail[hidden] { display: none; }
 .cat-detail-bar {
   display: flex;
