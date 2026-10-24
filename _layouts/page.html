@@ -2,7 +2,7 @@
 layout: default
 ---
 <div class="post-block page">
-  <h1 class="post-title">{{ page.title }}</h1>
+  {% unless page.no_title %}<h1 class="post-title">{{ page.title }}</h1>{% endunless %}
   <div class="post-body">
     {{ content }}
   </div>

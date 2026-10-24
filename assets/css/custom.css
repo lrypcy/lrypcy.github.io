@@ -281,63 +281,6 @@ html.rail-off .rail-head-title { display: none; }
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 16px;
 }
-.category-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  text-decoration: none;
-  transition: var(--transition);
-  box-shadow: var(--shadow);
-}
-.category-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-hover);
-  border-color: rgba(59, 130, 246, 0.3);
-  background: linear-gradient(180deg, #fff, var(--primary-soft));
-}
-.category-card-icon {
-  font-size: 22px;
-  flex-shrink: 0;
-  width: 26px;
-  text-align: center;
-}
-.category-card-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.category-card:hover .category-card-name { color: var(--primary); }
-.category-card-count {
-  font-size: 12px;
-  color: var(--text-light);
-  background: var(--bg);
-  padding: 2px 10px;
-  border-radius: 20px;
-  flex-shrink: 0;
-}
-.category-card:hover .category-card-count {
-  background: var(--primary-soft);
-  color: var(--primary);
-}
-.category-card.is-active {
-  border-color: rgba(59, 130, 246, 0.5);
-  background: rgba(59, 130, 246, 0.10);
-  box-shadow: var(--shadow-hover);
-}
-.category-card.is-active .category-card-name,
-.category-card.is-active .category-card-count {
-  color: var(--primary);
-}
 .category-show-all {
   display: block;
   margin-top: 14px;
@@ -751,8 +694,6 @@ html.rail-off .rail-head-title { display: none; }
   .tag-item { background: var(--bg); }
   .tag-item:hover { background: var(--card-bg); }
   .post-card:hover { border-color: rgba(59, 130, 246, 0.5); }
-  .category-card:hover { background: linear-gradient(180deg, var(--card-bg), #1b2a45); }
-  .category-card-count { background: var(--bg); }
   .page-post-detail .post-body { color: var(--text); }
   .page-post-detail .post-body code { color: var(--primary-light); }
 }
@@ -2075,54 +2016,106 @@ html.rail-off .rail-head-title { display: none; }
 }
 .series-toggle:hover { background: var(--primary-soft); }
 
-/* ---------- 分类页：先卡片、后详情 ---------- */
+/* ---------- 文章页 · 目录树：紧凑分类行 ---------- */
 .page-desc { font-size: 13.5px; color: var(--text-light); line-height: 1.85; margin: 0 0 18px; }
 .page-desc b { color: var(--text); }
-.cat-nav-card {
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-}
-/* 整卡是 <a>，别吃 .post-body a 的虚线下划线 */
-.post-body a.cat-nav-card { border-bottom: none; }
-.category-card.cat-nav-card:hover {
-  transform: translateY(-2px);
+.cat-detail { margin-top: 30px; }
+.cat-tree { display: flex; flex-direction: column; gap: 8px; }
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 18px;
   background: var(--card-bg);
-  border-color: rgba(59, 130, 246, 0.28);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-decoration: none;
+  transition: var(--transition);
 }
-.cat-nav-card.is-active {
-  border-color: rgba(59, 130, 246, 0.45);
+/* 整行是 <a>，别吃 .post-body a 的虚线下划线 */
+.post-body a.cat-row { border-bottom: none; }
+.cat-row:hover {
   background: var(--primary-soft);
-  box-shadow: var(--shadow-sm);
-  transform: none;
+  border-color: rgba(59, 130, 246, 0.35);
 }
-.cat-nav-card.is-active .category-card-name { color: var(--primary); }
-/* 卡片 hover 显示分类一句话简介（knowledge_graph 的 desc） */
-.cat-nav-card { position: relative; }
-.cat-nav-card[data-desc]::after {
-  content: attr(data-desc);
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(100% + 10px);
-  margin: 0 auto;
-  width: max-content;
-  max-width: 280px;
-  background: #1e293b;
-  color: #fff;
-  font-size: 12px;
-  line-height: 1.7;
+.cat-row:hover .cat-row-name { color: var(--primary); }
+.cat-row-icon {
+  font-size: 18px;
+  width: 24px;
   text-align: center;
-  white-space: normal;
+  flex-shrink: 0;
+}
+.cat-row-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+  transition: var(--transition);
+}
+.cat-row-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cat-row-meta {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-light);
+  background: var(--bg);
+  padding: 3px 12px;
+  border-radius: 20px;
+  transition: var(--transition);
+}
+.cat-row:hover .cat-row-meta { color: var(--primary); background: var(--card-bg); }
+@media (max-width: 700px) {
+  .cat-row-desc { display: none; }
+}
+/* ---------- 文章页 · 归档 ---------- */
+.archives .archive-year {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 26px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.archives .archive-year:first-child { margin-top: 0; }
+.archives .archive-year span {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-light);
+}
+.archives .archive-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.archives .archive-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
   padding: 8px 12px;
   border-radius: 8px;
-  box-shadow: var(--shadow-md);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.18s;
-  z-index: 30;
+  transition: background 0.15s;
 }
-.cat-nav-card[data-desc]:hover::after { opacity: 1; }
-.cat-detail { margin-top: 30px; }
+.archives .archive-list li:hover { background: var(--primary-soft); }
+.archives .archive-date {
+  flex-shrink: 0;
+  width: 44px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  color: var(--text-light);
+}
+.archives .archive-list a {
+  font-size: 14.5px;
+  color: var(--text);
+  border-bottom: none;
+  transition: var(--transition);
+}
+.archives .archive-list a:hover { color: var(--primary); }
 /* 单分类页底部：上一个 / 下一个分类 */
 .cat-pn {
   display: flex;
@@ -2775,7 +2768,6 @@ html.rail-off .rail-toggle { padding: 0; width: 26px; justify-content: center; }
 /* 响应式：窄屏收掉左栏（顶部导航的「分类」页承担入口） */
 @media (max-width: 768px) {
   .category-grid { grid-template-columns: repeat(2, 1fr); }
-  .category-card-name { white-space: normal; }
 }
 @media (max-width: 480px) {
   .category-grid { grid-template-columns: 1fr; }

@@ -2,6 +2,7 @@
 layout: page
 title: 文章
 no_sidebar: true
+no_title: true
 ---
 {% capture known %}{% for sec in site.data.catalog.sections %}{% for c in sec.categories %};{{ c }};{% endfor %}{% endfor %}{% endcapture %}
 {%- comment -%} 单分类页「上一个 / 下一个」用的全站分类顺序：catalog 分层在前，兜底分类殿后 {%- endcomment -%}
@@ -28,16 +29,18 @@ no_sidebar: true
   <div id="cat-nav">
     {% for sec in site.data.catalog.sections %}
     <h3 class="cat-sec-title">{{ sec.name }}<em>{{ sec.hint }}</em></h3>
-    <div class="category-grid">
+    <div class="cat-tree">
       {% for cname in sec.categories %}
       {%- assign cnt = site.categories[cname].size | default: 0 -%}
       {%- if cnt > 0 -%}
-      {%- assign icon = '📁' -%}{%- assign color = '#94a3b8' -%}{%- assign cdesc = '' -%}
-      {%- for c in graph.categories -%}{%- if c.name == cname -%}{%- assign icon = c.icon -%}{%- assign color = c.color -%}{%- assign cdesc = c.desc -%}{%- endif -%}{%- endfor -%}
-      <a class="category-card cat-nav-card" href="/posts/?cat={{ cname | url_encode }}" data-cat="{{ cname }}" data-desc="{{ cdesc | strip }}" style="--cat-color: {{ color }}">
-        <span class="category-card-icon">{{ icon }}</span>
-        <h3 class="category-card-name">{{ cname }}</h3>
-        <span class="category-card-count">{{ cnt }} 篇</span>
+      {%- assign icon = '📁' -%}{%- assign cdesc = '' -%}{%- assign nseries = 0 -%}
+      {%- for c in graph.categories -%}{%- if c.name == cname -%}{%- assign icon = c.icon -%}{%- assign cdesc = c.desc -%}{%- endif -%}{%- endfor -%}
+      {%- for s in graph.series -%}{%- if s.category == cname -%}{%- assign nseries = nseries | plus: 1 -%}{%- endif -%}{%- endfor -%}
+      <a class="cat-row" href="/posts/?cat={{ cname | url_encode }}" data-cat="{{ cname }}">
+        <span class="cat-row-icon">{{ icon }}</span>
+        <span class="cat-row-name">{{ cname }}</span>
+        <span class="cat-row-desc">{{ cdesc | strip }}</span>
+        <span class="cat-row-meta">{{ cnt }} 篇{% if nseries > 0 %} · {{ nseries }} 系列{% endif %}</span>
       </a>
       {%- endif -%}
       {% endfor %}
@@ -48,15 +51,16 @@ no_sidebar: true
     {%- for cat in site.categories -%}{%- assign k = cat[0] | prepend: ';' | append: ';' -%}{%- unless known contains k -%}{%- assign extra = extra | plus: 1 -%}{%- endunless -%}{%- endfor -%}
     {%- if extra > 0 -%}
     <h3 class="cat-sec-title">其他分类<em>未纳入分层</em></h3>
-    <div class="category-grid">
+    <div class="cat-tree">
       {% for cat in site.categories %}
       {%- assign cname = cat[0] -%}
       {%- assign k = cname | prepend: ';' | append: ';' -%}
       {%- unless known contains k -%}
-      <a class="category-card cat-nav-card" href="/posts/?cat={{ cname | url_encode }}" data-cat="{{ cname }}" style="--cat-color: #94a3b8">
-        <span class="category-card-icon">📌</span>
-        <h3 class="category-card-name">{{ cname }}</h3>
-        <span class="category-card-count">{{ cat[1] | size }} 篇</span>
+      <a class="cat-row" href="/posts/?cat={{ cname | url_encode }}" data-cat="{{ cname }}">
+        <span class="cat-row-icon">📌</span>
+        <span class="cat-row-name">{{ cname }}</span>
+        <span class="cat-row-desc">未纳入分层，点击查看全部文章</span>
+        <span class="cat-row-meta">{{ cat[1] | size }} 篇</span>
       </a>
       {%- endunless -%}
       {% endfor %}
@@ -223,10 +227,10 @@ no_sidebar: true
 
 <!-- ======================= Tab 3：文章（归档） ======================= -->
 <div id="tab-archives" class="tab-panel" hidden>
-<div class="post-block archive">
+<div class="archives">
   {% assign posts_by_year = site.posts | group_by_exp: "post", "post.date | date: '%Y'" %}
   {% for year_group in posts_by_year %}
-  <h2 class="archive-year">{{ year_group.name }}</h2>
+  <h2 class="archive-year">{{ year_group.name }}<span>{{ year_group.items | size }} 篇</span></h2>
   <ul class="archive-list">
     {% for post in year_group.items %}
     <li>
@@ -288,7 +292,7 @@ no_sidebar: true
   var catHome = document.getElementById('cat-home');
   var catWrap = document.getElementById('cat-detail');
   var catPanels = [].slice.call(document.querySelectorAll('#cat-panels .cat-panel'));
-  var catCards = [].slice.call(document.querySelectorAll('#cat-nav .cat-nav-card'));
+  var catCards = [].slice.call(document.querySelectorAll('#cat-nav .cat-row'));
 
   function catPanelOf(cat) {
     for (var i = 0; i < catPanels.length; i++) {
