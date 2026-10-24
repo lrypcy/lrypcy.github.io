@@ -24,7 +24,6 @@ no_title: true
 <!-- ======================= Tab 1：目录树（分类） ======================= -->
 <div id="tab-cats" class="tab-panel">
 <div id="cat-home">
-<p class="page-desc">共 {{ site.categories | size }} 个分类、{{ site.posts | size }} 篇文章。<b>点击任意分类</b>，进入按系列归拢的独立页面，地址栏带上 <code>?cat=</code> 参数，可直接分享。</p>
 
   <div id="cat-nav">
     {% for sec in site.data.catalog.sections %}
