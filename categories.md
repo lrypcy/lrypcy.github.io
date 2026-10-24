@@ -111,17 +111,19 @@ no_sidebar: true
         </div>
         {%- endif -%}
 
-        {%- assign myidx = 0 -%}
+        {%- assign myidx = -1 -%}
         {%- for o in cat_order -%}{%- if o == c.name -%}{%- assign myidx = forloop.index0 -%}{%- endif -%}{%- endfor -%}
+        {%- if myidx >= 0 -%}
         {%- assign pn_prev = '' -%}{%- assign pn_next = '' -%}
-        {%- if myidx > 0 -%}{%- assign pn_prev = cat_order[myidx | minus: 1] -%}{%- endif -%}
+        {%- if myidx > 0 -%}{%- assign pn_i = myidx | minus: 1 -%}{%- assign pn_prev = cat_order[pn_i] -%}{%- endif -%}
         {%- assign pn_last = cat_order.size | minus: 1 -%}
-        {%- if myidx < pn_last -%}{%- assign pn_next = cat_order[myidx | plus: 1] -%}{%- endif -%}
+        {%- if myidx < pn_last -%}{%- assign pn_i = myidx | plus: 1 -%}{%- assign pn_next = cat_order[pn_i] -%}{%- endif -%}
         {%- if pn_prev != '' or pn_next != '' -%}
         <nav class="cat-pn">
           {%- if pn_prev != '' -%}<a class="cat-pn-link prev" href="/categories/?cat={{ pn_prev | url_encode }}" data-pn="{{ pn_prev }}">← {{ pn_prev }}</a>{%- else -%}<span></span>{%- endif -%}
           {%- if pn_next != '' -%}<a class="cat-pn-link next" href="/categories/?cat={{ pn_next | url_encode }}" data-pn="{{ pn_next }}">{{ pn_next }} →</a>{%- else -%}<span></span>{%- endif -%}
         </nav>
+        {%- endif -%}
         {%- endif -%}
       </div>
       {% endfor %}
@@ -150,17 +152,19 @@ no_sidebar: true
           </ol>
         </div>
 
-        {%- assign myidx = 0 -%}
+        {%- assign myidx = -1 -%}
         {%- for o in cat_order -%}{%- if o == cname -%}{%- assign myidx = forloop.index0 -%}{%- endif -%}{%- endfor -%}
+        {%- if myidx >= 0 -%}
         {%- assign pn_prev = '' -%}{%- assign pn_next = '' -%}
-        {%- if myidx > 0 -%}{%- assign pn_prev = cat_order[myidx | minus: 1] -%}{%- endif -%}
+        {%- if myidx > 0 -%}{%- assign pn_i = myidx | minus: 1 -%}{%- assign pn_prev = cat_order[pn_i] -%}{%- endif -%}
         {%- assign pn_last = cat_order.size | minus: 1 -%}
-        {%- if myidx < pn_last -%}{%- assign pn_next = cat_order[myidx | plus: 1] -%}{%- endif -%}
+        {%- if myidx < pn_last -%}{%- assign pn_i = myidx | plus: 1 -%}{%- assign pn_next = cat_order[pn_i] -%}{%- endif -%}
         {%- if pn_prev != '' or pn_next != '' -%}
         <nav class="cat-pn">
           {%- if pn_prev != '' -%}<a class="cat-pn-link prev" href="/categories/?cat={{ pn_prev | url_encode }}" data-pn="{{ pn_prev }}">← {{ pn_prev }}</a>{%- else -%}<span></span>{%- endif -%}
           {%- if pn_next != '' -%}<a class="cat-pn-link next" href="/categories/?cat={{ pn_next | url_encode }}" data-pn="{{ pn_next }}">{{ pn_next }} →</a>{%- else -%}<span></span>{%- endif -%}
         </nav>
+        {%- endif -%}
         {%- endif -%}
       </div>
       {%- endunless -%}
