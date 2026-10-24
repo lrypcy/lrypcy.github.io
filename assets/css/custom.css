@@ -52,6 +52,9 @@ a { color: var(--primary); }
   position: sticky;
   top: 0;
   z-index: 100;
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -696,6 +699,10 @@ html.rail-off .rail-head-title { display: none; }
   .post-card { padding: 20px 18px; }
   .page-post-detail .post-block { padding: 26px 20px; }
   .layout-grid { grid-template-columns: 1fr; }
+  .layout-grid.layout-post { padding: 20px 14px 48px; }
+  .layout-post .post-block { padding: 24px 18px; }
+  .layout-post .post-title { font-size: 24px; line-height: 1.35; }
+  .layout-post .post-meta { gap: 8px 10px; margin: 14px 0 22px; }
   .sidebar {
     position: static;
     order: 2;
@@ -781,6 +788,12 @@ html.rail-off .rail-head-title { display: none; }
 }
 
 /* ========== 文章详情页统一样式 ========== */
+.post-block {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
 .page-post-detail .post-block {
   background: var(--card-bg);
   border-radius: var(--radius);
@@ -791,6 +804,27 @@ html.rail-off .rail-head-title { display: none; }
 .post-meta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; color: var(--text-light); font-size: 13.5px; margin: 18px 0 26px; }
 .post-meta a { color: var(--text-light); text-decoration: none; }
 .post-meta a:hover { color: var(--primary); }
+/* 头部 meta 里的标签排成一行小胶囊，和首页文章卡片一致 */
+.post-meta .post-tags {
+  flex-basis: 100%;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: inherit;
+}
+.post-meta .post-tags a {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--tag-bg);
+  color: var(--primary);
+  font-size: 12px;
+  line-height: 1.7;
+  text-decoration: none;
+}
+.post-meta .post-tags a:hover { background: var(--primary); color: #fff; }
 .post-tags { margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 8px; }
 .post-tags .post-tag {
   padding: 3px 12px; border-radius: 20px; background: var(--tag-bg);
@@ -832,12 +866,23 @@ html.rail-off .rail-head-title { display: none; }
 .post-body img { max-width: 100%; border-radius: 10px; margin: 10px 0; }
 /* 正文里内联的 SVG（<img> 外链之外的直接内嵌）：跟随容器宽度等比缩放 */
 .post-body > svg, .post-body p > svg { display: block; max-width: 100%; height: auto; margin: 10px 0; }
+/* 过宽公式（行内或行间）：容器内横向滚动，避免撑出整页宽度 */
+.post-body mjx-container[jax="CHTML"] {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.post-body mjx-container[jax="CHTML"]:not([display="true"]) {
+  display: inline-block;
+  vertical-align: middle;
+}
 
 /* ========== 24th.top 风格优化：导航/品牌/menu ========== */
 /* 覆盖 NexT 旧 header-inner（原 padding 100px 0 70px 导致导航超高） */
 .header-inner {
   max-width: var(--shell-w);
   width: 100%;
+  box-sizing: border-box;
   margin: 0 auto;
   padding: 0 24px;
   height: 64px;
@@ -935,6 +980,12 @@ html.rail-off .rail-head-title { display: none; }
   .header-inner { padding: 0 16px; }
   .menu { gap: 20px; }
 }
+/* 768–991：导航仍能放下，恢复被旧主题隐藏的菜单 */
+@media (min-width: 768px) and (max-width: 991px) {
+  .site-nav { display: block !important; }
+  .menu { gap: 18px; }
+  .menu a { font-size: 14px; }
+}
 
 /* ========== 文章页增强（2026-08-10：xDSL deepdive 排版）========== */
 /* 正文表格（晴空蓝体系） */
@@ -970,8 +1021,22 @@ html.rail-off .rail-head-title { display: none; }
   padding: 1px 6px;
   font-size: 12.5px;
 }
-@media (max-width: 768px) {
-  .post-body table { display: block; overflow-x: auto; white-space: nowrap; }
+/* 宽表格：外层横向滚动，避免长代码挤进相邻列 */
+.post-body .table-scroll {
+  margin: 18px 0 26px;
+  overflow-x: auto;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(59, 130, 246, 0.35) transparent;
+}
+.post-body .table-scroll::-webkit-scrollbar { height: 6px; }
+.post-body .table-scroll::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.35); border-radius: 3px; }
+.post-body .table-scroll table {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  box-shadow: none;
 }
 
 /* 文章目录（JS 生成） */
@@ -1013,6 +1078,24 @@ html.rail-off .rail-head-title { display: none; }
   transition: color 0.2s;
 }
 .post-toc a:hover { color: var(--primary); }
+/* 手机端目录卡可折叠 */
+.post-toc > summary.post-toc-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.post-toc > summary.post-toc-title::-webkit-details-marker { display: none; }
+.post-toc > summary.post-toc-title::after {
+  content: "⌄";
+  margin-left: auto;
+  font-size: 15px;
+  color: var(--text-light);
+  transition: transform 0.2s ease;
+}
+.post-toc[open] > summary.post-toc-title::after { transform: rotate(180deg); }
+.post-toc:not([open]) > summary.post-toc-title { margin-bottom: 0; }
 @media (max-width: 768px) {
   .post-toc ul { grid-template-columns: 1fr; }
 }
@@ -1036,6 +1119,19 @@ html.rail-off .rail-head-title { display: none; }
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(59, 130, 246, 0.35) transparent;
+}
+/* 放在右侧栏顶部时，与评论卡片保持同一张卡片样式 */
+.sidebar > .sidebar-toc {
+  flex: 0 0 auto;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+}
+/* 手机端正文顶部目录：限高滚动，不把正文推到首屏之外 */
+@media (max-width: 768px) {
+  .post-body > .post-toc { max-height: 45vh; }
 }
 .sidebar-toc::-webkit-scrollbar { width: 4px; }
 .sidebar-toc::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.35); border-radius: 4px; }
@@ -1160,7 +1256,7 @@ html.rail-off .rail-head-title { display: none; }
 }
 
 /* 窄屏隐藏悬浮目录（改用 sidebar / 文章内目录） */
-@media (max-width: 991px) {
+@media (max-width: 1199px) {
   .side-toc { display: none; }
 }
 

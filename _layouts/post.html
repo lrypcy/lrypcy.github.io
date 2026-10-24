@@ -7,22 +7,18 @@ layout: default
       <h1 class="post-title" itemprop="name headline">{{ page.title }}</h1>
       <div class="post-meta">
         <span class="post-time">
-          <span class="post-meta-item-icon"><i class="fa fa-calendar-o"></i></span>
           <time itemprop="dateCreated" datetime="{{ page.date | date_to_xmlschema }}" content="{{ page.date | date: "%Y-%m-%d" }}">{{ page.date | date: "%Y-%m-%d" }}</time>
         </span>
         {% if page.categories %}
         <span class="post-category">
           <span class="post-meta-divider">|</span>
-          <span class="post-meta-item-icon"><i class="fa fa-folder-o"></i></span>
           {% assign cats = page.categories %}
           {% for cat in cats %}<a href="/categories/?cat={{ cat | url_encode }}">{{ cat }}</a>{% unless forloop.last %}, {% endunless %}{% endfor %}
         </span>
         {% endif %}
         {% if page.tags %}
         <span class="post-tags">
-          <span class="post-meta-divider">|</span>
-          <span class="post-meta-item-icon"><i class="fa fa-tag"></i></span>
-          {% for tag in page.tags %}<a href="/tags/?tag={{ tag | url_encode }}">{{ tag }}</a>{% unless forloop.last %}, {% endunless %}{% endfor %}
+          {% for tag in page.tags %}<a href="/tags/?tag={{ tag | url_encode }}">#{{ tag }}</a>{% endfor %}
         </span>
         {% endif %}
       </div>
@@ -69,11 +65,13 @@ layout: default
     var hs = body.querySelectorAll('h2');
     if (hs.length < 3) return;
 
-    // 宽屏 = 左侧竖排章节横线（hover 展开完整面板）；窄屏 = sidebar 内目录卡片
-    if (window.innerWidth >= 992) {
+    // 宽屏 = 左侧竖排章节横线（hover 展开完整面板）；中等屏 = sidebar 内目录卡片；
+    // 手机 = 正文顶部目录卡（此时 sidebar 已经落到文章下方）
+    var w = window.innerWidth;
+    if (w >= 1200) {
       buildFloatingToc(hs);
     } else {
-      buildSidebarToc(hs, body);
+      buildSidebarToc(hs, body, w < 769);
     }
   }
 
@@ -142,12 +140,12 @@ layout: default
     setTimeout(onScroll, 100);
   }
 
-  function buildSidebarToc(hs, body) {
-    var toc = document.createElement('div');
-    toc.className = 'sidebar-toc';
-    var title = document.createElement('div');
-    title.className = 'sidebar-title';
-    title.textContent = '📑 目录';
+  function buildSidebarToc(hs, body, inline) {
+    // 手机端正文顶部目录默认折叠，点开再展开
+    var toc = document.createElement(inline ? 'details' : 'div');
+    toc.className = inline ? 'post-toc' : 'sidebar-toc';
+    var title = document.createElement(inline ? 'summary' : 'div');
+    title.textContent = inline ? '📑 目录 · ' + hs.length + ' 节' : '📑 目录';
     var ul = document.createElement('ul');
     var links = [];
     hs.forEach(function (h) {
@@ -164,12 +162,21 @@ layout: default
     toc.appendChild(ul);
 
     var sidebar = document.querySelector('.sidebar');
-    if (sidebar) {
-      sidebar.insertBefore(toc, sidebar.firstChild);
-    } else {
-      toc.classList.add('post-toc');
-      body.insertBefore(toc, body.firstChild);
+    function placeToc() {
+      var wantSidebar = !inline && sidebar && getComputedStyle(sidebar).display !== 'none';
+      if (wantSidebar && toc.parentElement !== sidebar) {
+        title.className = 'sidebar-title';
+        toc.classList.remove('post-toc');
+        sidebar.insertBefore(toc, sidebar.firstChild);
+      } else if (!wantSidebar && toc.parentElement !== body) {
+        title.className = 'post-toc-title';
+        toc.classList.add('post-toc');
+        body.insertBefore(toc, body.firstChild);
+      }
     }
+    placeToc();
+    // 右侧评论栏显示 / 隐藏后，由 initReadCtrl 回调重新安置
+    window.PCYToc = { reposition: placeToc };
 
     ul.addEventListener('click', function (e) {
       var a = e.target.closest('a');
@@ -194,6 +201,19 @@ layout: default
     }
     window.addEventListener('scroll', onScroll, { passive: true });
     setTimeout(onScroll, 100);
+  }
+
+  // 宽表格外包一层横向滚动容器，避免长代码把相邻列挤在一起
+  function wrapTables() {
+    var body = document.querySelector('.post-body');
+    if (!body) return;
+    [].slice.call(body.children).forEach(function (el) {
+      if (el.tagName !== 'TABLE') return;
+      var wrap = document.createElement('div');
+      wrap.className = 'table-scroll';
+      body.insertBefore(wrap, el);
+      wrap.appendChild(el);
+    });
   }
 
   // Mermaid：把 ```mermaid 代码块转为图表（跟随系统深浅色）
@@ -254,6 +274,7 @@ layout: default
         t.title = pref.sidebar ? '隐藏右侧评论区' : '显示右侧评论区';
       }
       try { localStorage.setItem(KEY, JSON.stringify(pref)); } catch (e) {}
+      if (window.PCYToc && window.PCYToc.reposition) { window.PCYToc.reposition(); }
     }
 
     [].slice.call(ctrl.querySelectorAll('[data-width]')).forEach(function (b) {
@@ -268,6 +289,7 @@ layout: default
   }
 
   document.addEventListener('DOMContentLoaded', function () {
+    wrapTables();
     buildToc();
     renderMermaid();
     initReadCtrl();
