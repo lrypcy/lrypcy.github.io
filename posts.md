@@ -263,13 +263,14 @@ no_title: true
   if (!tabBtns.length || !tabPanels.cats) { return; }
   var siteTitle = {{ site.title | jsonify }};
 
-  var state = { tab: 'cats', cat: null, tag: null };
+  var state = { tab: 'cats', cat: null, tag: null, page: 1 };
+  var archPager = null;
 
   function readState() {
     var p = null;
     try { p = new URLSearchParams(location.search); } catch (e) {}
     function q(k) { try { return p ? p.get(k) : null; } catch (e) { return null; } }
-    var s = { tab: q('tab') || 'cats', cat: q('cat') || null, tag: q('tag') || null };
+    var s = { tab: q('tab') || 'cats', cat: q('cat') || null, tag: q('tag') || null, page: parseInt(q('page'), 10) || 1 };
     if (s.cat) { s.tab = 'cats'; }
     if (s.tag) { s.tab = 'tags'; }
     if (TABS.indexOf(s.tab) < 0) { s.tab = 'cats'; }
@@ -286,6 +287,7 @@ no_title: true
     if (state.tab !== 'cats') { p.push('tab=' + state.tab); }
     if (state.tab === 'cats' && state.cat) { p.push('cat=' + encodeURIComponent(state.cat)); }
     if (state.tab === 'tags' && state.tag) { p.push('tag=' + encodeURIComponent(state.tag)); }
+    if (state.tab === 'archives' && state.page > 1) { p.push('page=' + state.page); }
     var qs = p.join('&');
     if (history.replaceState) { history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '')); }
   }
@@ -363,6 +365,7 @@ no_title: true
     var catSolo = renderCats();
     var tagSolo = renderTags();
     renderTabs();
+    if (archPager && archPager.page() !== state.page) { archPager.goTo(state.page); }
     document.body.classList.toggle('is-filtered', (state.tab === 'cats' && catSolo) || (state.tab === 'tags' && tagSolo));
     var suffix = (state.tab === 'cats' && state.cat) ? '：' + state.cat : ((state.tab === 'tags' && state.tag) ? '：' + state.tag : '');
     document.title = '文章' + suffix + ' | ' + siteTitle;
@@ -461,22 +464,31 @@ no_title: true
   }
   renderCloud();
 
-  /* ---- 归档分页：翻页时隐藏没有可见条目的年份块 ---- */
+  /* ---- 归档分页：?page= 深链 + 翻页时隐藏没有可见条目的年份块 ---- */
+  function updateYearBlocks() {
+    [].slice.call(document.querySelectorAll('#tab-archives .archive-year-block')).forEach(function (blk) {
+      blk.hidden = blk.querySelectorAll('.archive-list li:not([hidden])').length === 0;
+    });
+  }
   var archItems = [].slice.call(document.querySelectorAll('#tab-archives .archive-list li'));
+  var pagerReady = false;
   if (window.pcyPager && archItems.length) {
-    window.pcyPager({
+    archPager = window.pcyPager({
       items: archItems,
       perPage: 30,
       container: document.getElementById('archivesPager'),
-      onChange: function () {
-        [].slice.call(document.querySelectorAll('#tab-archives .archive-year-block')).forEach(function (blk) {
-          blk.hidden = blk.querySelectorAll('.archive-list li:not([hidden])').length === 0;
-        });
+      onChange: function (p) {
+        updateYearBlocks();
+        if (!pagerReady) { return; }
+        state.page = p;
+        syncUrl();
       }
     });
+    pagerReady = true;
   }
 
   state = readState();
+  if (archPager && state.page !== archPager.page()) { archPager.goTo(state.page); }
   syncUrl();
   render();
 })();

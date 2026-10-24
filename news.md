@@ -23,9 +23,22 @@ no_sidebar: true
 <script>
 (function () {
   var items = [].slice.call(document.querySelectorAll('#newsList .news-row'));
-  if (window.pcyPager) {
-    window.pcyPager({ items: items, perPage: 12, container: document.getElementById('newsPager') });
+  if (!window.pcyPager) { return; }
+  function readPage() {
+    var v = null;
+    try { v = new URLSearchParams(location.search).get('page'); } catch (e) {}
+    return parseInt(v, 10) || 1;
   }
+  var pager = window.pcyPager({
+    items: items,
+    perPage: 12,
+    container: document.getElementById('newsPager'),
+    onChange: function (p) {
+      if (history.replaceState) { history.replaceState(null, '', location.pathname + (p > 1 ? '?page=' + p : '')); }
+    }
+  });
+  if (readPage() > 1) { pager.goTo(readPage()); }
+  window.addEventListener('popstate', function () { pager.goTo(readPage()); });
 })();
 </script>
 {% endif %}
