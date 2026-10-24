@@ -344,7 +344,7 @@ test('GET /stats?embed=1 走嵌入版：有高度上报脚本、没有完整口�
   assert.match(html, /<body class="embed">/);
   assert.match(html, /pcy-analytics:height/, '需要把高度 postMessage 给父页，否则 iframe 高度写死');
   assert.ok(!html.includes('<h2>口径说明</h2>'), '嵌入版不该塞整段口径说明');
-  assert.match(html, /class="footnote"/);
+  assert.ok(!html.includes('热力图每格一天'), '嵌入版不附口径脚注');
 });
 
 test('GET /stats 只缓存取数结果：命中时不再打 D1，HTML 仍每次现渲染', async () => {

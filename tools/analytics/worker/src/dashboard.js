@@ -333,12 +333,9 @@ export function renderDashboard({
   const rangeText = { all: '全部时间', year: '本年度', month: '本月', day: '今天' }[range] || range;
   const weekCount = calendar ? calendar.weeks.length : 0;
 
-  // 内嵌到关于页时口径说明会把 iframe 撑得很高，压缩成一行脚注；
-  // 单独打开看板时保留完整说明 —— 公开页上「统计了什么」本身就该讲清楚。
+  // 内嵌到关于页时不附口径说明；单独打开看板时保留完整说明。
   const notes = embed
-    ? `<p class="footnote">热力图每格一天，颜色按当日访问次数分档，空格子表示那天还没到；
-       访问地图底图为腾讯地图，气泡位置为省级行政区中心点，颜色深浅按访问量分档。
-       只记录「日期 × 地区」的计数，不保存 IP、User-Agent 与 Cookie。</p>`
+    ? ''
     : `<section class="card">
     <h2>口径说明</h2>
     <footer class="note">
@@ -474,7 +471,6 @@ export function renderDashboard({
   body.embed .stat-value{font-size:21px}
   body.embed section.card{padding:14px 16px;margin-bottom:12px;border-radius:10px}
   body.embed section.card > h2{font-size:14.5px;margin-bottom:10px}
-  .footnote{color:var(--muted);font-size:12.5px;line-height:1.8;margin:14px 2px 2px}
 </style>
 </head>
 <body${embed ? ' class="embed"' : ''}>
