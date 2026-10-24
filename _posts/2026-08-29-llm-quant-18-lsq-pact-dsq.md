@@ -62,11 +62,11 @@ mathjax: true
 
 ### 1.1 17 篇留下的三个自由度
 
-[17 篇](/2026/08/26/llm-quant-11-fake-quant-insertion/) 把伪量化算子定义为
+[17 篇](/2026/08/26/llm-quant-11-fake-quant-insertion/) 把伪量化算子定义为“先量化、再反量化”的成对操作，完整式是
 
-$$\hat{x} = \mathrm{FQ}(x) = s\cdot\mathrm{clip}\big(\lfloor x/s\rceil,\; q_{\min},\; q_{\max}\big)$$
+$$\hat{x} = \mathrm{FQ}(x) = s\Big[\mathrm{clip}\big(\lfloor x/s\rceil + z_p,\; q_{\min},\; q_{\max}\big) - z_p\Big]$$
 
-并指出反向只能靠 STE 穿过。这个算子里有**三个东西被当成了常数**：
+本篇全程取 $$z_p=0$$，上式退化成 $$s\cdot\mathrm{clip}(\lfloor x/s\rceil,\,q_{\min},\,q_{\max})$$ —— 附录里的 `fq()` 就是这个退化形式。但**别把「$$z_p=0$$」当成「对称」**（[17 篇 §3.3](/2026/08/26/llm-quant-11-fake-quant-insertion/) 专门拆过这条）：权重的网格取 $$q\in[-2^{b-1},\,2^{b-1}-1]$$ 关于 0 对称，而 PACT / DSQ 的激活网格是 $$[0,\alpha]$$——同样是 $$z_p=0$$、$$q_{\min}=0$$，区间却只覆盖非负半轴。两者共享这个退化形式，但可表示区间不同。反向只能靠 STE 穿过。这个算子里有**三个东西被当成了常数**：
 
 | 自由度 | 默认做法 | 谁把它变成参数 |
 |---|---|---|
@@ -620,7 +620,7 @@ class LSQLinear(torch.nn.Linear):                     # 用法：直接替换 nn
 | # | 坑 | 机理 | 处置 |
 |---|---|---|---|
 | 1 | **$$s$$ 与 weight decay 耦合** | 大多数实现把 $$s$$ 丢进同一个 optimizer，于是 $$s$$ 也被 weight decay 往 0 拉。$$s\to0$$ 意味着“量化消失”，看起来 loss 变好了，其实是作弊 | **把 $$s$$ / $$\alpha$$ 放进一个 `weight_decay=0` 的 param group**。LSQ 原文的 weight decay 是 $$0.25\!\sim\!1\times10^{-4}$$，那是对权重的；$$s$$ 一律不加 |
-| 2 | **BN folding 之后的 $$s$$ 初始化** | Conv+BN 折叠后 $$W' = \gamma W/\sqrt{\sigma^2+\epsilon}$$，权重尺度可能变化好几倍。用折叠**前**的统计量定 $$s_0$$ 会差一个数量级 | **严格在 fold 之后、插伪量化之前**计算 $$s_0 = 2\langle\lvert W'\rvert\rangle/\sqrt{Q_P}$$（[17 篇 §4.4](/2026/08/26/llm-quant-11-fake-quant-insertion/) 的顺序不能反） |
+| 2 | **BN folding 之后的 $$s$$ 初始化** | Conv+BN 折叠后 $$W' = \gamma W/\sqrt{\sigma^2+\epsilon}$$，权重尺度可能变化好几倍。用折叠**前**的统计量定 $$s_0$$ 会差一个数量级 | **严格在 fold 之后、插伪量化之前**计算 $$s_0 = 2\langle\lvert W'\rvert\rangle/\sqrt{Q_P}$$（[17 篇 §6.6](/2026/08/26/llm-quant-11-fake-quant-insertion/) 的顺序不能反） |
 | 3 | **低比特下 $$s$$ 震荡** | 4-bit 时 $$2^{b-1}$$ 只有 8 个正电平，$$W$$ 每跨一个 round 边界，$$\nabla_s\mathcal{L}$$ 就跳变一次；$$s$$ 一动，$$W$$ 的有效格点又全变了 | ① 用 $$g$$（§3.3）；② $$s$$ 用更小的 lr 或单独 param group；③ 必要时对 $$s$$ 做 EMA 平滑；④ **监控截断比例**——本文实测 LSQ 在 4-bit 上稳定在 1.1–1.2%（任务 A），跑到 30%+（任务 B）说明已进入“重截断换细网格”的另一个解，需要人工确认是否合理 |
 | 4 | **warmup** | QAT 一开始量化误差巨大，梯度方向完全被量化噪声主导；此时大 lr 会把 $$W$$ 和 $$s$$ 一起带飞 | 前 1–5% 的 step 做 lr warmup；**$$s$$ 的 warmup 要比 $$W$$ 更长**（因为 $$s$$ 的梯度是相干和，量级本来就大）；DSQ 则相反——用 $$\alpha$$ 从大到小的退火代替 warmup |
 | 5 | **$$\alpha$$ 的学习率** | §4.3 实测：$$\alpha$$ 的动力学比网络权重慢 1–2 个数量级，用同一个 lr 时 8000 步都走不完 | 给 $$\alpha$$ 单独设 lr（本文用 10×）；或者直接不学、用离线百分位 + 每隔若干 step 重统计（moving average） |
@@ -679,7 +679,7 @@ class LSQLinear(torch.nn.Linear):                     # 用法：直接替换 nn
 - [MQBench](https://github.com/ModelTC/MQBench) —— 把 LSQ / PACT / DSQ / AdaRound / BRECQ / QDrop 实现为统一后端，并带 deploy 转换，是本文推荐的实际落点
 - [PyTorch `torch.ao.quantization`](https://pytorch.org/docs/stable/quantization.html) —— `FakeQuantize` / `prepare_qat_fx` / observer 体系
 - [QDrop 官方实现](https://github.com/wimh966/QDrop) —— 第 19 篇的参考代码
-- [ONNX Quantization](https://onnx.ai/onnx/api/onnx_quantization.html)、[TVM QNN](https://tvm.apache.org/docs/tutorial/quantization.html) —— QDQ 图规范与三段式量化（见 [17 篇 §5](/2026/08/26/llm-quant-11-fake-quant-insertion/)）
+- [ONNX Quantization](https://onnx.ai/onnx/api/onnx_quantization.html)、[TVM QNN](https://tvm.apache.org/docs/tutorial/quantization.html) —— QDQ 图规范与 `relay.quantize` 的三段式（注意它属于 relay.quantize 而非 relay.qnn，见 [17 篇 §7.2、§7.5](/2026/08/26/llm-quant-11-fake-quant-insertion/)）
 
 **系列导航**
 
