@@ -63,6 +63,7 @@ exclude:
   - deep-dive-megatron
   - deep-dive-profiling
   - deep-dive-rl-credit-assignment
+  - deep-dive-rl-frameworks
   - deep-dive-serving-engine
   - deep-dive-speculative-decoding
   - deep-dive-test-time-training

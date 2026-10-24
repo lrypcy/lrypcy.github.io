@@ -295,8 +295,8 @@ series:
     category: 强化学习
     layer: 2
     order: 3
-    prefixes: [rl-training-frameworks, rl-variables]
-    desc: 2 篇。系统侧的框架横评（TRL / veRL / OpenRLHF / AReaL / slime 的设计取舍）+ 变量侧的源码对照（优势、概率比、KL 与损失聚合在各框架里怎么算）。承接 dist-train 的并行原理与 Megatron 的 refit / 权重同步。
+    prefixes: [rl-training-frameworks, rl-variables, rl-frameworks]
+    desc: 10 篇。源码级框架拆解（rl-frameworks 系列 8 篇：Megatron 训练栈 / slime / veRL / AReaL / RLinf / SGLang 接缝 / vLLM 接缝 / 两族横评与选型）+ 系统侧的框架横评（TRL / veRL / OpenRLHF / AReaL / slime 的设计取舍）+ 变量侧的源码对照（优势、概率比、KL 与损失聚合在各框架里怎么算）。承接 dist-train 的并行原理与 Megatron 的 refit / 权重同步。
 
   - id: wam
     name: 世界模型与世界动作模型
