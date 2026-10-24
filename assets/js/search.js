@@ -87,10 +87,12 @@
     for (var i = 0; i < matches.length; i++) {
       var p = matches[i];
       var snippet = highlight(p.content, query, 120);
+      var typeBadge = p.type ? '<span class="search-result-type' + (p.type === '资讯' ? ' is-news' : '') + '">' + p.type + '</span>' : '';
       html += '<a class="search-result-item" href="' + p.url + '" data-idx="' + i + '">' +
         '<div class="search-result-title">' + highlight(p.title, query, 80) + '</div>' +
         '<div class="search-result-snippet">' + snippet + '</div>' +
         '<div class="search-result-meta">' +
+          typeBadge +
           '<span class="search-result-date">' + p.date + '</span>' +
           (p.categories && p.categories.length ? ' · ' + p.categories.join(', ') : '') +
         '</div>' +

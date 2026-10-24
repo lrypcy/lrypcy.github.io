@@ -7,9 +7,23 @@ layout: null
       "title": {{ post.title | jsonify }},
       "url": {{ post.url | jsonify }},
       "date": "{{ post.date | date: '%Y-%m-%d' }}",
+      "type": "文章",
       "categories": {{ post.categories | jsonify }},
       "tags": {{ post.tags | jsonify }},
       "content": {{ post.content | strip_html | strip_newlines | jsonify }}
     }{% unless forloop.last %},{% endunless %}
   {% endfor %}
+  {%- assign dailies = site.daily | sort: 'date' | reverse -%}
+  {%- if site.posts.size > 0 and dailies.size > 0 -%},{%- endif -%}
+  {%- for note in dailies -%}
+    {
+      "title": {{ note.title | jsonify }},
+      "url": {{ note.url | jsonify }},
+      "date": "{{ note.date | date: '%Y-%m-%d' }}",
+      "type": "资讯",
+      "categories": [],
+      "tags": [],
+      "content": {{ note.content | strip_html | strip_newlines | jsonify }}
+    }{% unless forloop.last %},{% endunless %}
+  {%- endfor -%}
 ]

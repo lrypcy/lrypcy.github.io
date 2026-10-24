@@ -2223,6 +2223,22 @@ html.rail-off .rail-head-title { display: none; }
 .pager-jump-input::-webkit-inner-spin-button,
 .pager-jump-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .pager-jump-input:focus { border-color: var(--primary); }
+/* ---------- 搜索结果来源徽标 ---------- */
+.search-result-type {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 8px;
+  border-radius: 8px;
+  margin-right: 2px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  vertical-align: 1px;
+}
+.search-result-type.is-news {
+  background: rgba(124, 58, 237, 0.12);
+  color: #7c3aed;
+}
 /* 单分类页底部：上一个 / 下一个分类 */
 .cat-pn {
   display: flex;
