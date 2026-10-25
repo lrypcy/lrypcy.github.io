@@ -81,6 +81,10 @@ categories:
     icon: "🧠"
     color: "#0284c7"
     desc: 扩散模型等深度学习主干知识的系统性梳理
+  - name: Agent技术剖析
+    icon: "🕵️"
+    color: "#7e22ce"
+    desc: 拆开 coding agent 的真代码、真库、真文件：会话状态存在哪、上下文怎么压缩、工具与权限怎么表达、子代理怎么调度
 
 series:
   # ---------- layer 0：硬件与系统底座 ----------
@@ -385,6 +389,15 @@ series:
     prefixes: [python-runtime-]
     desc: 1 篇长文。编译流水线（源码 → AST → 符号表 → Code Object → 字节码）→ 编译期作用域分类如何决定运行时的 LOAD_FAST / LOAD_GLOBAL / LOAD_DEREF / LOAD_NAME → 编译期常量折叠与运行时自适应专门化（PEP 659）的分野 → Code Object 静态复用与 Frame 动态独立 → 求值栈与生成器 frame 的保留 → PEP 523 的 Frame Evaluation Hook 与 sys.settrace / sys.monitoring 的能力边界 → TorchDynamo 的字节码符号执行、FX Graph、Graph Break 与 Guard。回答「torch.compile 是从哪里拿到它要编译的东西的」。
 
+  - id: agent-anatomy
+    name: Agent 技术剖析
+    short: Agent 技术剖析
+    category: Agent技术剖析
+    layer: 2
+    order: 10
+    prefixes: [agent-anatomy-]
+    desc: 1 篇。七个 coding agent（OpenCode / Hermes / WorkBuddy / Codex CLI / Pi / Claude Code / DSH）的真实存储在库、在文件里长什么样：五类持久状态的划分、四种存储形态、会话树的三种表示、JSON 列的四条代价、压缩的三种持久化、以及迁移机制的三种节奏。回答「一个 agent 每轮循环到底要写什么、写到哪里」。
+
 links:
   - { from: chip,      to: op,         label: 存储层次与执行模型决定 Kernel 怎么写 }
   - { from: chip,      to: compiler,   label: ISA 与内存层次是后端代码生成的靶子 }
@@ -436,6 +449,7 @@ links:
   - { from: sampling,  to: serving,        label: 采样与 logprob 口径贯穿引擎的解码路径 }
   - { from: compiler,  to: python-runtime, label: torch.compile 的前端建立在 Python 执行机制之上 }
   - { from: python-runtime, to: serving,   label: 引擎侧 torch.compile 能不能开取决于图捕获稳不稳定 }
+  - { from: agent-anatomy, to: python-runtime, label: agent 的会话与工具记录都要先把 Python 进程的上下文状态固定下来 }
 
 paths:
   - name: AI Infra 工程师主线
@@ -450,3 +464,6 @@ paths:
   - name: 生成模型与扩散
     desc: 潜空间表示打底 → 扩散全景到 Flow Matching → 去噪函数的主干架构，再到生成式策略与世界模型
     steps: [vae, flow, dit, wam]
+  - name: Agent 实现阅读
+    desc: 从 Python 运行时这类「底座实现」读起，再进入 agent 自身的状态与存储设计
+    steps: [python-runtime, agent-anatomy]
