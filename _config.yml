@@ -81,7 +81,6 @@ exclude:
   - deep-dive-test-time-training
   - deep-dive-vae
   - deep-dive-world-model-world-action-model
-  - deep-dive-agent-anatomy
   - wiki
   - tools
   - .githooks

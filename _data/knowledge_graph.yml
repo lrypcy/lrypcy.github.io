@@ -396,7 +396,7 @@ series:
     layer: 2
     order: 10
     prefixes: [agent-anatomy-]
-    desc: 1 篇。七个 coding agent（OpenCode / Hermes / WorkBuddy / Codex CLI / Pi / Claude Code / DSH）的真实存储在库、在文件里长什么样：五类持久状态的划分、四种存储形态、会话树的三种表示、JSON 列的四条代价、压缩的三种持久化、以及迁移机制的三种节奏。回答「一个 agent 每轮循环到底要写什么、写到哪里」。
+    desc: 2 篇。先看形态：七个 coding agent（OpenCode / Hermes / WorkBuddy / Codex CLI / Pi / Claude Code / DSH）的五类持久状态、四种存储选择、会话树的三种表示、压缩的三种持久化。再算成本：`dbstat` 逐表拆解 1.3 GB 到底装了什么、`EXPLAIN QUERY PLAN` 验证每个索引是否兑现、全文索引为何要付近 3 倍空间。回答「agent 该写什么、写到哪、这笔钱花得值不值」。
 
 links:
   - { from: chip,      to: op,         label: 存储层次与执行模型决定 Kernel 怎么写 }
