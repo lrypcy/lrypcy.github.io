@@ -382,14 +382,38 @@ export class SessionAlreadyProjected extends Error {}
 "compacted" INTEGER NOT NULL DEFAULT 0,
 ```
 
-压缩时把旧消息 `active` 置 0（或 NULL），新消息照常插入。表里不删行，所以 FTS 索引仍然搜得到历史——**这正是双 FTS 的价值所在：压掉的上下文仍然可检索**。索引也为此专门优化：
+压缩时执行的是一条 UPDATE：
+
+```sql
+UPDATE messages SET active = 0, compacted = 1 WHERE session_id = ? AND active = 1;
+```
+
+**两个字段编码的是两种不同的「消失」**，这是本节最值得记的一处设计：
+
+| `active` | `compacted` | 含义 | 进上下文 | 可被检索 |
+| --- | --- | --- | --- | --- |
+| 1 | 0 | 正常 | 是 | 是 |
+| 0 | 1 | 被压缩成摘要了 | 否 | **是** |
+| 0 | 0 | 用户主动回退（rewind / undo） | 否 | 否 |
+
+一个布尔表达不了这个区分：压缩掉的内容仍然需要可检索（用户在压缩之后还想搜到早先的对话），而用户主动撤回的内容不该再搜出来。**用两个字段而非一个枚举，是因为这两个维度本来是正交的**。
+
+这也正是双 FTS 的价值所在：压掉的上下文仍然可检索，因为表里根本没删行。索引也为此专门优化：
 
 ```sql
 CREATE INDEX idx_messages_session_active ON messages(session_id, active, timestamp);
 CREATE INDEX idx_messages_active_null    ON messages(active) WHERE active IS NULL;
 ```
 
-第二个是**部分索引**：只索引 `active IS NULL` 的行。既然大部分行 `active = 1`，为它们建索引纯属浪费，部分索引把索引体积压到只覆盖「被压缩掉的那部分」。为什么单独为 `NULL` 建一个，而不是并入上一句？因为 `WHERE active = 0` 与 `WHERE active IS NULL` 在三值逻辑下是两个不同谓词，SQLite 不会自动复用。
+第二个是**部分索引**：只索引 `active IS NULL` 的行。既然大部分行 `active = 1`，为它们建索引纯属浪费，部分索引把索引体积压到只覆盖需要的那部分。为什么单独为 `NULL` 建一个，而不是并入上一句？因为 `WHERE active = 0` 与 `WHERE active IS NULL` 在三值逻辑下是两个不同谓词，SQLite 不会自动复用。这条部分索引还有个实际用途：迁移期用 `UPDATE messages SET active = 1 WHERE active IS NULL` 把历史脏数据归位时，就靠它快速定位待修的行使。
+
+最后，压缩不只是改标记，还要更新计数——但**计的是活跃集，不是全部**：
+
+```sql
+UPDATE sessions SET message_count = ?, tool_call_count = ? WHERE id = ?;
+```
+
+`message_count` 反映的是「当前上下文里有多少条」，归档行仍在磁盘上但不计入。同一张表里因此并存两套语义：磁盘上有多少行，和会话「现在有多少条消息」——这两个数在压缩之后就不再相等了。
 
 **方式三：引入上下文纪元（OpenCode）**。`session_context_epoch` 表：
 
@@ -586,7 +610,57 @@ CREATE TABLE thread_goal_continuation_deferrals (
 
 **③ 唯一索引用来表达业务不变式，不只是加速。** OpenCode 的 `session_message_session_seq_idx`、`session_input_session_admitted_seq_idx`、Hermes 的 `idx_sessions_title_unique ... WHERE title IS NOT NULL`——这些索引的真正作用是把「不许重复」「标题不许撞」交给数据库。Hermes 那个部分唯一索引尤其讲究：`WHERE title IS NOT NULL` 让未命名的会话可以有任意多个（它们的 `title` 是 NULL，不参与唯一性），只有命名之后才要求唯一。
 
-### 7.2 索引里没有列的部分，就是代价
+### 7.2 查询计划：索引到底有没有被用上
+
+索引写在 schema 里不等于会被用上。`EXPLAIN QUERY PLAN` 是唯一可靠的判据——它直接告诉你优化器选了哪条索引，以及要不要额外建临时 B 树排序。下面是三家核心查询的实跑结果。
+
+**OpenCode**：取会话消息与重放事件这两条主力路径都是纯索引扫描，没有临时表：
+
+```text
+SELECT * FROM message WHERE session_id=? ORDER BY time_created, id
+  → SEARCH message USING INDEX message_session_time_created_id_idx (session_id=?)
+
+SELECT * FROM event WHERE aggregate_id=? AND seq > ? ORDER BY seq
+  → SEARCH event USING INDEX event_aggregate_seq_idx (aggregate_id=? AND seq>?)
+```
+
+但取「待处理的用户输入」那条露出了缺口：
+
+```text
+SELECT * FROM session_input WHERE session_id=? AND promoted_seq IS NULL ORDER BY admitted_seq
+  → SEARCH session_input USING INDEX session_input_session_promoted_seq_idx
+  → USE TEMP B-TREE FOR ORDER BY        <- 仍然要临时排序
+```
+
+索引是 `(session_id, promoted_seq, delivery, admitted_seq)`，查询却按 `admitted_seq` 排序——**排序键不在能被利用的位置，于是省不掉临时 B 树**。把 `admitted_seq` 前移，或改成按 `promoted_seq` 排序，都能消掉这一笔。
+
+**Hermes**：四条核心查询全部命中，其中一条尤其值得记：
+
+```text
+SELECT id FROM messages WHERE active IS NULL
+  → SCAN messages USING COVERING INDEX idx_messages_active_null
+```
+
+那个 `WHERE active IS NULL` 的部分索引不只是「建了」，而是被优化器**正确识别为与查询谓词等价**，并且因为只取 `id`（在主键里）而走了**覆盖扫描、不回表**。这一点纯读 schema 推不出来——部分索引能不能被选中，取决于优化器能否证明查询谓词蕴含索引谓词，必须实测。
+
+**WorkBuddy**：三条状态机查询都精准命中，但会话列表这条是全表扫：
+
+```text
+-- 轮询待投递
+WHERE status=? AND next_run_at<=? ORDER BY next_run_at
+  → SEARCH automation_delivery_outbox USING INDEX idx_automation_delivery_outbox_status_next_run
+
+-- 会话列表（最常打开的界面之一）
+SELECT id,title FROM sessions WHERE cwd=? AND deleted_at IS NULL ORDER BY updated_at DESC
+  → SCAN sessions                        <- 全表扫
+  → USE TEMP B-TREE FOR ORDER BY         <- 再排一次序
+```
+
+原因很直接：`sessions` 表上只有主键自动索引和 `idx_sessions_buddy_snapshot_id`，**没有任何覆盖 `cwd` 或 `updated_at` 的索引**。现在表里只有 67 行，全扫的代价看不见；到几千行这个界面就会开始卡。按它自己在 `0006` 迁移里补 `automation_runs` 索引的同一套逻辑，`(cwd, deleted_at, updated_at)` 是下一个该补的。
+
+这个例子也把 §7.3 的判据说完整了：**索引缺失不会立刻疼，只会等到数据量到了才疼，而迁移历史里的「补索引」记录就是那次疼痛的化石**。
+
+### 7.3 索引里没有列的部分，就是代价
 
 把三家的索引数量与表数量放在一起，比值很说明问题：OpenCode 21 张表 17 个索引，Hermes 9 张表 16 个索引，WorkBuddy 10 张表 10 个索引。**Hermes 的索引/表比最高，因为它要为多通道路由和检索买单**；WorkBuddy 次之，因为它的索引用在投递状态机上；OpenCode 最低，因为它的大部分查询都固定在「按会话取」这一种形状上。
 
@@ -682,6 +756,33 @@ WorkBuddy 用 drizzle 的文件式迁移，迁移 SQL 直接落在用户目录�
 
 Pi 与 DSH 的做法说明一个事实：**只追加的格式也必须做版本化**，只是粒度从「整库一个版本号」变成「每个文件一个版本号」，而且升级是惰性的——老文件不迁移，读到哪个版本就按哪个版本解释。这在文件方案里成本几乎为零，在入库方案里就是一次全库搬迁。
 
+### 9.5 迁移之外：schema 定下来之后的事
+
+DDL 和迁移管的是「表长什么样」。但一个要长期跑在用户机器上的库，还有两类问题跟 schema 无关、却决定它会不会坏。
+
+**第一类：WAL 在某些文件系统上根本不成立。** WAL 模式依赖共享内存与 fcntl 字节范围锁，这两样在 NFS / SMB / 部分 FUSE 挂载上不可靠——`PRAGMA journal_mode=WAL` 会直接抛 `SQLITE_PROTOCOL`。如果把这个异常抛出去，那么 `/resume`、`/title`、`/history`、`/branch` 这些功能会全部静默失效。Hermes 的处理是**降级而不是崩**：识别出这两类错误串，退回 `journal_mode=DELETE`（WAL 之前的默认值），代价是并发读者会被写阻塞，但功能保住了。
+
+```python
+_WAL_INCOMPAT_MARKERS = (
+    "locking protocol",       # SQLITE_PROTOCOL on NFS/SMB
+    "not authorized",         # Some FUSE mounts block WAL pragma outright
+)
+```
+
+这段值得记的不是代码，是**判据**：一个 agent 的状态库会落在用户的任何目录上（包括网络盘、同步盘），设计时必须假设「WAL 可能不可用」。只在本地 SSD 上测过的实现，换台机器就会静默丢功能。
+
+**第二类：`fsync()` 在 macOS 上不保证落盘。** WAL 的崩溃安全保证建立在「OS 会兑现 fsync 写屏障」之上，而 Apple 文档明确 `fsync()` 不保证数据到达稳定存储、也不保证写顺序。正常 kill 进程没事（页缓存还在，SQLite 能恢复）；但系统关机时页缓存被丢弃，等价于一次断电——此时「声称已持久」的 checkpoint 可能从没落过盘，库会损坏。
+
+Hermes 的解法是只在 checkpoint 边界上强制 `F_FULLFSYNC`：
+
+```python
+PRAGMA checkpoint_fullfsync = 1     # 仅 sys.platform == "darwin" 生效
+```
+
+选 checkpoint 边界而不是每次提交，是因为代价差一个量级：前者摊销到约 +0.1 ms/commit，后者（`fullfsync=1`，每次提交的 WAL 同步都走 F_FULLFSYNC）约 +4 ms/commit。**这是「崩溃安全」与「写入延迟」之间一个很划算的位置**——对一个桌面 agent 来说，最坏情况是丢最后一次 checkpoint 之后的一小段，而不是整库损坏。
+
+两条合起来说明一件事：**入库方案的可靠性成本，不在「选 SQLite」那一刻，而在这些平台差异的兜底里**。文件派没有这个问题——写一个文件要么成功要么失败，不依赖内存映射和写屏障语义。
+
 ---
 
 ## 10. 取舍：四个象限与选型判据
@@ -727,9 +828,9 @@ Pi 与 DSH 的做法说明一个事实：**只追加的格式也必须做版本�
 
 **OpenCode**：优点是模型最完整——事件溯源 + 投影 + 纪元压缩，理论上支持完整的重放与审计；索引设计克制且精准，每条都对得上查询。缺点是复杂度最高（21 张表、三张迁移记录表、v1/v2 双模型并存）、`data` 全 JSON 导致无法检索、1.3 GB 的库对一个 CLI 来说太重。
 
-**Hermes**：优点是唯一认真做了检索（双 FTS5 + 触发器同步 + 部分索引），事务性设施（锁、投递、预算）最完备，多通道路由的索引形状精准。缺点是 22 版手写迁移的维护成本、正文字段在三套 FTS 里重复存储、`sessions` 表 55 列（大量 ALTER 追加）已接近「宽表反模式」、199 MB 单文件无归档策略。
+**Hermes**：优点是唯一认真做了检索（双 FTS5 + 触发器同步 + 部分索引），事务性设施（锁、投递、预算）最完备，多通道路由的索引形状精准，四条核心查询的查询计划全部命中索引（§7.2）；平台兜底也最细——WAL 不可用时降级 DELETE、macOS 上只在 checkpoint 边界强制 `F_FULLFSYNC`（§9.5）。缺点是 22 版手写迁移的维护成本、正文字段在三套 FTS 里重复存储、`sessions` 表 55 列（大量 ALTER 追加）已接近「宽表反模式」、199 MB 单文件无归档策略。
 
-**WorkBuddy**：优点是把「什么该入库」切得最清楚——库里只有索引、用量、任务、投递，正文全在文件；outbox 的六个索引是教科书级；快照表用三个独立版本字段（`schema_version` / `template_version` / `snapshot_format_version`）表达配置的三层兼容性，这个细节很少见。缺点是没有 FTS（历史搜索只能靠外部索引目录）、迁移文件重号、日志与 trace 的体积失控（1.1 GB 日志 + 388 MB trace 对一个 208 KB 的库）。
+**WorkBuddy**：优点是把「什么该入库」切得最清楚——库里只有索引、用量、任务、投递，正文全在文件；outbox 的六个索引是教科书级；快照表用三个独立版本字段（`schema_version` / `template_version` / `snapshot_format_version`）表达配置的三层兼容性，这个细节很少见。缺点是**会话列表查询全表扫**（§7.2 实测，缺 `cwd`/`updated_at` 索引）、**整个库零外键**（`PRAGMA foreign_key_list` 对六张主表全部返回空，级联删除与引用完整性全靠应用层）、没有 FTS（历史搜索只能靠外部索引目录）、迁移文件重号、日志与 trace 的体积失控（1.1 GB 日志 + 388 MB trace 对一个 208 KB 的库）。
 
 **Codex CLI**：优点是最小惊讶——转录就是 rollout 文件，只有「目标与预算」入库且带 `CHECK` 约束，职责边界最干净。缺点是 goals 库与转录分离后，「goal 状态」与「转录内容」的一致性只能靠应用层保证。
 
@@ -762,7 +863,7 @@ Pi 与 DSH 的做法说明一个事实：**只追加的格式也必须做版本�
 | 项目 | 版本 / commit | 上游 | 引用位置 |
 | --- | --- | --- | --- |
 | OpenCode | `1.18.35`，commit `b7e4f1ef7433f83ba009eefa2997aeb81017f6ed` | `anomalyco/opencode` | `packages/core/src/session/sql.ts` L22–L176、`packages/core/src/event/sql.ts` L1–L25、`packages/core/src/session/projector.ts` L1–L40 |
-| Hermes | `0.19.0` | `NousResearch/hermes-agent` | `hermes_state.py` L155（`SCHEMA_VERSION`）、L758（`schema_version` 建表）、L1621–L1626（版本读写）、L1871–L1874（版本回写）；`hermes_cli/kanban_db.py`、`hermes_cli/projects_db.py` |
+| Hermes | `0.19.0` | `NousResearch/hermes-agent` | `hermes_state.py` L155（`SCHEMA_VERSION`）、L178（`_WAL_INCOMPAT_MARKERS`）、L336–L366（`checkpoint_fullfsync`）、L758（`schema_version` 建表）、L1603（`active IS NULL` 归位）、L1621–L1626（版本读写）、L1871–L1874（版本回写）、L1981（会话 upsert 的 `COALESCE`）、L3077（计费 upsert）、L4456（压缩软删）；`hermes_cli/kanban_db.py`、`hermes_cli/projects_db.py` |
 | Pi | `0.84.2` | `@earendil-works/pi-coding-agent` | `dist/`（发布即编译产物），会话格式见本机 `~/.pi/agent/sessions/` |
 | WorkBuddy | `5.5.6`（`com.tencent.workbuddy.mac`） | 闭源 | 迁移 SQL：`~/.workbuddy/.workbuddy-sqlite-migrations/0000_workbuddy_sqlite_baseline.sql` … `0009_add_automation_context_window.sql`、`meta/_journal.json`；库：`~/.workbuddy/workbuddy.db` |
 | Codex CLI | 本机 `~/.codex` | 闭源安装 | `~/.codex/goals_1.sqlite`（`.schema`）、`~/.codex/sessions/**/*.jsonl` |
@@ -774,5 +875,6 @@ Pi 与 DSH 的做法说明一个事实：**只追加的格式也必须做版本�
 - `packages/core/src/session/sql.ts` L22–L66（`SessionTable`）、L68–L80（`MessageTable`）、L82–L97（`PartTable`）、L100–L116（`TodoTable`）、L119–L138（`SessionMessageTable`）、L140–L166（`SessionInputTable`）、L168（`SessionContextEpochTable`）
 - `packages/core/src/event/sql.ts` L4–L25（`EventSequenceTable`、`EventTable` 与两个索引）
 - `packages/core/src/session/projector.ts` L18（`SessionAlreadyProjected`）、L136（投影幂等注释）
+- `packages/core/src/database/migration.ts` L26、L71（迁移在事务内执行）、`database/sqlite.node.ts` L117 / `database/sqlite.bun.ts` L123（`transactionAcquirer`）
 
-**说明**：七家里四家的版本号与库/目录体积、行数分布，均为本机安装版本的实测统计；闭源三家（WorkBuddy、Claude Code、Codex CLI）的结论来自其落盘产物（库 schema、迁移 SQL、JSONL 记录结构），不含反编译内容。
+**说明**：七家里四家的版本号与库/目录体积、行数分布，均为本机安装版本的实测统计；闭源三家（WorkBuddy、Claude Code、Codex CLI）的结论来自其落盘产物（库 schema、迁移 SQL、JSONL 记录结构），不含反编译内容。§7.2 的查询计划均由 `EXPLAIN QUERY PLAN` 在对应实库上直接执行得到，未经改写。
