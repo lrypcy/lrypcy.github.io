@@ -13,8 +13,8 @@ mathjax: true
 
 > **前置**：[14 篇](/2026/10/12/megatron-14-module-spec-and-layer-stack/) 讲了 `ModuleSpec` 的四字段、`build_module` 的参数合并顺序、`TransformerLayerSubmodules` 的「默认即 `IdentityOp`」约定，以及 `BackendSpecProvider` 这个 `Protocol`。本篇**直接引用**那套机制，不重复讲解。凡涉及并行层的**代数与通信语义**，见 [03 篇](/2026/10/09/megatron-03-tensor-parallel-and-sequence-parallel/)；MoE 的 all-to-all 见 [02 篇](/2026/10/08/megatron-02-expert-parallel/)。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **一个 dense 模型的前向只有三段：`_preprocess` → `decoder` → `_postprocess`。** 三个方法分别在 [`gpt_model.py` L325](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_model.py#L325)、[L564](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_model.py#L564)（`forward` 本身）、[L665](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_model.py#L665)。中间的 `decoder` 是 14 篇讲过的 `TransformerBlock`。
 > * **`forward` 在调用 `_preprocess` 之前先做两件「与模型无关」的事**：`fine_grained_activation_offloading`（[L599](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_model.py#L599)）与 `moe_paged_stash`（[L602](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_model.py#L602)）——两者的预切都在**进 decoder 之前**，不进 `_preprocess`。
 > * **`_preprocess` 返回一个 6 元组，而 flashinfer 融合 rope 路径会变成 7 元组。** [L482–L496](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_model.py#L482-L496) 明确注释这是 *for backwards compatibility with legacy unit tests, which break if you return a 7 tuple instead of 6*；消费端用长度判断（[L625](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/gpt/gpt_model.py#L625) `preproc_output[6] if len(preproc_output) == 7 else None`）——**元组长度本身成了一个带版本的接口契约**。

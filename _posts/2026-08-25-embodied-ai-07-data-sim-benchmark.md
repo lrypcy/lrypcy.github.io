@@ -10,15 +10,12 @@ mathjax: true
 
 > **系列导航**：算法篇到此收官（01–06），本篇进入“基础设施”层。具身智能的摩尔定律不在芯片而在数据管线：谁能源源不断地生产“带动作标签的物理交互数据”，谁的模型就赢。本篇回答三件事：在哪练（仿真器）、拿什么喂（数据集）、怎么打分（评测）。
 
-## TL;DR
-
-> **TL;DR 1｜仿真器选型口诀**：接触保真选 MuJoCo[1](https://mujoco.readthedocs.io)，大规模 RL 选 Isaac Lab（Isaac Gym 的官方继任者）[2](https://arxiv.org/abs/2108.10470)，操作任务+资产生态选 ManiSkill/SAPIEN[3](https://arxiv.org/abs/2003.08515)[4](https://arxiv.org/abs/2302.04659)。Genesis 号称单卡每秒 4300 万步的极限速度（项目页数据，未复测）[5](https://genesis-embodied-ai.github.io)——但速度从来不是唯一指标，**接触求解器行为与真机的相关性**才是。
-
-> **TL;DR 2｜数据集的三代演进**：一代是机构自采小数据（RT-1 的 13 万条）[27](https://arxiv.org/abs/2212.06817)；二代是多机构联盟拼盘（OXE 百万条，格式统一但质量参差[6](https://arxiv.org/abs/2310.08864)）；三代是**工业级数据工厂**（DROID 76k 条精细标定[7](https://arxiv.org/abs/2403.12945)、AgiBot World 百台机器人产线级数据[8](https://arxiv.org/abs/2503.06669)）。
-
-> **TL;DR 3｜Scaling Law 已被实证**：清华团队在双臂平台上系统扫参发现：模仿学习性能随数据量呈幂律提升；**同量级下场景多样性带来的增益远大于演示条数**；且仿真预训练数据与真机微调数据存在可观的正迁移[9](https://arxiv.org/abs/2410.18647)。这给整个行业的数据战略提供了理论地基。
-
-> **TL;DR 4｜评测正在经历信任危机**：LIBERO 被 VLA 刷到 95%+ 后区分度归零；仿真榜单排名与真机表现的相关性只在部分任务族成立[20](https://arxiv.org/abs/2405.05941)；20 次 rollout 的 80% 成功率置信区间宽达 ±17%。本篇给出三个补救工具：受控扰动基准（COLOSSEUM）[33](https://arxiv.org/abs/2402.08191)、仿真-真实校准协议（SimplerEnv）、统计显著性纪律（Wilson 区间 + 多种子）。
+> **TL;DR**
+>
+> * **仿真器选型口诀**：接触保真选 MuJoCo[1](https://mujoco.readthedocs.io)，大规模 RL 选 Isaac Lab（Isaac Gym 的官方继任者）[2](https://arxiv.org/abs/2108.10470)，操作任务+资产生态选 ManiSkill/SAPIEN[3](https://arxiv.org/abs/2003.08515)[4](https://arxiv.org/abs/2302.04659)。Genesis 号称单卡每秒 4300 万步的极限速度（项目页数据，未复测）[5](https://genesis-embodied-ai.github.io)——但速度从来不是唯一指标，**接触求解器行为与真机的相关性**才是。
+> * **数据集的三代演进**：一代是机构自采小数据（RT-1 的 13 万条）[27](https://arxiv.org/abs/2212.06817)；二代是多机构联盟拼盘（OXE 百万条，格式统一但质量参差[6](https://arxiv.org/abs/2310.08864)）；三代是**工业级数据工厂**（DROID 76k 条精细标定[7](https://arxiv.org/abs/2403.12945)、AgiBot World 百台机器人产线级数据[8](https://arxiv.org/abs/2503.06669)）。
+> * **Scaling Law 已被实证**：清华团队在双臂平台上系统扫参发现：模仿学习性能随数据量呈幂律提升；**同量级下场景多样性带来的增益远大于演示条数**；且仿真预训练数据与真机微调数据存在可观的正迁移[9](https://arxiv.org/abs/2410.18647)。这给整个行业的数据战略提供了理论地基。
+> * **评测正在经历信任危机**：LIBERO 被 VLA 刷到 95%+ 后区分度归零；仿真榜单排名与真机表现的相关性只在部分任务族成立[20](https://arxiv.org/abs/2405.05941)；20 次 rollout 的 80% 成功率置信区间宽达 ±17%。本篇给出三个补救工具：受控扰动基准（COLOSSEUM）[33](https://arxiv.org/abs/2402.08191)、仿真-真实校准协议（SimplerEnv）、统计显著性纪律（Wilson 区间 + 多种子）。
 
 ## 目录
 

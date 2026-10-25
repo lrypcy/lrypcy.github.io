@@ -16,8 +16,8 @@ mathjax: true
 >
 > 编号说明：专家并行（02）因单主题源码体量超出「一个模块一篇」的承载上限而提前独立成篇，本篇先落地编号靠前的进程组与通信组织。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * 一个 rank 到底握着几个通信域？答案不是「TP 一个、PP 一个」，而是**全部由一次函数调用建立、存进 59 个模块级全局变量**。`initialize_model_parallel` 一个函数 L601–L1583（983 行）建完所有组，没有对象、没有注册表、没有生命周期管理（[`parallel_state.py` L601–L1583](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L601-L1583)）。
 > * **状态载体是模块级全局变量，不是对象。** `parallel_state.py` L29–L159 共 59 个：39 个是进程组句柄、10 个 `*_GLOBAL_RANKS` 记录组内 rank 列表、10 个 `_*_MPU_*_SIZE|RANK` 做记账。「析构」`destroy_model_parallel()` L2506–L2692 就是把逐个置 `None`。（[`parallel_state.py` L29–L159](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L29-L159)）
 > * **所有 `torch.distributed.new_group` 收口在一个函数**：`create_group()` L232–L266。它额外做两件事——按torch 版本裁剪参数（`parallel_state.py` L249–L258），以及把本rank 所属的组登记进 `_global_process_group_list`（`parallel_state.py` L264–L265，首位 `None` 代表默认组）。这个台账的唯一用途是 `update_pg_timeout()` L203–L229 批量改超时。（[`create_group()` L232–L266](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/parallel_state.py#L232-L266)）

@@ -12,8 +12,8 @@ mathjax: true
 >
 > 上一篇横评回答「选哪个框架」，这一篇回答「**同一个公式，各框架实现出来为什么不一样**」。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **同一份 rollout，三个框架能算出三套 advantage**。不是因为谁错了，而是「组内归一化」这件事有四种合法做法：GRPO 除以组内 std、Dr.GRPO 只减均值、RLOO 乘留一系数 $$\frac{n}{n-1}$$、REINFORCE++-baseline 减均值后再做**跨组白化**。源码里它们的差别只有几行。
 > * **一个几乎没人提的源码细节**：verl 用 `torch.std()` 算组内标准差（[`core_algos.py:321`](https://github.com/verl-project/verl/blob/1876b06d/verl/trainer/ppo/core_algos.py#L321)），而 torch 的 `std` **默认 unbiased（除以 $$n-1$$）**；换成 numpy 默认口径，$$G=4$$ 时 advantage 尺度差 **1.1547 倍**。
 > * **GSPO 的「序列级比率」在 veRL 和 TRL 里不是同一个东西**。veRL 用**组合比率** `sg[log s_i] + log_prob − sg[log_prob]`：裁剪决策用序列级标量、梯度仍逐 token 回传；TRL 则把序列级 ratio 直接 broadcast 到所有 token，梯度整条共享。同样叫「序列级」，梯度路径不同。

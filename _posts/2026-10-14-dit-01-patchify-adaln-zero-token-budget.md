@@ -14,14 +14,14 @@ excerpt: "DiT 的全部内容可以压缩成一句话：把去噪网络的主干
 
 > **TL;DR**
 >
-> - DiT 是**主干架构**，不是独立的生成算法。DDPM 的 $$\epsilon$$ 预测、$$x_0$$ 预测、$$v$$ 预测、Flow Matching 的速度场，都可以装进同一个 Transformer 主干——[SiT](https://arxiv.org/abs/2401.08740) 在**逐位相同的网络、相同参数量、相同 Gflops** 下换目标函数，把 ImageNet 256×256 的 FID 从 2.27 做到 2.06。
-> - Patchify 决定 token 预算：$$N=\frac{HW}{p^2}$$。DiT 论文的原话是「halving $$p$$ will quadruple $$T$$, and thus at least quadruple total transformer Gflops」——实测 DiT-XL 从 $$p=8$$ 到 $$4$$ 是 3.931 倍、从 $$4$$ 到 $$2$$ 是 4.084 倍，**不到 4 倍的那一次**就是 AdaLN 调制这类不随 $$N$$ 增长的项在拉低比值。
-> - 闭合公式 $$\text{MACs} = L\,(3ND^2 + 2N^2D + ND^2 + 2rND^2 + 6D^2) + 2Np^2CD + \cdots$$ 把 DiT 论文 Table 4 的 13 个 Gflops 数字全部反算到 0.4% 以内（唯一超 0.5% 的那个只有两位小数可对）。注意力二次项追平线性项的临界点是 $$N^\*=(2+r)D=6912$$ 个 token：256×256 时注意力只占 3.6%，4K 时占 82.4%。
-> - AdaLN-Zero 把门控 $$\alpha$$ 初始化为零，于是 28 层堆叠后 `max|out − x| = 0`（逐位恒等），初始损失精确等于目标自身能量 0.8107，而普通初始化是 11.6910（14.42 倍）；同时被门控的分支输出非零（Attn 分支 1.14 倍、MLP 分支 1.29 倍），$$\alpha$$ 的梯度不为零——**恒等不等于死梯度**。
-> - $$\epsilon$$ 预测到 $$x_0$$ 的误差放大因子是 $$\sigma/\alpha$$：$$t=0.9$$ 时 9.00 倍、$$t=0.99$$ 时 99.0 倍；$$v$$ 预测的放大因子是 $$\sigma/\Delta$$，两条常用路径下都 ≤ 1。这正是 [Salimans & Ho 引入 $$v$$ 参数化](https://arxiv.org/abs/2202.00512) 的动机。
-> - 时间步**不能**从 $$x_t$$ 里推出来。方差保持路径 + 单位方差数据下，$$x_t\sim\mathcal N(0,1)$$ 对**所有** $$t$$ 成立，边缘分布对 $$t$$ 的信息量是零——但知道 $$t$$ 的贝叶斯最优 MSE 是 0.5000，不知道是 0.5949，差 **18.99%**。
-> - 全局向量条件（只把整段文本池化成一个向量）能解释的能量恰好是 $$1/K$$：8 个正交语义下 MSE 下界 0.875，交叉注意力把它降到 $$7.8\times10^{-10}$$。这就是 AdaLN（全局调制）必须和交叉注意力搭配、而不是二选一的原因。
-> - 推理成本 = 步数 × 单次前向。高斯 + 线性路径有解析速度场，实测 Euler 收敛阶 −0.92、Heun −2.11；折算到 DiT-XL/2，误差容限 $$10^{-3}$$ 时 Heun 的总算力是 Euler 的 **1/46**。
+> * DiT 是**主干架构**，不是独立的生成算法。DDPM 的 $$\epsilon$$ 预测、$$x_0$$ 预测、$$v$$ 预测、Flow Matching 的速度场，都可以装进同一个 Transformer 主干——[SiT](https://arxiv.org/abs/2401.08740) 在**逐位相同的网络、相同参数量、相同 Gflops** 下换目标函数，把 ImageNet 256×256 的 FID 从 2.27 做到 2.06。
+> * Patchify 决定 token 预算：$$N=\frac{HW}{p^2}$$。DiT 论文的原话是「halving $$p$$ will quadruple $$T$$, and thus at least quadruple total transformer Gflops」——实测 DiT-XL 从 $$p=8$$ 到 $$4$$ 是 3.931 倍、从 $$4$$ 到 $$2$$ 是 4.084 倍，**不到 4 倍的那一次**就是 AdaLN 调制这类不随 $$N$$ 增长的项在拉低比值。
+> * 闭合公式 $$\text{MACs} = L\,(3ND^2 + 2N^2D + ND^2 + 2rND^2 + 6D^2) + 2Np^2CD + \cdots$$ 把 DiT 论文 Table 4 的 13 个 Gflops 数字全部反算到 0.4% 以内（唯一超 0.5% 的那个只有两位小数可对）。注意力二次项追平线性项的临界点是 $$N^\*=(2+r)D=6912$$ 个 token：256×256 时注意力只占 3.6%，4K 时占 82.4%。
+> * AdaLN-Zero 把门控 $$\alpha$$ 初始化为零，于是 28 层堆叠后 `max|out − x| = 0`（逐位恒等），初始损失精确等于目标自身能量 0.8107，而普通初始化是 11.6910（14.42 倍）；同时被门控的分支输出非零（Attn 分支 1.14 倍、MLP 分支 1.29 倍），$$\alpha$$ 的梯度不为零——**恒等不等于死梯度**。
+> * $$\epsilon$$ 预测到 $$x_0$$ 的误差放大因子是 $$\sigma/\alpha$$：$$t=0.9$$ 时 9.00 倍、$$t=0.99$$ 时 99.0 倍；$$v$$ 预测的放大因子是 $$\sigma/\Delta$$，两条常用路径下都 ≤ 1。这正是 [Salimans & Ho 引入 $$v$$ 参数化](https://arxiv.org/abs/2202.00512) 的动机。
+> * 时间步**不能**从 $$x_t$$ 里推出来。方差保持路径 + 单位方差数据下，$$x_t\sim\mathcal N(0,1)$$ 对**所有** $$t$$ 成立，边缘分布对 $$t$$ 的信息量是零——但知道 $$t$$ 的贝叶斯最优 MSE 是 0.5000，不知道是 0.5949，差 **18.99%**。
+> * 全局向量条件（只把整段文本池化成一个向量）能解释的能量恰好是 $$1/K$$：8 个正交语义下 MSE 下界 0.875，交叉注意力把它降到 $$7.8\times10^{-10}$$。这就是 AdaLN（全局调制）必须和交叉注意力搭配、而不是二选一的原因。
+> * 推理成本 = 步数 × 单次前向。高斯 + 线性路径有解析速度场，实测 Euler 收敛阶 −0.92、Heun −2.11；折算到 DiT-XL/2，误差容限 $$10^{-3}$$ 时 Heun 的总算力是 Euler 的 **1/46**。
 
 配套实验：[`ipynbs` commit `478fc03`](https://github.com/lrypcy/ipynbs/tree/478fc03197717af362e127209eae6690458c1866/experiments/dit/dit_core/) 下的 `dit_core/`，纯 numpy、CPU 可跑、固定 seed，30 条断言全过；本文所有实测数字都来自它的实际输出（[`results/summary.md`](https://github.com/lrypcy/ipynbs/tree/478fc03197717af362e127209eae6690458c1866/experiments/dit/dit_core/results/summary.md)）。
 

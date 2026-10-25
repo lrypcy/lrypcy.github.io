@@ -9,11 +9,11 @@ layout: post
 mathjax: true
 ---
 
-> **TL;DR 三连**
+> **TL;DR**
 >
-> - **核心论点**：SFT、（on-policy）蒸馏、RLVR 不是四个方法，是同一个 REINFORCE 家族目标 $$\mathcal{L}(\theta)=\lambda\mathcal L_{SFT}+(1-\lambda)\mathcal L_{OPD}+\mu\mathcal L_{RL}$$ 在两个坐标轴——**采样分布**（老师分布 → 学生分布）与**信号密度**（逐 token 稠密 → 整条稀疏）——上的插值点。OPD 端点的本质是“教师 logp 当稠密奖励的策略梯度”（《On-Policy Distillation 深度剖析》§2.4 已证：反向 KL 的梯度 = REINFORCE，log-ratio 即逐 token 奖励）。
-> - **反直觉发现**：光谱两端点的统计性质几乎处处互换——SFT 梯度方差最低但模式覆盖最差（exposure bias 随长度平方放大）；RLVR 模式覆盖最自由但方差最高、每条轨迹只教 O(1) bit。OPD 在两轴各取中间不是修辞而是测量事实：参数空间诊断显示三者的更新稀疏度分别为 8.1% / 51.6% / 77.2%，恰好单调排列。
-> - **定位**：本篇是四象限地图的“统一场论”篇，把象限Ⅰ（蒸馏）与象限Ⅲ（RLVR）焊在同一个损失函数上；Step-Level OPD 给出光谱内部新点的第一个系统构造，AwesomeOPD 收录的 50 条 OPD-RL 混合（TGPO、OPD+、ATOD……）则是工程界自发长出的连续插值器。
+> * **核心论点**：SFT、（on-policy）蒸馏、RLVR 不是四个方法，是同一个 REINFORCE 家族目标 $$\mathcal{L}(\theta)=\lambda\mathcal L_{SFT}+(1-\lambda)\mathcal L_{OPD}+\mu\mathcal L_{RL}$$ 在两个坐标轴——**采样分布**（老师分布 → 学生分布）与**信号密度**（逐 token 稠密 → 整条稀疏）——上的插值点。OPD 端点的本质是“教师 logp 当稠密奖励的策略梯度”（《On-Policy Distillation 深度剖析》§2.4 已证：反向 KL 的梯度 = REINFORCE，log-ratio 即逐 token 奖励）。
+> * **反直觉发现**：光谱两端点的统计性质几乎处处互换——SFT 梯度方差最低但模式覆盖最差（exposure bias 随长度平方放大）；RLVR 模式覆盖最自由但方差最高、每条轨迹只教 O(1) bit。OPD 在两轴各取中间不是修辞而是测量事实：参数空间诊断显示三者的更新稀疏度分别为 8.1% / 51.6% / 77.2%，恰好单调排列。
+> * **定位**：本篇是四象限地图的“统一场论”篇，把象限Ⅰ（蒸馏）与象限Ⅲ（RLVR）焊在同一个损失函数上；Step-Level OPD 给出光谱内部新点的第一个系统构造，AwesomeOPD 收录的 50 条 OPD-RL 混合（TGPO、OPD+、ATOD……）则是工程界自发长出的连续插值器。
 
 ```mermaid
 flowchart LR

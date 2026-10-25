@@ -12,8 +12,8 @@ mathjax: true
 >
 > 前置总纲回答的是「有哪些工具、各自回答什么问题」。从本篇起进入下一层：**这些工具报出来的数字是怎么算出来的，以及哪些数字彼此不可比。**
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **同一行训练日志，可以合法地报成 20.2% 或 128.2% 的 MFU。** 差异全部来自分母：用的是稠密还是带 2:4 稀疏的规格、是 BF16 还是 FP8、是不是同一代卡。MFU 不是一个数，是「分子口径 + 分母口径 + 硬件」的三元组；报 MFU 不写分母，等于没报。
 > * **官方规格页自己就有排版陷阱。** [A100 产品页](https://www.nvidia.com/en-us/data-center/a100/)写作「312 TFLOPS \| 624 TFLOPS\*」（稠密在前、带星号的是稀疏）；[H100 产品页](https://www.nvidia.com/en-us/data-center/h100/)只给「1,979 TFLOPS\*」，稠密 989.5 要靠脚注的一半推出来。照抄首页数字当分母，MFU 直接腰斩。
 > * **MFU 与 HFU 的差别只有一处：重计算的 FLOPs 算不算数。** 开满 activation recompute 时每 token 从 6P 变成 8P，HFU = MFU × 4/3。**Megatron 官方日志里的 `throughput per GPU (TFLOP/s/GPU)` 是 MFU 口径**——它的分子收尾在 `training.py:1007` 的 `return flops_fwd * 3`，不含重计算系数，所以开不开 recompute 这个对数都不变。想评价「重计算划不划算」得自己换算。

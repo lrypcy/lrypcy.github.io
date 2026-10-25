@@ -13,8 +13,8 @@ mathjax: true
 
 > **前置**：14 篇讲了 `ModuleSpec` / `build_module` / `BackendSpecProvider` / 「默认即 `IdentityOp`」，15 篇讲了 dense 模型的装配全流程与两份layer spec 的逐格对照。本篇**直接引用**那套机制。MoE 的路由、all-to-all、dispatcher 五钩子见 [02 篇](/2026/10/08/megatron-02-expert-parallel/)，本篇只讲**层类型怎么排、层分配怎么算**。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **hybrid 模型需要一套自己的层类型语言，因为「哪些层、用什么顺序」变成了配置而不是代码。** [`Symbols` 定义在 L14–L26](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/hybrid/hybrid_layer_allocation.py#L14-L26)：`M`=Mamba、`G`=GDN、`*`=attention、`D`=DeepSeek attention、`+`=MLA、`-`=MLP、`E`=MoE，另加两个**分隔符** `PIPE`（pipeline 边界）与 `MTP_SEPARATOR`（MTP 分隔）。
 > * **`Symbols` 不是 `Enum` 而是一个普通类，`name_sorted_valid_layer_symbols()` 用反射按「属性名」排序。** 它遍历 `vars(cls)`、筛掉下划线开头且值不在 `VALID_LAYERS` 里的项、按名字排序后返回值（[L28–L38](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/hybrid/hybrid_layer_allocation.py#L28-L38)）。**分隔符 `PIPE` 与 `MTP_SEPARATOR` 因为不在 `VALID_LAYERS` 里而自动被排除**——这个排除是计数逻辑能跳过 `PIPE` 的原因，不是显式判断。
 > * **MTP 的所有深度必须共用同一份层类型列表，只有个数不同。** [`parse_hybrid_pattern` L258–L266](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/hybrid/hybrid_layer_allocation.py#L258-L266)逐个比对 `mtp_parts[1:]`，不一致就 `raise ValueError`。而且 MTP 段**不允许 `PIPE`**（[L268](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/models/hybrid/hybrid_layer_allocation.py#L268) `allow_pipe=False`）——**MTP 层不参与 pipeline 边界划分**。

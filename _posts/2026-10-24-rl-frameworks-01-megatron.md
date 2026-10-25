@@ -10,8 +10,8 @@ mathjax: true
 
 > **系列导航** ｜ Megatron 系列已完成 14 篇（[00 地基](/2026/09/28/megatron-00-foundation/) → [01 进程组与通信重叠](/2026/10/08/megatron-01-process-groups-and-comm-overlap/) → … → [16 混合与 MoE 模型装配](/2026/10/14/megatron-16-hybrid-and-moe-model-assembly/)），讲的是并行原理与源码层；本文是其中的**框架视角补充篇**，只回答「一个外部模型与一份外部数据，怎么变成一个能在多卡上跑起来的 Megatron 作业」。RL 框架系列：[02 slime](/2026/10/24/rl-frameworks-02-slime/) ｜ [03 veRL](/2026/10/24/rl-frameworks-03-verl/) ｜ [08 两族横评](/2026/10/24/rl-frameworks-08-landscape/)
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **数据链路是「三重切分」叠加**：拆文档 → 按 `seq_len` 打包成样本 → 按 DP rank 分样本。前两层决定一条样本长什么样，第三层决定它被哪张卡读到。三层的边界分别落在 `GPTDataset.__getitem__`、`build_pretraining_data_loader` 的 sampler、以及 `consumed_samples` 这个续训游标上。
 > * **普通 HF 模型不能直接用，缺的是三样东西**：并行层替换（`nn.Linear` → `ColumnParallelLinear` / `RowParallelLinear`）、参数名与布局改写（q/k/v 三段合并成 GQA 交错布局）、以及一份**可逆的映射表**（Bridge 的 `MegatronMappingRegistry`）。
 > * **切分点的正确性可以被证明**：`ColumnParallelMapping` 沿 dim 0 切、`RowParallelMapping` 沿 dim 1 切，两者在 `Y = XW` 的矩阵乘法里天然互补——上游按输出维切、下游按输入维切，中间的局部结果相加即得全局结果。这就是「为什么这样切是等价的」的全部答案。

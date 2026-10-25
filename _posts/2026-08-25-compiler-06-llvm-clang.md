@@ -12,11 +12,12 @@ mathjax: true
 >
 > [第 05 篇 GCC 剖析](/2026/08/25/compiler-05-gcc-anatomy/) ← **本篇** → [第 07 篇 TVM 剖析](/2026/08/25/compiler-07-tvm/)
 
-**TL;DR**
-* LLVM 把“中间表示 + pass 基础设施”本身做成了产品。本文在本机（Homebrew clang **22.1.0**，arm64）跑通 `clang → opt → llc` 全链路，所有 IR 与汇编均为真实输出。
-* 实测高潮：一个朴素的平方和循环 `for(i<n) acc+=i*i`，在 `-O2` 后**循环整体消失**——LLVM 的标量演化引擎（SCEV）把它识别成闭式公式 $$\sum_{i=0}^{n-1} i^2 = \frac{n(n-1)(2n-1)}{6}$$，并用魔数乘法替代除以 3。这展示了中端优化能达到的理论高度。
-* 过程中踩到一个所有人都踩过的坑：`-O0` 产出的函数带 `optnone` 属性，会让后续 `opt` 全部静默失效，需 `-Xclang -disable-O0-optnone` 解除。
-* 架构主线：New PassManager 的可配置管线、MC 层拆分使 JIT 复用汇编器、TableGen 的 DSL 生成思想——三者共同构成“基础设施可编程性”的三根柱子。
+> **TL;DR**
+>
+> * LLVM 把“中间表示 + pass 基础设施”本身做成了产品。本文在本机（Homebrew clang **22.1.0**，arm64）跑通 `clang → opt → llc` 全链路，所有 IR 与汇编均为真实输出。
+> * 实测高潮：一个朴素的平方和循环 `for(i<n) acc+=i*i`，在 `-O2` 后**循环整体消失**——LLVM 的标量演化引擎（SCEV）把它识别成闭式公式 $$\sum_{i=0}^{n-1} i^2 = \frac{n(n-1)(2n-1)}{6}$$，并用魔数乘法替代除以 3。这展示了中端优化能达到的理论高度。
+> * 过程中踩到一个所有人都踩过的坑：`-O0` 产出的函数带 `optnone` 属性，会让后续 `opt` 全部静默失效，需 `-Xclang -disable-O0-optnone` 解除。
+> * 架构主线：New PassManager 的可配置管线、MC 层拆分使 JIT 复用汇编器、TableGen 的 DSL 生成思想——三者共同构成“基础设施可编程性”的三根柱子。
 
 ---
 

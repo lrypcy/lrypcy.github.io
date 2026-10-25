@@ -10,8 +10,8 @@ mathjax: true
 
 > **系列导航** ｜ 引擎架构请看 [推理引擎深度对比（01）：架构分歧的根](/2026/10/18/serving-01-architecture-divergence/)，本文不重复引擎内部。本系列：[01 Megatron](/2026/10/24/rl-frameworks-01-megatron/) ｜ [02 slime](/2026/10/24/rl-frameworks-02-slime/) ｜ [03 veRL](/2026/10/24/rl-frameworks-03-verl/) ｜ [04 AReaL](/2026/10/24/rl-frameworks-04-areal/) ｜ [05 RLinf](/2026/10/24/rl-frameworks-05-rlinf/) ｜ 本文 06（SGLang 接缝）｜ [07 vLLM 接缝](/2026/10/24/rl-frameworks-07-vllm/) ｜ [08 两族横评](/2026/10/24/rl-frameworks-08-landscape/)
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **SGLang 相对 vLLM 最有信息量的差异是暂停语义的三档**：`abort` / `retract` / `in_place`。三者的区别不在「停不停」，而在**停下之后在途请求的命运**——被杀死、被退回等待队列、还是原地冻住并把 KV 留着。**这是 RL 换权重时唯一需要精确语义的地方**，选错会导致要么丢样本、要么 KV 失效、要么刷缓存被**静默跳过**。
 > * **`in_place` 模式与 `flush_cache` 是互斥的，这一点写在类型定义里**：*Note: In 'inplace' mode, flush_cache will fail if there are any requests in the running_batch.* —— 想保住在途请求就别想刷缓存，这是硬约束不是建议。
 > * **`retract` 是唯一「能刷缓存又能保住请求」的档位**：请求被退回 `waiting_queue`，KV 被丢弃，`continue_generation` 之后**自动重算**。代价是重算那部分前缀。

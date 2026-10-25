@@ -10,8 +10,8 @@ mathjax: true
 
 > **系列导航** ｜ 本系列：[01 Megatron 训练栈](/2026/10/24/rl-frameworks-01-megatron/) ｜ 本文 02 ｜ [03 veRL](/2026/10/24/rl-frameworks-03-verl/) ｜ [04 AReaL](/2026/10/24/rl-frameworks-04-areal/) ｜ [05 RLinf](/2026/10/24/rl-frameworks-05-rlinf/) ｜ [06 SGLang 接缝](/2026/10/24/rl-frameworks-06-sglang/) ｜ [07 vLLM 接缝](/2026/10/24/rl-frameworks-07-vllm/) ｜ [08 两族横评](/2026/10/24/rl-frameworks-08-landscape/) ｜ 全景：[RL 训练框架横评](/2026/09/29/rl-training-frameworks-survey/) ｜ 变量侧：[RL 框架里的那些变量](/2026/09/30/rl-variables-in-frameworks/)
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **slime 的简洁来自一件极端的事：它不自己造并行层，也不自己造推理引擎。** 训练端原样用 Megatron-LM（`slime/backends/megatron_utils`），推理端原样起 SGLang 服务（`slime/backends/sglang_utils`），Ray 只负责三件事：摆卡（placement group）、起 actor、在 actor 之间搬数据。框架自己没有 `Worker` 抽象、没有 `WorkerGroup`、没有 `ResourcePool`——`slime/ray/` 一共六个文件。
 > * **初始化的顺序决定了后面所有的坑**。`create_placement_groups` 先按 `--colocate` 决定「actor 和 rollout 是抢同一批卡还是各占一批」，这个决定一路传导到权重同步方式：colocate 走 **CUDA IPC + `gather_object`**（Gloo CPU 侧收集），非 colocate 走 **NCCL broadcast**，两者在 `create_weight_updater` 里被硬断言互斥。
 > * **一个 RL step 的阻塞点只有四处**：`generate` 返回、`async_train` 返回、`offload_train`、`update_weights`。其余全是异步 Ray ObjectRef 在飞。这就是「简洁」的代价——**重叠是靠 Ray 的异步而不是靠框架的调度器**。

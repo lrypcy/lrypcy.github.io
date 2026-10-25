@@ -39,8 +39,8 @@ mathjax: true
 >
 > **图全部自绘。** 本系列遵循「默认一律自绘」的引用许可原则：NVIDIA 官方文档与 blog 的图版权保留、不可复制；arXiv 论文的图需逐篇确认 abs 页有无 CC 标识。所以本篇每张图下方均注明所据的源码 permalink 或官方页面链接。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **Refit 解决的是一个非常具体的问题：同一份权重，要从「训练布局」搬到「推理布局」，而这两个布局通常不是同一个。** 训练侧是 DP×TP×PP×EP 的四维网格（[01 篇](/2026/10/08/megatron-01-process-groups-and-comm-overlap/)），推理侧通常只剩 TP——没有 DP 副本、没有梯度、没有优化器状态。搬一次就是**把一份分片方式不同的数据重新分片**。
 > * **`planner.py` 的核心设计是「每个 rank 各自重放同一份确定性排期，只取属于自己的那一片」。** N 个 rank 得到 N 份**互补**的排期，而不是 N 份相同的排期再互相协调（[L403–L451](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/resharding/planner.py#L403-L451)）。
 > * **省掉协调的代价是「排期必须严格确定」。** 迭代顺序只依赖 metadata roster，源码用 `sorted(dst_param_metadata_by_rank)` 遍历，因此 sender 与 receiver 各自重放出的 `task_id` 自然一致（[L305–L356](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/resharding/planner.py#L305-L356)）。

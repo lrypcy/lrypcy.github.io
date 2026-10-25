@@ -12,11 +12,12 @@ mathjax: true
 >
 > [第 10 篇 从零开发经典编译器](/2026/08/25/compiler-10-build-classic-compiler/) ← **本篇** → [第 12 篇 编译器工程化](/2026/08/25/compiler-12-engineering/)
 
-**TL;DR**
-* 本文用约 **550 行无依赖 Python**（numpy 仅作 eager 对照）实现 MicroAI-Compiler（MAC）：记录式图捕获 → 常量折叠 → elementwise 融合（带闭包合法性检查）→ liveness 内存规划 → 双目标代码生成（可执行 C + Triton 文本工件）。
-* 端到端实测（4096×4096 fp32，arm64，clang -O2）：六算子链 `relu((x·1.5+y)·0.25−y·0.5)`，eager numpy **53.57 ms/iter（128 MB 临时量）vs 融合 C 版 2.75 ms/iter（零临时）= 19.45x 加速**，数值 allclose 通过。19 倍的来源不是魔法：融合把 7 次数组往返压成 1 次，让 kernel 跑到接近内存带宽极限。
-* 与第 10 篇逐阶段对照——词法↔图捕获、IR pass↔图 pass、寄存器分配↔内存规划、LLVM IR↔C/Triton——你会看到 AI 编译器没有任何新原理，只有新约束。
-* 实现过程踩了三个真 bug（融合后悬空引用、flat 成员表漏叶子、基准被文件 I/O 污染），每一个都是真实 AI 编译器框架的著名陷阱的微缩版，见 §7。
+> **TL;DR**
+>
+> * 本文用约 **550 行无依赖 Python**（numpy 仅作 eager 对照）实现 MicroAI-Compiler（MAC）：记录式图捕获 → 常量折叠 → elementwise 融合（带闭包合法性检查）→ liveness 内存规划 → 双目标代码生成（可执行 C + Triton 文本工件）。
+> * 端到端实测（4096×4096 fp32，arm64，clang -O2）：六算子链 `relu((x·1.5+y)·0.25−y·0.5)`，eager numpy **53.57 ms/iter（128 MB 临时量）vs 融合 C 版 2.75 ms/iter（零临时）= 19.45x 加速**，数值 allclose 通过。19 倍的来源不是魔法：融合把 7 次数组往返压成 1 次，让 kernel 跑到接近内存带宽极限。
+> * 与第 10 篇逐阶段对照——词法↔图捕获、IR pass↔图 pass、寄存器分配↔内存规划、LLVM IR↔C/Triton——你会看到 AI 编译器没有任何新原理，只有新约束。
+> * 实现过程踩了三个真 bug（融合后悬空引用、flat 成员表漏叶子、基准被文件 I/O 污染），每一个都是真实 AI 编译器框架的著名陷阱的微缩版，见 §7。
 
 ---
 

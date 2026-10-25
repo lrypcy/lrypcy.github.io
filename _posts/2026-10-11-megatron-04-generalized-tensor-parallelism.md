@@ -19,8 +19,8 @@ mathjax: true
 >
 > **图全部自绘。** 本系列遵循「默认一律自绘」的引用许可原则：NVIDIA 官方文档与 blog 的图版权保留、不可复制；arXiv 论文的图需逐篇确认 abs 页有无 CC 标识（本系列常引的 [arXiv:2205.05198](https://arxiv.org/abs/2205.05198) 只有默认许可、其图不可用）。所以本篇每张图下方均注明所据的源码 permalink 或官方页面链接。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **GTP 把权重重切分成两个正交子轴：`GTP = TP × GTP_remat`**，于是每个 rank 只存 $$1/(TP \cdot GTP_{\text{remat}})$$ 的权重、梯度与优化器状态。`TP` 那一份**永久保持分片**（就是普通 TP），`GTP_remat` 那一份在 GEMM 前all-gather 回全量、用完释放（[GTP 设计文档](https://docs.nvidia.com/megatron-core/developer-guide/latest/api-guide/core/generalized_tensor_parallel.html)）。
 > * **`remat` 在这里不是激活重计算。** apidocs 明确标注 *NOTE: “remat” here is NOT activation recomputation/checkpointing*——它指权重的 rematerialization，机制与 ZeRO-3 同构（切权重与梯度状态 → 用前 all-gather → 用后释放 → 回程 reduce-scatter 梯度，官方文档原文 *obeys the same contract*）。
 > * **每个权重独立 rematerialize，不是逐层。** `initialize_model_parallel` 的 docstring 写的是 *each weight is rematerialized independently (**per-weight, not per-layer**) via async all-gather on every forward AND backward pass*（[parallel_state apidocs](https://docs.nvidia.com/megatron-core/developer-guide/latest/apidocs/core/core.parallel_state.html)）。

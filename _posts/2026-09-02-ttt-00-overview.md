@@ -14,7 +14,8 @@ mathjax: true
 >
 > - 01 核心数学 + 序列建模层 → 02 LLM 推理增强 + 工程优化 → 03 相关工作全景 + 前沿 + 实践指南
 
-**TL;DR**
+> **TL;DR**
+>
 > * **一句话**：TTT（Test-Time Training）不是“训练一个模型去预测”，而是**在推理时用当前测试输入本身，去训练一个能更好处理这个输入的模型**。它把传统“训练一次、推理冻结”的范式打破了。
 > * **两个关键概念**：**Fast weights**（隐藏状态本身是一个小模型 $f_W$，测试与训练时都更新）和 **Slow weights**（预训练模型参数 $\theta$，测试时冻结）。推理时每来一个 token，就用它做一步梯度下降去更新 $W$。
 > * **两条主线**：① **序列建模层**（TTT-Linear/MLP 替代 Transformer 的 attention，线性复杂度 + 固定内存 + 长上下文持续下降的 perplexity）；② **LLM 推理增强**（TTT-NN 检索近邻微调、TTT-FewShot 用示例训练、TTRL 用强化学习在 test time 训练）。

@@ -16,8 +16,8 @@ mathjax: true
 >
 > 编号说明：01（并行体系源码层：进程组 / TP+SP / GTP / DP / PP / CP）在写作中；本篇先落地原计划里排在模块 B 的 MoE 主题。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * EP 在 Megatron 里不是一个模块，而是**二十个文件、上万行代码**的一整套协议层。核心矛盾只有一句话：**专家的位置是静态的，token 的位置是动态的**。所有设计都是这句话的推论。
 > * **进程组必须开两套表。** `initialize_model_parallel` 同时建 `decoder_rank_generator`（`ep=1, cp=cp`）与 `expert_decoder_rank_generator`（`ep=EP, cp=1`），因为 EP 不是加在 dense 网格上的一根新轴，而是**把 dense 网格里的 DP 维度重新解释成 EP**。EP 组恰好等于 dense 网格里那个 DP 组的 rank 集合。两套表的 PP 分组被断言逐 rank 相等。
 > * **token dispatch 有三个家族、四套后端。** `MoEAllGatherTokenDispatcher`（在 TP×EP 域上 AllGather）、`MoEAlltoAllTokenDispatcher`（permute → A2A → sort_chunks → …  七步）、`MoEFlexTokenDispatcher`（把 TP×EP 合成单一通信域，后端 deepep / hybridep / ncclep）。三者在 `TransformerConfig` 里只由 `moe_token_dispatcher_type` 一个字段区分。

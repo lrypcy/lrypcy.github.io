@@ -12,7 +12,8 @@ mathjax: true
 >
 > [07 集合通信地基](/2026/08/31/dist-train-07-collective-comm/) ← **本篇**（系列完结）→ [00 全景总览](/2026/08/31/dist-train-00-overview/)
 
-**TL;DR**
+> **TL;DR**
+>
 > * 前 7 篇各解决一个轴，**真正的生产系统是“多维并行”的组合**：把 DP、ZeRO、TP、PP、EP、SP 按“通信必须靠近硬件”的纪律编排进 2D/3D 并行网格。**目标函数只有一句话：高频通信锁 NVLink，低频通信过跨机网络。**
 > * **2D 并行＝（跨机 DP/ZeRO）×（单机 TP+PP，Megatron 式）**：最常见的工业配置是 **DP=跨机数 × TP=8 × PP=每机段数**。每个“TP×PP”进程组构成一张“模型并行卡组（MP node）”，DP 在组间复制——梯度 All-Reduce 只在组间发生。
 > * **3D 并行＝在 2D 上再叠一层**：要么加 **EP**（超大 MoE），要么加 **SP**（超长上下文）。DeepSeek-V3 的 DSA 就是 3D 的教科书：ZeRO-3（DP 轴）+ TP/EP（域内）+ Sparse Attention（SP）。**关键等式**（全局卡数 = DP × TP × PP × EP 所用的轴乘积）：$N_{\text{total}} = N_{\text{DP}} \times N_{\text{TP}} \times N_{\text{PP}} \times N_{\text{EP}}$。

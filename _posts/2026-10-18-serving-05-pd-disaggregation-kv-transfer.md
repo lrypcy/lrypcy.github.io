@@ -20,8 +20,8 @@ mathjax: true
 >   04 支持矩阵（下）→ **05 PD 分离与 KV 传输（本文）** → 06 benchmark 交叉验证 →
 >   07 选型手册 → 08 前缀命中率
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **PD 分离不提高吞吐，这是 vLLM 官方文档的原话**（`docs/features/disagg_prefill.md`
 >   开篇的 note：「Disaggregated prefill DOES NOT improve throughput」）。它买的是两样东西：
 >   TTFT 与 ITL 可以分开调，以及尾延迟可控。当成加速器用会失望。

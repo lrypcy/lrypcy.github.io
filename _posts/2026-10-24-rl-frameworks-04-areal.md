@@ -12,8 +12,8 @@ mathjax: true
 >
 > 基准：`v2.1.0` = `ecc8b0e4dfb4e3965f67121a5c87866a07c390ae`。本文只谈 AReaL 自己的设计，不复述算法推导与并行原理。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **AReaL 是 BRIEF 四级异步定义里唯一落在最高一级的框架**：训练端与推理端是**两个独立服务**，用**样本队列**连接，staleness 由队列深度而不是全局屏障控制。`max_head_offpolicyness=0` 时它退化成同步系统，官方文档自述同步比异步慢约 2 倍 `[官方]`。
 > * **队列不是一个数据结构，而是一个「准入控制器」**。§4 拆开的 `StalenessManager.get_capacity()` 是全文最核心的一行：容量 $$=\min(\text{并发槽},\;(\eta+v+1)B-N_{\rm accepted+running})$$。超限的样本**既不丢弃也不降权，而是让生产者停下来**——限流点在入口，不在出口。
 > * **可中断 rollout 与 slime 的 partial rollout 是两件不同的事**。AReaL 中断后**丢 KV、把已生成前缀当 prompt 重算**，整条轨迹的每个 token 都记着自己的生成版本（`versions` 张量）；slime 中断后**把未完成样本回收进 buffer 续跑**，可选地把跨版本前缀的 `loss_mask` 置零。前者保留数据、承担陈旧；后者丢弃陈旧 token、承担样本浪费。

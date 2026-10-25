@@ -12,7 +12,8 @@ mathjax: true
 >
 > [05 序列并行](/2026/08/31/dist-train-05-sequence-parallel/) ← **本篇** → [07 集合通信地基](/2026/08/31/dist-train-07-collective-comm/)
 
-**TL;DR**
+> **TL;DR**
+>
 > * **专家并行（EP）**是唯一为 **Mixture-of-Experts（MoE）**定制的并行：把 $E$ 个专家（FFN 子网络）**切到 $N$ 张卡**，每卡一组专家，token 按路由决策**现场搬到对应卡**——通信原语是 **All-to-All**（区别于 DP/TP 的 All-Reduce）。
 > * 其他并行策略处理 MoE 都别扭：DP 会让每张卡复制全部专家（显存爆炸）；TP 会把每个专家切碎（专家太小，切分收益趋零）；PP 会把专家按层固定（路由跨节点就瘫痪）。**只有 EP 让“token 流动、专家不流动”。**
 > * **核心数学**：设每 token 激活 $k$ 个专家、token 总数 $T$，则**搬运量 $\approx k \cdot T$ 个 token-专家对**。对上 All-to-All（每个 rank 同时向所有人收发不等量数据）体现为 $\sum_j \lvert\text{从 }i\text{ 到 }j\rvert$ 的通信矩阵。**路由越均衡，通信越接近最优；路由倾斜（某个专家过热），最热的卡成为瓶颈。**

@@ -14,14 +14,14 @@ excerpt: "FlexAttention 的全部内容可以压缩成一句话：把「五花�
 
 > **TL;DR**
 >
-> - FlexAttention 的定义只有一个式子（论文式 1）：$$\mathrm{FlexAttention}(\mathbf Q,\mathbf K,\mathbf V)=\mathrm{softmax}\big(\mathrm{mod}(\mathbf Q\mathbf K^{T}/\sqrt{d_k})\big)\mathbf V$$。[arXiv:2412.05496](https://arxiv.org/abs/2412.05496) 原文把它概括为相对原生 FlashAttention 的**两个扩展**：「对 softmax 前分数的逐点修改 + 可从全局内存任意加载」与「前向反向都支持的块稀疏迭代」（[PyTorch 官方博客，2026-03-05](https://pytorch.org/blog/flexattention-flashattention-4-fast-and-flexible/)）。
-> - 这三个字「softmax 前」是全部的关键。修正是在「取最大值之前」施加的，所以 online softmax 的运行最大值 $$m_i$$ 天然量的是**修正之后**的分数，任意逐点修正都能塞进那条 $$\alpha$$-重标定循环里。配套实验把 noop / causal / ALiBi / soft-capping / 相对位置偏置 / causal+ALiBi 六种变体在「分块流式」与「一次性材料化」两条路径上比对，**最差 1.776e-15**。
-> - 但 $$m_i$$ 取在哪一侧其实不是数学必须（softmax 对参考值的选择不变），而是**数值必须**：给所有分数加常数 $$+160$$，取修正前做 $$m_i$$ 会让实际求过的 $$\log_2$$ 指数顶到 230.83，超过 float32 的 $$2^{127}$$ 溢出阈值；取修正后是 0.00。差值恰好是 $$\text{bias}/\ln 2$$。
-> - **mask 必须单列成 mask_mod 有两个理由**：一个是语义（靠「喂一个 0 分数进去、看它是否返回 $$-\infty$$」来反推哪些位置被掩，这种特判不可靠），一个是真金白银的性能——给每个元素施加掩码要掉 15–20%（[PyTorch 博客 FAQ](https://pytorch.org/blog/flexattention/)）。
-> - **稀疏度是第二个维度**，而且它有损：causal 掩码在 N=512 / BS=64 下元素密度 50.1%，但块级密度是 56.2%——一个 128×128 的块里只要有一个元素要算，整块都得算。
-> - **反向不需要用户写**：PyTorch 对 score_mod 单独跑一次 AOTAutograd 的 `create_joint`，得到 forward+backward 的合一图，再把这块 IR 同样塞进手写反向模板（`torch/_higher_order_ops/flex_attention.py:646-763`，锁定 v2.14.1）。
-> - **边界上的三类不可表达**：依赖「整行统计量」的修正（流式相对误差 4.365e-02，且部分行均值要到最后一块才收敛）、作用在 softmax **之后**或分母上的修正（如 attention sink 的可学习常数项）、以及元素级（非块级）的真实稀疏跳过。
-> - 2026 年这个模型还在跑，而且边界在动：2.11 起多了 **FlashAttention-4 后端**（计算受限 workload 上比 Triton 实现快 1.2–3.2×），2.13 起上了 **Apple Silicon**（最高 12×）并补齐了**确定性反向**。
+> * FlexAttention 的定义只有一个式子（论文式 1）：$$\mathrm{FlexAttention}(\mathbf Q,\mathbf K,\mathbf V)=\mathrm{softmax}\big(\mathrm{mod}(\mathbf Q\mathbf K^{T}/\sqrt{d_k})\big)\mathbf V$$。[arXiv:2412.05496](https://arxiv.org/abs/2412.05496) 原文把它概括为相对原生 FlashAttention 的**两个扩展**：「对 softmax 前分数的逐点修改 + 可从全局内存任意加载」与「前向反向都支持的块稀疏迭代」（[PyTorch 官方博客，2026-03-05](https://pytorch.org/blog/flexattention-flashattention-4-fast-and-flexible/)）。
+> * 这三个字「softmax 前」是全部的关键。修正是在「取最大值之前」施加的，所以 online softmax 的运行最大值 $$m_i$$ 天然量的是**修正之后**的分数，任意逐点修正都能塞进那条 $$\alpha$$-重标定循环里。配套实验把 noop / causal / ALiBi / soft-capping / 相对位置偏置 / causal+ALiBi 六种变体在「分块流式」与「一次性材料化」两条路径上比对，**最差 1.776e-15**。
+> * 但 $$m_i$$ 取在哪一侧其实不是数学必须（softmax 对参考值的选择不变），而是**数值必须**：给所有分数加常数 $$+160$$，取修正前做 $$m_i$$ 会让实际求过的 $$\log_2$$ 指数顶到 230.83，超过 float32 的 $$2^{127}$$ 溢出阈值；取修正后是 0.00。差值恰好是 $$\text{bias}/\ln 2$$。
+> * **mask 必须单列成 mask_mod 有两个理由**：一个是语义（靠「喂一个 0 分数进去、看它是否返回 $$-\infty$$」来反推哪些位置被掩，这种特判不可靠），一个是真金白银的性能——给每个元素施加掩码要掉 15–20%（[PyTorch 博客 FAQ](https://pytorch.org/blog/flexattention/)）。
+> * **稀疏度是第二个维度**，而且它有损：causal 掩码在 N=512 / BS=64 下元素密度 50.1%，但块级密度是 56.2%——一个 128×128 的块里只要有一个元素要算，整块都得算。
+> * **反向不需要用户写**：PyTorch 对 score_mod 单独跑一次 AOTAutograd 的 `create_joint`，得到 forward+backward 的合一图，再把这块 IR 同样塞进手写反向模板（`torch/_higher_order_ops/flex_attention.py:646-763`，锁定 v2.14.1）。
+> * **边界上的三类不可表达**：依赖「整行统计量」的修正（流式相对误差 4.365e-02，且部分行均值要到最后一块才收敛）、作用在 softmax **之后**或分母上的修正（如 attention sink 的可学习常数项）、以及元素级（非块级）的真实稀疏跳过。
+> * 2026 年这个模型还在跑，而且边界在动：2.11 起多了 **FlashAttention-4 后端**（计算受限 workload 上比 Triton 实现快 1.2–3.2×），2.13 起上了 **Apple Silicon**（最高 12×）并补齐了**确定性反向**。
 
 配套实验：[`ipynbs` commit `5954fb5`](https://github.com/lrypcy/ipynbs/tree/5954fb521a279b997005a6f514144c3b380c8e36/experiments/flex-attention/flex_core/) 下的 `flex_core/`，纯 numpy、CPU 可跑、固定 seed `20261017`，27 条断言全过；本文所有自测数字都来自它的实际输出（[`results/summary.md`](https://github.com/lrypcy/ipynbs/blob/5954fb521a279b997005a6f514144c3b380c8e36/experiments/flex-attention/flex_core/results/summary.md)）。论文与官方博客的数字一律标注出处。
 

@@ -21,8 +21,8 @@ mathjax: true
 >
 > **图全部自绘。** 本系列遵循「默认一律自绘」的引用许可原则：NVIDIA 官方文档与 blog 的图版权保留、不可复制；arXiv 论文的图需逐篇确认 abs 页有无 CC 标识。所以本篇每张图下方均注明所据的源码 permalink 或官方页面链接。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **`schedules.py` 的三个入口不是「同一套逻辑的三种配置」，而是三段完全不同构的代码。** 无流水线的 [`forward_backward_no_pipelining`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/pipeline_parallel/schedules.py#L723-L780) 里**没有 warmup / steady / cooldown 三阶段、没有气泡、没有 p2p**；它只是一个 `no_sync` 上下文里跑 N−1 个 microbatch 的朴素循环。**位置本身就是论点**：不进 PP 就没有调度器。
 > * **PP 边界上只跑两种张量，不是四种。** 前向边界传激活、反向边界传输入梯度（input gradient）。**Wgrad 不跨 PP 边界**——权重梯度由本 stage 的 optimizer 在本地消费。常见误解是「forward / backward / Wgrad / Dgrad 四种形状」，源码里没有这个四元组（§1）。
 > * **形状由 `get_tensor_shapes` 单点决定。** 变长序列直接返回**空元组** `()`，即「形状事先不可知、只传 payload 不传 header」；定长时返回 `(effective_seq_length, micro_batch_size, hidden_size)`，且**前向与反向共用同一个形状**（§1）。

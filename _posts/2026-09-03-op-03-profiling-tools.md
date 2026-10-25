@@ -12,7 +12,8 @@ mathjax: true
 >
 > [02 Kernel 语言](/2026/09/03/op-02-kernel-languages/) ← **本篇** → [04 性能分析](/2026/09/03/op-04-performance-analysis/)
 
-**TL;DR**
+> **TL;DR**
+>
 > * **背景**：NVIDIA 的 Nsight Systems（nsys）只是“系统层时间线”这一个工具，但很多工程师误以为 profiling 就只有它。换到 AMD/Intel/昇腾/寒武纪后，工具名全部变化，方法论却完全一致——关键是先建立**分层心智模型**。
 > * **核心发现**：所有 profiling 工具按功能只分三层——**框架层**（哪个算子慢，torch.profiler 跨平台通用）、**系统层**（kernel 之间怎么排队，对应 nsys）、**内核层**（单个 kernel 为什么慢，对应 ncu）。每家硬件各有一个工具对应 ncu 的位置：AMD 是 `rocprof-compute`、Intel 是 VTune GPU Hotspots、昇腾是 `msprof op`（含 Roofline 分析）。
 > * **关键数字**：AMD 的工具链在 2026 年已全面换代——`rocprof`/`rocprofv2`/`Omniperf`/`Omnitrace` 全部废弃，新名字是 `rocprofv3`/`rocprof-compute`/`rocprof-sys`。看老博客用错工具会直接踩坑。

@@ -16,11 +16,11 @@ mathjax: true
 
 ---
 
-## 摘要 (TL;DR)
-
-* **核心发现**：RTN（round-to-nearest）在数学上是“给定 scale 下的最优逐元素量化器”，其误差上界 $$s/2$$ 完全由动态范围 $$s$$ 决定。LLM 激活中存在少量但巨大的 **outlier 特征**（论文观察：约 0.1% 的特征贡献约 30% 的激活总范数），把全局动态范围撑大一个数量级，等价于正常值的有效位宽从 8 bit 坍塌到约 2 bit——这就是 6.7B 以上模型 RTN 量化 ppl 爆炸的根因。
-* **关键技术**：LLM.int8()（arXiv:2208.07339）用混合精度分解 $$X = X_{\text{int8}} + X_{\text{outlier}}$$（阈值 $$\alpha=6.0$$），outlier 列整个走 fp16 路径，其余走标准 int8 GEMM（激活 token-wise scale + 权重 per-channel scale，反量化被吸收进 scale 外积），在 OPT-175B 上做到零精度损失、内存减半，但付出了“保留 fp16 权重副本导致 2x 内存”和“fp16 路径串行拖延迟”的代价。
-* **实战价值**：LLM.int8() 是一份“诊断报告”而非最终答案——它用实验证明了 outlier 是 int8 失败的根因，并留下 int8 Tensor Core 硬件路径遗产。后来者 SmoothQuant（把 scale 迁移到权重）与 GPTQ（二阶权重补偿）在它的问题清单上迭代，才是今天的主流。理解本篇的分解数学，是读懂后两篇的前提。
+> **TL;DR**
+>
+> * **核心发现**：RTN（round-to-nearest）在数学上是“给定 scale 下的最优逐元素量化器”，其误差上界 $$s/2$$ 完全由动态范围 $$s$$ 决定。LLM 激活中存在少量但巨大的 **outlier 特征**（论文观察：约 0.1% 的特征贡献约 30% 的激活总范数），把全局动态范围撑大一个数量级，等价于正常值的有效位宽从 8 bit 坍塌到约 2 bit——这就是 6.7B 以上模型 RTN 量化 ppl 爆炸的根因。
+> * **关键技术**：LLM.int8()（arXiv:2208.07339）用混合精度分解 $$X = X_{\text{int8}} + X_{\text{outlier}}$$（阈值 $$\alpha=6.0$$），outlier 列整个走 fp16 路径，其余走标准 int8 GEMM（激活 token-wise scale + 权重 per-channel scale，反量化被吸收进 scale 外积），在 OPT-175B 上做到零精度损失、内存减半，但付出了“保留 fp16 权重副本导致 2x 内存”和“fp16 路径串行拖延迟”的代价。
+> * **实战价值**：LLM.int8() 是一份“诊断报告”而非最终答案——它用实验证明了 outlier 是 int8 失败的根因，并留下 int8 Tensor Core 硬件路径遗产。后来者 SmoothQuant（把 scale 迁移到权重）与 GPTQ（二阶权重补偿）在它的问题清单上迭代，才是今天的主流。理解本篇的分解数学，是读懂后两篇的前提。
 
 **适用人群**：AI Infra 工程师、LLM 部署/推理框架开发者、量化算法研究者。
 

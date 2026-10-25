@@ -8,11 +8,11 @@ categories:
 tags: [diffusion, ddpm, score-sde, ddim, cfg, latent-diffusion, consistency-models, flow-matching]
 ---
 
-> **TL;DR 三连**
+> **TL;DR**
 >
-> - **核心结论**：扩散模型十年主线是“一个 MSE 目标函数的三次换装”——DDPM 把生成写成逐步去噪的变分推断（[arXiv:2006.11239](https://arxiv.org/abs/2006.11239)），score matching 从朗之万动力学另一侧抵达同一损失（[arXiv:1907.05600](https://arxiv.org/abs/1907.05600)），Score-SDE 用反向 SDE 与概率流 ODE 双视角把两条路焊成一套连续时间理论（[arXiv:2011.13456](https://arxiv.org/abs/2011.13456)）。
-> - **反直觉发现**：采样加速（DDIM）、条件控制（guidance/CFG）、算力压缩（Latent Diffusion）、少步化（Consistency Models）没有一项来自新目标函数——全是同一去噪 MSE 之下的调度、参数化与表示空间工程；甚至 DALL·E 3 根本没有 arXiv 论文，任务流传的 arXiv:2310.16825 实为开源复现 CommonCanvas，本文按核实结果勘误标注。
-> - **定位**：本篇是“算法发展 × 应用落地”双板块综述：前半程逐阶段给出核心公式推导，后半程覆盖图像、视频、音频、分子科学四大应用区，收尾给出扩散 vs 流匹配对峙表并挂接本站 FM 系列互链。
+> * **核心结论**：扩散模型十年主线是“一个 MSE 目标函数的三次换装”——DDPM 把生成写成逐步去噪的变分推断（[arXiv:2006.11239](https://arxiv.org/abs/2006.11239)），score matching 从朗之万动力学另一侧抵达同一损失（[arXiv:1907.05600](https://arxiv.org/abs/1907.05600)），Score-SDE 用反向 SDE 与概率流 ODE 双视角把两条路焊成一套连续时间理论（[arXiv:2011.13456](https://arxiv.org/abs/2011.13456)）。
+> * **反直觉发现**：采样加速（DDIM）、条件控制（guidance/CFG）、算力压缩（Latent Diffusion）、少步化（Consistency Models）没有一项来自新目标函数——全是同一去噪 MSE 之下的调度、参数化与表示空间工程；甚至 DALL·E 3 根本没有 arXiv 论文，任务流传的 arXiv:2310.16825 实为开源复现 CommonCanvas，本文按核实结果勘误标注。
+> * **定位**：本篇是“算法发展 × 应用落地”双板块综述：前半程逐阶段给出核心公式推导，后半程覆盖图像、视频、音频、分子科学四大应用区，收尾给出扩散 vs 流匹配对峙表并挂接本站 FM 系列互链。
 
 ```mermaid
 graph LR

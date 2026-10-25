@@ -14,8 +14,8 @@ mathjax: true
 >
 > 后续：**01 并行体系源码层**（进程组 / TP+SP / GTP / DP / PP / CP）
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * 本系列做 **源码层**：并行原理已在《分布式训练》系列讲透，这里一律引用不重推。源码基准 **`megatron-core` 0.20.0**，commit `60e039626`。
 > * **仓库是三件东西而非一件**：Megatron Core（可组合的算子与并行库）、Megatron-LM（Core + 预置脚本与例子）、Megatron Bridge（HF ↔ mcore 双向转换）。命名和职责都容易混。
 > * **v0.20 已经不是旧文章里那个 Megatron**：GTP（新一代张量并行）、三套数据并行、原生 RL 栈、MLA/DSA、Bridge 全部进了主干。

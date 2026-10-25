@@ -15,8 +15,8 @@ excerpt: "veRL v0.9.1 的 V1 训练器把 PPO 迭代拆成 replay_buffer.sample 
 
 > 源码基准：`verl` **v0.9.1**，commit [`1876b06d`](https://github.com/verl-project/verl/tree/1876b06d0a3e4e71e06230be10af14492ca8a75b)。仓库已于 2026-01 从 `volcengine/verl` 迁到 `verl-project/verl`（[README `News`](https://github.com/verl-project/verl/blob/1876b06d0a3e4e71e06230be10af14492ca8a75b/README.md#L62)），旧组织路径会 301，本文所有 permalink 一律用 `verl-project`。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **veRL 的心智模型只有一句话**：一个单控制器进程写「图」，图的节点是角色（actor / rollout / critic / ref / reward / teacher），边是数据依赖；每个节点内部是标准 SPMD 训练。控制流在 Python 里，并行策略在引擎里，两者之间只隔一张 `dispatch_mode` 表。
 > * **代价不在写图，在读图**。控制流被抽象成经过 Ray 的 `dispatch_fn` / `collect_fn` 对之后，出问题的地方从「哪一行 Python 抛异常」变成「哪个 placement group 里的哪个 rank 没接上消息」。V1 训练器更极端——它连**样本数据本身**都不再经过控制器：控制器只发 key，数据躺在 TransferQueue 里。
 > * **V1 训练器的一条主循环，三个 hook 就是全部差异**。`step()` 里只有三件事：`replay_buffer.sample()`、`_step_once()`（一次 `forward_backward`）、`on_step_end()` 里的 `checkpoint_manager.update_weights()`。三条路径 `sync` / `colocate_async` / `separate_async` 各 44 / 50 / 439 行，差异全部落在 `on_sample_end` 与 `on_step_end` 两个钩子。

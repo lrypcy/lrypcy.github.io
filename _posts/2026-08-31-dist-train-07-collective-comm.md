@@ -12,12 +12,13 @@ mathjax: true
 >
 > [06 专家并行](/2026/08/31/dist-train-06-expert-parallel/) ← **本篇** → [08 组合实战](/2026/08/31/dist-train-08-combined-practice/)
 
-**TL;DR**
+> **TL;DR**
+>
 > * 前 6 篇到处是 All-Reduce、All-to-All、Reduce-Scatter……**本篇把它们统一到一个框架**：集合通信（Collective Communication）解决“$N$ 张卡如何以最省的带宽/延迟协同”。
 > * **All-Reduce 的三种实现**，通信量/延迟逐级下降：
->   - **朴素（收集-归约-广播）**：每卡收 $N-1$ 份、发 $N-1$ 份，$O(N)$ 带宽 → 卡多了直接崩。
->   - **树（Tree，NVLink/InfiniBand 上常用）**：$O(\log N)$ 延迟、带宽 $O(1)$ 每段——**延迟关键型场景的赢家**。
->   - **Ring（环，NCCL/Horovod 默认）**：带宽 $O(1)$ 且**数学上达到下限 $\frac{2(N-1)}{N} \propto 2$**，延迟 $O(N)$——**带宽关键型场景的赢家**。
+> * **朴素（收集-归约-广播）**：每卡收 $N-1$ 份、发 $N-1$ 份，$O(N)$ 带宽 → 卡多了直接崩。
+> * **树（Tree，NVLink/InfiniBand 上常用）**：$O(\log N)$ 延迟、带宽 $O(1)$ 每段——**延迟关键型场景的赢家**。
+> * **Ring（环，NCCL/Horovod 默认）**：带宽 $O(1)$ 且**数学上达到下限 $\frac{2(N-1)}{N} \propto 2$**，延迟 $O(N)$——**带宽关键型场景的赢家**。
 > * **Ring All-Reduce 的数学**：把向量切成 $N$ 块，先 **Reduce-Scatter**（沿环“边收边加”转 $N-1$ 段，每卡得到一块全局和 $h_i$），再 **All-Gather**（每卡把 $h_i$ 沿环广播给所有人转 $N-1$ 段）。**总时间 = 带宽项 + 延迟项**：
 >
 > $$T_{\text{Ring AllReduce}} \approx 2(N-1)\alpha + \frac{2(N-1)}{N}\cdot\frac{D}{B}$$

@@ -14,15 +14,15 @@ excerpt: "torch.compile() 为什么能在不动模型源码的前提下把 Pytho
 
 > **TL;DR**
 >
-> - `torch.compile()` 拿到的输入不是 Python 源码，而是**已经编译好的字节码**。它挂的是 CPython 的 Frame Evaluation Hook（[PEP 523](https://peps.python.org/pep-0523/)），在每次函数即将被求值时插一脚。**它绕开 Python 吗？不，它正是踩在 Python 的执行路径上。**
-> - 字节码里藏着编译期就定好的信息：`LOAD_FAST` / `LOAD_GLOBAL` / `LOAD_DEREF` / `LOAD_NAME` 不是运行时查表决定的，而是编译期符号表分析的结果（实测：同一行 `a + b + c + x`，四个名字被分成 free / free / local / global，落成四条不同的指令）。
-> - 「优化」在 CPython 里有两个层次：**编译期**的常量折叠（`2*3` 在 `co_consts` 里就是 `6`）和**运行时**的自适应专门化（PEP 659）。后者是**推测性的、可撤销的**——三份源码完全相同的 code object，只喂 int 得到 `BINARY_OP_ADD_INT`，只喂 str 得到 `BINARY_OP_ADD_UNICODE`，没跑过的仍是通用 `BINARY_OP`。
-> - 这个「先推测、再检查、失败就退回」的形状，和 Dynamo 的 Guard 是同一个形状，只是在不同的层。
-> - 代码只有一份（`__code__` 是共享的），状态每次一份（每次调用有独立的 frame，递归时同时存活多层，生成器在 `yield` 处把 frame 留着）。求值栈深度是编译器算出来的精确值，不是上界（实测累加峰值恰好等于 `co_stacksize`）。
-> - Dynamo 不是「记录算子调用日志」，而是**符号执行字节码**：维护符号化的局部变量与操作数栈，按每条指令的语义推进，遇到 Tensor 运算就在 FX 图上加一个节点。所以它知道控制流、知道数据依赖、知道哪些值必须退出图。
-> - Graph Break 不是错误，是**切图 + 续跑**：断点处先结算当前子图，再生成一段续执行代码恢复 Python 执行。代价是图边界开销 + 失去跨断点的融合机会。
-> - Guard 分两层：Python 侧的 `code_list`（`torch` 模块 id、`torch.relu` 函数 id 等）与 C++ 侧的 `TENSOR_MATCH`（形状 / dtype / stride / device 根本不进 Python code）。两个 Tensor 输入的一次最简编译就有 11 条 guard。
-> - **自动动态形状只救得了形状，救不了 dtype**：4 个不同 batch 依次调用，默认编译 2 次、关掉自动动态编译 4 次、显式 `mark_dynamic` 后 1 次；而 f32 → f64 → f32 是 2 次。
+> * `torch.compile()` 拿到的输入不是 Python 源码，而是**已经编译好的字节码**。它挂的是 CPython 的 Frame Evaluation Hook（[PEP 523](https://peps.python.org/pep-0523/)），在每次函数即将被求值时插一脚。**它绕开 Python 吗？不，它正是踩在 Python 的执行路径上。**
+> * 字节码里藏着编译期就定好的信息：`LOAD_FAST` / `LOAD_GLOBAL` / `LOAD_DEREF` / `LOAD_NAME` 不是运行时查表决定的，而是编译期符号表分析的结果（实测：同一行 `a + b + c + x`，四个名字被分成 free / free / local / global，落成四条不同的指令）。
+> * 「优化」在 CPython 里有两个层次：**编译期**的常量折叠（`2*3` 在 `co_consts` 里就是 `6`）和**运行时**的自适应专门化（PEP 659）。后者是**推测性的、可撤销的**——三份源码完全相同的 code object，只喂 int 得到 `BINARY_OP_ADD_INT`，只喂 str 得到 `BINARY_OP_ADD_UNICODE`，没跑过的仍是通用 `BINARY_OP`。
+> * 这个「先推测、再检查、失败就退回」的形状，和 Dynamo 的 Guard 是同一个形状，只是在不同的层。
+> * 代码只有一份（`__code__` 是共享的），状态每次一份（每次调用有独立的 frame，递归时同时存活多层，生成器在 `yield` 处把 frame 留着）。求值栈深度是编译器算出来的精确值，不是上界（实测累加峰值恰好等于 `co_stacksize`）。
+> * Dynamo 不是「记录算子调用日志」，而是**符号执行字节码**：维护符号化的局部变量与操作数栈，按每条指令的语义推进，遇到 Tensor 运算就在 FX 图上加一个节点。所以它知道控制流、知道数据依赖、知道哪些值必须退出图。
+> * Graph Break 不是错误，是**切图 + 续跑**：断点处先结算当前子图，再生成一段续执行代码恢复 Python 执行。代价是图边界开销 + 失去跨断点的融合机会。
+> * Guard 分两层：Python 侧的 `code_list`（`torch` 模块 id、`torch.relu` 函数 id 等）与 C++ 侧的 `TENSOR_MATCH`（形状 / dtype / stride / device 根本不进 Python code）。两个 Tensor 输入的一次最简编译就有 11 条 guard。
+> * **自动动态形状只救得了形状，救不了 dtype**：4 个不同 batch 依次调用，默认编译 2 次、关掉自动动态编译 4 次、显式 `mark_dynamic` 后 1 次；而 f32 → f64 → f32 是 2 次。
 
 配套实验：[`ipynbs` commit `9087af2`](https://github.com/lrypcy/ipynbs/tree/9087af2277089223696d6ad4a2cd9ee56eab2c8a/experiments/pytorch-runtime/dynamo-frame-capture/) 下的 `dynamo-frame-capture/`，纯 CPU、固定 seed `20261019`、无网络，66 条断言全过。两个 notebook 都**内嵌了输出**，点开就能看到每组跑了什么、跑出什么：[`runtime_lab.ipynb`](https://github.com/lrypcy/ipynbs/blob/9087af2277089223696d6ad4a2cd9ee56eab2c8a/experiments/pytorch-runtime/dynamo-frame-capture/runtime_lab.ipynb)（G1–G6，只用标准库）与 [`dynamo_lab.ipynb`](https://github.com/lrypcy/ipynbs/blob/9087af2277089223696d6ad4a2cd9ee56eab2c8a/experiments/pytorch-runtime/dynamo-frame-capture/dynamo_lab.ipynb)（G7–G9，需要 torch CPU）。本文所有「实测」数字都来自它们的输出（[`results/`](https://github.com/lrypcy/ipynbs/tree/9087af2277089223696d6ad4a2cd9ee56eab2c8a/experiments/pytorch-runtime/dynamo-frame-capture/results/)）。
 

@@ -12,11 +12,12 @@ mathjax: true
 >
 > [04 流水并行](/2026/08/31/dist-train-04-pipeline-parallel/) ← **本篇** → [06 专家并行](/2026/08/31/dist-train-06-expert-parallel/)
 
-**TL;DR**
+> **TL;DR**
+>
 > * DP 拆 batch、TP 拆矩阵、PP 拆层——**序列并行（SP）拆的是“序列”**：当上下文长度 $S$ 大到单卡放不下注意力矩阵/激活时，把序列切成 $N$ 段分发到 $N$ 张卡。**超长上下文（128K+）训练/推理的基本盘就是它。**
 > * 两种“序列并行”要分清：
->   - **Megatron 的序列并行（SP，2022）**：只把 LayerNorm / Dropout 这类“沿序列独立”的算子沿序列切开，配合 TP 复用同一套 All-Reduce **省掉一组激活的归约**，通信量几乎不变、显存略降——**它是 TP 的附赠优化**，不是独立并行。
->   - **上下文并行 / Ring Attention（2023-）**：把注意力计算本身沿序列切分，卡间用 **Ring All-to-All** 传递 KV 分块，让**注意力矩阵不用整体驻留**就能算完——**这才是真正解决“单卡装不下超长序列”的并行**。
+> * **Megatron 的序列并行（SP，2022）**：只把 LayerNorm / Dropout 这类“沿序列独立”的算子沿序列切开，配合 TP 复用同一套 All-Reduce **省掉一组激活的归约**，通信量几乎不变、显存略降——**它是 TP 的附赠优化**，不是独立并行。
+> * **上下文并行 / Ring Attention（2023-）**：把注意力计算本身沿序列切分，卡间用 **Ring All-to-All** 传递 KV 分块，让**注意力矩阵不用整体驻留**就能算完——**这才是真正解决“单卡装不下超长序列”的并行**。
 > * **Ring Attention 的核心数学**：把完整注意力 $O = \text{softmax}(QK^\top)V$（$Q,K,V \in \mathbb{R}^{S\times d}$）切成 $N$ 块 $Q_i, K_j, V_j$。每个 query 块 $O_i$ 需要全部 $N$ 个 key/value 块，串联成环每次只持有一个 $K_j,V_j$ 块、**用 Online Softmax 的流式技巧**（分片 max/sum 的可结合性）逐块更新 $O_i$——总通信量 = 每卡传 $N-1$ 轮 KV 块，**约 $2 \times \frac{N-1}{N} \times$ 单卡 KV 总量**，与 07 篇 Ring All-Reduce 同构。
 > * **工程铁律**：SP 的正确性取决于 **Online Softmax 分片更新的可结合性**；别用朴素 $\frac{e^{q\cdot k}}{\sum e^{q\cdot k}}$ 逐块拼接（必须全局归一）。配合 Flash Attention 的 kernel 内融合，Ring Attention 在现代实现里就是“FA + 环传输”。
 

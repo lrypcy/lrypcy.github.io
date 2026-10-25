@@ -12,12 +12,13 @@ mathjax: true
 >
 > [01 数据并行 DDP](/2026/08/31/dist-train-01-data-parallel/) ← **本篇** → [03 张量并行](/2026/08/31/dist-train-03-tensor-parallel/)
 
-**TL;DR**
+> **TL;DR**
+>
 > * 01 篇留下的问题：DDP 每卡放完整模型 + 优化器状态，**显存冗余因子 = N**（N 张卡存了 N 份一样的优化器状态）。ZeRO 的核心洞察是——**冗余不是必要，只是“避免多一轮通信”的偷懒**。把优化器状态（12B/参数）按 rank 切分，每卡只留 $1/N$，显存从 $16\Phi$ 降到 $4\Phi + \frac{12\Phi}{N}$。
 > * **ZeRO 三个档位，每一档换一份显存，代价是多一轮通信**：
->   - **ZeRO-1**：只分片优化器状态 → 显存 $\approx 4\Phi + 12\Phi/N$，通信多一次 reduce-scatter（优化器状态更新前）。
->   - **ZeRO-2**：分片优化器状态 + 梯度 → 显存 $\approx 2\Phi + 14\Phi/N$，通信：梯度 reduce-scatter + 参数 all-gather。
->   - **ZeRO-3 / FSDP**：连参数也分片 → 显存 $\approx 16\Phi/N$，通信：每层前向/反向都要 all-gather 该层参数——**通信量从“每步一次 $2\Phi$”变成“每步约 $3\times$ 全量梯度+参数的流式搬运”**。
+> * **ZeRO-1**：只分片优化器状态 → 显存 $\approx 4\Phi + 12\Phi/N$，通信多一次 reduce-scatter（优化器状态更新前）。
+> * **ZeRO-2**：分片优化器状态 + 梯度 → 显存 $\approx 2\Phi + 14\Phi/N$，通信：梯度 reduce-scatter + 参数 all-gather。
+> * **ZeRO-3 / FSDP**：连参数也分片 → 显存 $\approx 16\Phi/N$，通信：每层前向/反向都要 all-gather 该层参数——**通信量从“每步一次 $2\Phi$”变成“每步约 $3\times$ 全量梯度+参数的流式搬运”**。
 > * **对性能和扩展的数学影响**：ZeRO-2 的通信总量 $= \frac{(N-1)}{N} \cdot 2\Phi$（reduce-scatter + all-gather 各一遍），与 DDP 的 $2\Phi$ 相比在 $N$ 大时也接近，但**峰值显存被压平、batch 可以开得更大** → 线性扩展比 DDP 更持久。ZeRO-3 的每层流式通信让**单机内带宽够用但跨机必崩**——通常配合 TP（卡间 NVLink）使用。
 > * **FSDP 是什么**：PyTorch 官方的 ZeRO-3 实现（`torch.distributed.fsdp.FullyShardedDataParallel`），核心差异是**把“分片”当作一等 api（sharding_strategy）、显式区分 state_dict 的 gather**。它让“代码不动只换封装”成为可能——你依然写普通 nn.Module，只是套 FSDP。
 

@@ -12,10 +12,11 @@ mathjax: true
 >
 > [第 07 篇 TVM 剖析](/2026/08/25/compiler-07-tvm/) ← **本篇** → [第 9 篇 torch.compile/Triton/TensorRT](/2026/08/25/compiler-09-torch-triton-tensorrt/)
 
-**TL;DR**
-* 本篇讲一条主线两个主角：**XLA**（Google 系加速器编译器）证明了“领域限定换优化空间”的价值，但它的 HLO 算子字典绑死在单一生态里；**StableHLO** 把字典解耦成开放交换格式；**MLIR** 则更进一步——不再争论哪层 IR 正确，而是把“多层 IR + 渐进降级”本身做成基础设施；**IREE** 是这套理念在端侧推理上的旗舰实现。
-* 本文对 IREE 的分层（Flow/Stream/HAL 核心 dialect、stablehlo/tosa/linalg 输入、六类部署目标）依据 iree.dev 官方开发者文档逐项核对[1]；XLA 部分因官方文档站在当前网络环境不可达，基于社区共识知识撰写并标注。
-* 一个贯穿性判断：**AI 编译器的竞争焦点正在从“单个编译器做得好”转向“IR 交换标准谁定义”**——StableHLO 与 ONNX 之争就是这个战场。
+> **TL;DR**
+>
+> * 本篇讲一条主线两个主角：**XLA**（Google 系加速器编译器）证明了“领域限定换优化空间”的价值，但它的 HLO 算子字典绑死在单一生态里；**StableHLO** 把字典解耦成开放交换格式；**MLIR** 则更进一步——不再争论哪层 IR 正确，而是把“多层 IR + 渐进降级”本身做成基础设施；**IREE** 是这套理念在端侧推理上的旗舰实现。
+> * 本文对 IREE 的分层（Flow/Stream/HAL 核心 dialect、stablehlo/tosa/linalg 输入、六类部署目标）依据 iree.dev 官方开发者文档逐项核对[1]；XLA 部分因官方文档站在当前网络环境不可达，基于社区共识知识撰写并标注。
+> * 一个贯穿性判断：**AI 编译器的竞争焦点正在从“单个编译器做得好”转向“IR 交换标准谁定义”**——StableHLO 与 ONNX 之争就是这个战场。
 
 ---
 

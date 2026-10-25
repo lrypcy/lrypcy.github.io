@@ -12,11 +12,12 @@ mathjax: true
 >
 > [第 8 篇 XLA 与 MLIR/IREE](/2026/08/25/compiler-08-xla-mlir-iree/) ← **本篇** → [第 10 篇 从零开发经典编译器](/2026/08/25/compiler-10-build-classic-compiler/)
 
-**TL;DR**
-* 本文全部结论来自本机实测（PyTorch **2.13.0** CPU 版，arm64）：一个 `silu(x·1.5+y).mean(-1)` 小函数，`torch.compile` 把 4 个算子融合成单个 OpenMP+AVX kernel，热启动 **16.563 → 10.982 ms/iter（1.51x 加速）**，代价是 **3.9 秒冷启动编译**——这组数字本身就是“即时编译经济学”的完整案例。
-* 生成的 kernel 源码逐行可读：silu 被分解为 `x/(1+e⁻ˣ)` 的显式向量运算，mean 归约用向量化累加器实现——Inductor 不是黑盒，`TORCH_LOGS=output_code` 一开就是白盒。
-* 数据依赖分支会切断计算图：`if x.sum() < 0` 使捕获图从 1 个变成 2 个（`torch._dynamo.explain` 实测），这是 torch.compile 掉速的头号原因。
-* Triton 与 TensorRT 分别代表 GPU 编译的两极：开源 block-level DSL vs 闭源 tactic 枚举引擎。理解它们与 Inductor 的关系，就理解了当下 GPU 推理工具选型的全部逻辑。
+> **TL;DR**
+>
+> * 本文全部结论来自本机实测（PyTorch **2.13.0** CPU 版，arm64）：一个 `silu(x·1.5+y).mean(-1)` 小函数，`torch.compile` 把 4 个算子融合成单个 OpenMP+AVX kernel，热启动 **16.563 → 10.982 ms/iter（1.51x 加速）**，代价是 **3.9 秒冷启动编译**——这组数字本身就是“即时编译经济学”的完整案例。
+> * 生成的 kernel 源码逐行可读：silu 被分解为 `x/(1+e⁻ˣ)` 的显式向量运算，mean 归约用向量化累加器实现——Inductor 不是黑盒，`TORCH_LOGS=output_code` 一开就是白盒。
+> * 数据依赖分支会切断计算图：`if x.sum() < 0` 使捕获图从 1 个变成 2 个（`torch._dynamo.explain` 实测），这是 torch.compile 掉速的头号原因。
+> * Triton 与 TensorRT 分别代表 GPU 编译的两极：开源 block-level DSL vs 闭源 tactic 枚举引擎。理解它们与 Inductor 的关系，就理解了当下 GPU 推理工具选型的全部逻辑。
 
 ---
 

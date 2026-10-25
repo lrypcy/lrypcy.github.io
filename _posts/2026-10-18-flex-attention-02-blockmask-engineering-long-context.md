@@ -14,13 +14,13 @@ excerpt: "FlexAttention 的数学在 01 那篇已经讲完，剩下的是工程�
 
 > **TL;DR**
 >
-> - **`create_block_mask` 不是免费的，而且它的成本结构很反直觉**。它内部先 `create_mask` 物化一份 $$B\times H\times Q\times KV$$ 的**布尔张量**，再降采样成块级。8×16×8192² 是 **8192 MiB**；`B=None, H=None` 广播之后降到 **64 MiB**（128×）；而压缩完的 BlockMask 元数据只有 **0.0159 MiB**（516222×）。
-> - **官方推荐 `B=None, H=None` 的第一个理由不是省时间，是省这份峰值显存。**
-> - **「每层重建」在纯 FLOPs 口径下几乎是划算的**：一次重建相对一次完整注意力的成本是 $$\kappa/(4D)$$，$$\kappa=4$$ 时也只有 **1.562%**；三种掩码的净收益都是 +45%~+73%。它之所以被官方列为「最难的场景」，难在**另外三件事**——物化的 bool 峰值、独立的 kernel 序列、动态 shape 触发的重编译。
-> - **确定性 dQ 修的是浮点非结合性，不是竞态逻辑**。float32 下同一组部分和换顺序就有差别（升/降序差 7.153e-07，64 个随机顺序最大 1.192e-06）。PyTorch 的做法是预先算一张 rank 表（$$\mathrm{rank}=\mathrm{cumsum}(\mathrm{dense})-\mathrm{dense}$$）把「谁先写」钉死：按 rank 累加与串行累加**逐位相等**。
-> - **块粒度选错很贵**：滑窗 $$w=1024$$ 在 $$BS=64/128/256$$ 下的浪费率是 6.24% / 12.49% / **24.99%**。但**文档长度对齐块边界时浪费率恒为 0.00%**——元素密度与块级密度逐位相等。
-> - **上下文并行里 BlockMask 还是一份成本账**：`kv_num_blocks + full_kv_num_blocks` 就是每个 query 块的「处理时间」。朴素连续切分在 causal + CP=8 下 max/理想 = **1.875**（峰谷差 224），PTRR 压到 **1.000**；而且 head-tail 只对单调代价曲线成立（document 掩码上退化到 1.333），PTRR 是通用的。
-> - **CP + FlexAttention 有一条硬约束**：`Q_LEN` 必须能被 $$cp\_world\_size \times BLOCK\_SIZE$$ 整除，否则直接 `NotImplementedError`——因为 local→global 的索引换算发生在**块粒度**。
+> * **`create_block_mask` 不是免费的，而且它的成本结构很反直觉**。它内部先 `create_mask` 物化一份 $$B\times H\times Q\times KV$$ 的**布尔张量**，再降采样成块级。8×16×8192² 是 **8192 MiB**；`B=None, H=None` 广播之后降到 **64 MiB**（128×）；而压缩完的 BlockMask 元数据只有 **0.0159 MiB**（516222×）。
+> * **官方推荐 `B=None, H=None` 的第一个理由不是省时间，是省这份峰值显存。**
+> * **「每层重建」在纯 FLOPs 口径下几乎是划算的**：一次重建相对一次完整注意力的成本是 $$\kappa/(4D)$$，$$\kappa=4$$ 时也只有 **1.562%**；三种掩码的净收益都是 +45%~+73%。它之所以被官方列为「最难的场景」，难在**另外三件事**——物化的 bool 峰值、独立的 kernel 序列、动态 shape 触发的重编译。
+> * **确定性 dQ 修的是浮点非结合性，不是竞态逻辑**。float32 下同一组部分和换顺序就有差别（升/降序差 7.153e-07，64 个随机顺序最大 1.192e-06）。PyTorch 的做法是预先算一张 rank 表（$$\mathrm{rank}=\mathrm{cumsum}(\mathrm{dense})-\mathrm{dense}$$）把「谁先写」钉死：按 rank 累加与串行累加**逐位相等**。
+> * **块粒度选错很贵**：滑窗 $$w=1024$$ 在 $$BS=64/128/256$$ 下的浪费率是 6.24% / 12.49% / **24.99%**。但**文档长度对齐块边界时浪费率恒为 0.00%**——元素密度与块级密度逐位相等。
+> * **上下文并行里 BlockMask 还是一份成本账**：`kv_num_blocks + full_kv_num_blocks` 就是每个 query 块的「处理时间」。朴素连续切分在 causal + CP=8 下 max/理想 = **1.875**（峰谷差 224），PTRR 压到 **1.000**；而且 head-tail 只对单调代价曲线成立（document 掩码上退化到 1.333），PTRR 是通用的。
+> * **CP + FlexAttention 有一条硬约束**：`Q_LEN` 必须能被 $$cp\_world\_size \times BLOCK\_SIZE$$ 整除，否则直接 `NotImplementedError`——因为 local→global 的索引换算发生在**块粒度**。
 
 配套实验：[`ipynbs` commit `5d22352`](https://github.com/lrypcy/ipynbs/tree/5d223527089c816f464f37b345af35ce2b778e0f/experiments/flex-attention/blockmask_lab/) 下的 `blockmask_lab/`，纯 numpy、CPU 可跑、固定 seed `20261018`，19 条断言全过；本文所有自测数字都来自它的实际输出（[`results/summary.md`](https://github.com/lrypcy/ipynbs/blob/5d223527089c816f464f37b345af35ce2b778e0f/experiments/flex-attention/blockmask_lab/results/summary.md)）。01 那篇的实验在同目录 [`flex_core/`](https://github.com/lrypcy/ipynbs/tree/5954fb521a279b997005a6f514144c3b380c8e36/experiments/flex-attention/flex_core/)。
 

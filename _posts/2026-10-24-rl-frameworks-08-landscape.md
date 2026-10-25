@@ -10,8 +10,8 @@ mathjax: true
 
 > **系列导航** ｜ 本文是本系列的收口篇。逐篇：[01 Megatron 训练栈](/2026/10/24/rl-frameworks-01-megatron/) ｜ [02 slime](/2026/10/24/rl-frameworks-02-slime/) ｜ [03 veRL](/2026/10/24/rl-frameworks-03-verl/) ｜ [04 AReaL](/2026/10/24/rl-frameworks-04-areal/) ｜ [05 RLinf](/2026/10/24/rl-frameworks-05-rlinf/) ｜ [06 SGLang 接缝](/2026/10/24/rl-frameworks-06-sglang/) ｜ [07 vLLM 接缝](/2026/10/24/rl-frameworks-07-vllm/) ｜ 全景（不读源码的版本）：[RL 训练框架横评](/2026/09/29/rl-training-frameworks-survey/) ｜ 引擎架构：[推理引擎深度对比（01）](/2026/10/18/serving-01-architecture-divergence/)
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **两族不能放一张表比。** 训练框架与推理引擎优化的目标函数不同：前者是「一次 RL step 的墙钟时间」，后者是「单位显存下的 token 吞吐」。把 veRL 和 vLLM 放同一列比较，比出来的既不是 veRL 也不是 vLLM，而是「谁恰好更适合被当成 rollout 后端」。
 > * **正确比法是三张表**：训练框架族内部横评、推理引擎在「挂 RL 的适配度」这一维上的横评、以及**接缝表**（谁配谁最省事）。
 > * **训练框架族的分水岭不是性能，是「编排层的厚度」**。按这个维度排开是连续的：slime（几乎零编排）→ AReaL（服务解耦 + 队列）→ RLinf（自建完整调度层）→ veRL（WorkerGroup + ResourcePool + hook）。厚度决定表达能力，也决定调试成本。

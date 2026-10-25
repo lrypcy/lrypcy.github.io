@@ -10,11 +10,11 @@ mathjax: true
 
 > **系列导航** ｜ [原理篇：从概率路径到 Flow Matching](/2026/10/20/flow-matching-00-principles/) ｜ [建模之一：从概率路径到边际向量场](/2026/08/22/flow-matching-01-algorithm-evolution/) ｜ [建模之二：score、扩散与 SDE 扩展](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/)
 
-> **TL;DR 三连**
+> **TL;DR**
 >
-> - **核心结论**：2023–2024 年，图像（Stable Diffusion 3、Flux）、语音（Voicebox、E2-TTS、F5-TTS）、视频音频（Movie Gen）、分子与蛋白质设计（FrameFlow、FoldFlow、SemlaFlow）四大域的大规模生成系统不约而同把训练目标换成了同一行损失——速度场回归。FM 赢的方式不是某个单点 SOTA，而是把「概率路径与耦合分布」从扩散调度的束缚里解放出来，变成显式工程自由度。
-> - **关键实证**：同架构对照下 FM 与扩散的差距是可测的——FrameDiff→FrameFlow 只换训练范式：采样步数少 5 倍、设计性好 2 倍；SD3 内部研究中 25 步以下 Rectified Flow 公式全面占优；F5-TTS 推理 RTF 0.15 大幅优于 SOTA 扩散 TTS；Movie Gen 消融显示 FM 损失对噪声调度选择更鲁棒且天然满足零终端 SNR。
-> - **定位**：本篇是整个系列的**应用落地篇**——前三篇已经把建模讲完（概率路径、边际向量场、score 等价、CFG、离散域、潜空间），这里不再重复推导，只回答一个问题：**每个场景为什么偏偏是 FM 合适**。所有引用论文均经 arXiv 摘要逐篇核实，工业产品注明非论文出处。
+> * **核心结论**：2023–2024 年，图像（Stable Diffusion 3、Flux）、语音（Voicebox、E2-TTS、F5-TTS）、视频音频（Movie Gen）、分子与蛋白质设计（FrameFlow、FoldFlow、SemlaFlow）四大域的大规模生成系统不约而同把训练目标换成了同一行损失——速度场回归。FM 赢的方式不是某个单点 SOTA，而是把「概率路径与耦合分布」从扩散调度的束缚里解放出来，变成显式工程自由度。
+> * **关键实证**：同架构对照下 FM 与扩散的差距是可测的——FrameDiff→FrameFlow 只换训练范式：采样步数少 5 倍、设计性好 2 倍；SD3 内部研究中 25 步以下 Rectified Flow 公式全面占优；F5-TTS 推理 RTF 0.15 大幅优于 SOTA 扩散 TTS；Movie Gen 消融显示 FM 损失对噪声调度选择更鲁棒且天然满足零终端 SNR。
+> * **定位**：本篇是整个系列的**应用落地篇**——前三篇已经把建模讲完（概率路径、边际向量场、score 等价、CFG、离散域、潜空间），这里不再重复推导，只回答一个问题：**每个场景为什么偏偏是 FM 合适**。所有引用论文均经 arXiv 摘要逐篇核实，工业产品注明非论文出处。
 
 ```mermaid
 graph TD

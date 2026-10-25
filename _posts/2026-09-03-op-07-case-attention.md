@@ -12,7 +12,8 @@ mathjax: true
 >
 > [06 GEMM 案例](/2026/09/03/op-06-case-gemm/) ← **本篇** → [08 归约案例](/2026/09/03/op-08-case-normalization/)
 
-**TL;DR**
+> **TL;DR**
+>
 > * **背景**：FlashAttention 是近年来算子优化的标志性成果——它把 Transformer 的注意力从“显存读写受限”变成“算力受限”，让长序列训练成为可能，并启发了 PagedAttention 等一系列工作。对算子工程师而言，它是“融合 + Online 算法”两个思想的完美结合案例。
 > * **核心发现**：传统 Attention 慢的根本原因是**中间矩阵 QK^T 和 Softmax 结果要写回全局内存**（$O(N^2)$ 访存），FlashAttention 用 **Online Softmax（分块增量归一化）+ 算子融合** 把中间结果留在片上，访存量降到接近 $O(N \cdot d)$，性能提升 2-4 倍，显存占用从 $O(N^2)$ 降到 $O(N)$。
 > * **收益**：掌握 FlashAttention 的数学推导（Online Softmax 为什么数学上等价）和实现思路，你将理解“融合能带来多大的性能收益”以及“增量算法”这种优化武器。

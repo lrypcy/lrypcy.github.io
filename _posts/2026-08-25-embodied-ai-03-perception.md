@@ -10,15 +10,12 @@ mathjax: true
 
 > **系列导航**：前两篇解决了“动得了”的问题，本篇解决“看得见、摸得着”。感知是 VLA 模型输入端的最后一公里：观测表示选得不好，再强的策略也白搭。本篇按“传感器 → 视觉几何 → 3D 表征 → 物体位姿 → 触觉 → SLAM”推进。
 
-## TL;DR
-
-> **TL;DR 1｜机器人的眼睛不是分类器**：自动驾驶关心“那是什么车”，机器人关心“那个杯子在哪、口朝哪、我能从哪个角度抓”——**6-DoF 位姿与几何**才是核心输出。这决定了 PointNet/3DGS 等几何表征在具身智能中的地位远高于普通视觉任务。
-
-> **TL;DR 2｜PointNet 的灵魂是一个对称函数**：点云是无序集合，网络必须对输入排列置换不变。PointNet 用共享 MLP + max-pooling 实现这一点：$$f(\{x_1,...,x_n\}) = \gamma\left(\max_{i}\ h(x_i)\right)$$，max 是天然对称的[1](https://arxiv.org/abs/1612.00593)。
-
-> **TL;DR 3｜2024 年后感知栈正在被“基础模型化”**：深度估计有 Depth Anything[2](https://arxiv.org/abs/2401.10891)，位姿估计有 FoundationPose（零样本泛化到新物体）[3](https://arxiv.org/abs/2312.08344)，场景重建有 3DGS[4](https://arxiv.org/abs/2308.04079)。“自己训感知模型”的需求在下降，“把开源模型拼成可靠的观测管线”成为工程主战场。
-
-> **TL;DR 4｜几条看似无关的技术共享同一个数学内核**：NeRF 与 3DGS 的渲染都是同一条 alpha-blending 方程 $$C=\sum_i c_i\,\alpha_i\prod_{j<i}(1-\alpha_j)$$——差别只在 $$\alpha$$ 由 MLP 隐式算还是由显式高斯解析算[7](https://arxiv.org/abs/2003.08934)[4](https://arxiv.org/abs/2308.04079)；SLAM 后端的本质是因子图上的最大后验（MAP）推断。看穿这层共性，感知栈就不再是一堆工具的罗列。
+> **TL;DR**
+>
+> * **机器人的眼睛不是分类器**：自动驾驶关心“那是什么车”，机器人关心“那个杯子在哪、口朝哪、我能从哪个角度抓”——**6-DoF 位姿与几何**才是核心输出。这决定了 PointNet/3DGS 等几何表征在具身智能中的地位远高于普通视觉任务。
+> * **PointNet 的灵魂是一个对称函数**：点云是无序集合，网络必须对输入排列置换不变。PointNet 用共享 MLP + max-pooling 实现这一点：$$f(\{x_1,...,x_n\}) = \gamma\left(\max_{i}\ h(x_i)\right)$$，max 是天然对称的[1](https://arxiv.org/abs/1612.00593)。
+> * **2024 年后感知栈正在被“基础模型化”**：深度估计有 Depth Anything[2](https://arxiv.org/abs/2401.10891)，位姿估计有 FoundationPose（零样本泛化到新物体）[3](https://arxiv.org/abs/2312.08344)，场景重建有 3DGS[4](https://arxiv.org/abs/2308.04079)。“自己训感知模型”的需求在下降，“把开源模型拼成可靠的观测管线”成为工程主战场。
+> * **几条看似无关的技术共享同一个数学内核**：NeRF 与 3DGS 的渲染都是同一条 alpha-blending 方程 $$C=\sum_i c_i\,\alpha_i\prod_{j<i}(1-\alpha_j)$$——差别只在 $$\alpha$$ 由 MLP 隐式算还是由显式高斯解析算[7](https://arxiv.org/abs/2003.08934)[4](https://arxiv.org/abs/2308.04079)；SLAM 后端的本质是因子图上的最大后验（MAP）推断。看穿这层共性，感知栈就不再是一堆工具的罗列。
 
 ## 目录
 

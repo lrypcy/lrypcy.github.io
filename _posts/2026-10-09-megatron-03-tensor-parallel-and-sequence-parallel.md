@@ -16,8 +16,8 @@ mathjax: true
 >
 > **本篇的边界**：只讲**算子代数与数值等价**。通信与计算怎么在 CUDA stream 上组织、`async_op` 与 `CUDA_DEVICE_MAX_CONNECTIONS`、两种 stream 流派、backward 的 launch 序列——这些已在 [01 篇](/2026/10/08/megatron-01-process-groups-and-comm-overlap/) §10 讲透，本篇一律引用不重复。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * 张量并行在一个 transformer 层里只有**两处 all-reduce**：注意力输出投影与 MLP 输出投影。两段 GEMM 之间**没有** all-reduce——这是最容易被记反的一条，因为 GeLU 逐元素、而 Column 的输出特征已经按 rank 切开了（[`mappings.py` L201–L237](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/mappings.py#L201-L237)）。
 > * `mappings.py` 把张量并行的全部代数收敛成**四个 autograd.Function**：`_CopyToModelParallelRegion`（`mappings.py` L201–L218）、`_ReduceFromModelParallelRegion`（`mappings.py` L221–L237）、`_ScatterToModelParallelRegion`（`mappings.py` L240–L257）、`_GatherFromModelParallelRegion`（`mappings.py` L260–L277）。前两个是论文里的 $$f$$ 与 $$g$$，后两个是它们的「输入侧」版本（[`mappings.py` L240–L277](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/tensor_parallel/mappings.py#L240-L277)）。
 > * `f` / `g` 共轭关系的原文出处是 Megatron 原始论文，措辞是「`f` 在前向是恒等算子、在反向是 all-reduce，`g` 反之」；SC21 论文的 Figure 5 是它的规范画法，图注注明图借自原始论文（[arXiv:1909.08053](https://arxiv.org/abs/1909.08053)、[arXiv:2104.04473](https://arxiv.org/abs/2104.04473)）。

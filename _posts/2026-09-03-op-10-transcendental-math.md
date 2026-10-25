@@ -14,7 +14,8 @@ mathjax: true
 
 > **有一篇纵深续篇**：[《超越函数在 GPU 上到底怎么算：从 MUFU.EX2 到 FlashAttention-3 的 softmax 之战》](/2026/09/26/gpu-transcendental-softmax-llm/) —— 只盯 NVIDIA 一家，打通「硬件怎么算」与「LLM 为什么撞上这个瓶颈」，并给出可复现的数值实验。本篇的部分数据在那篇里做了更正，建议对照阅读。
 
-**TL;DR**
+> **TL;DR**
+>
 > * **背景**：Transformer 里的 Softmax、LayerNorm、GELU、FlashAttention 全都绕不开 `exp`、`log`、`rsqrt` 这些超越函数（transcendental functions）。它们的硬件实现方式，直接决定了算子的性能天花板。
 > * **核心发现**：没有任何硬件用“通用浮点单元直接算超越函数”——所有芯片都遵循同一套**三步算法**：范围归约（range reduction）→ 多项式逼近（polynomial approximation）→ 重构（reconstruction）。区别只在于“用专用单元做，还是用通用单元+查表做”。
 > * **关键数字**：NVIDIA 的 MUFU/SFU 吞吐只有 FP32 核的 **1/4**；AMD 的 TALU 同理；Intel 的 EM 单元每 EU 一个；而昇腾 NPU **没有**专用超越函数指令，靠多项式逼近 + 查表在 Vector 单元里算。

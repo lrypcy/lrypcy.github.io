@@ -30,8 +30,8 @@ mathjax: true
 > **SGLang `v0.5.22`（commit `baa9befa`）**、**verl `v0.9.1`**、**AReaL `v2.1.0`**。
 > **两者不同，行号不可跨篇比对。**
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **vLLM 在 v0.32.1rc0 里已经没有 `update_weights_from_tensor` /
 >   `update_weights_from_distributed` 这两个方法名了。** 权重热更新被重写成一套
 >   **四阶段协议**：`init_weight_transfer_engine` → `start_weight_update` →

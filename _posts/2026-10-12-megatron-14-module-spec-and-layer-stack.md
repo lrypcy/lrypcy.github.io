@@ -13,8 +13,8 @@ mathjax: true
 
 > **图全部自绘。** 本系列遵循「默认一律自绘」的引用许可原则：NVIDIA 官方文档与 blog 的图版权保留、不可复制；arXiv论文的图需逐篇确认 abs 页有无 CC 标识。所以本篇每张图下方均注明所据的源码 permalink。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **Megatron-Core 的模型不是「继承 torch.nn.Module 再改几个层」，而是「用一份 spec 描述结构，再把结构实例化」。** 描述用的是 [`ModuleSpec`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/spec_utils.py#L10)——一个四字段 dataclass（[`spec_utils.py` L26–L29](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/spec_utils.py#L26-L29)）：`module` / `params` / `submodules` / `metainfo`。
 > * **`module` 字段有两种形态：类本身，或 `(模块路径, 名字)` 二元组。** 后者走[`import_module`](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/spec_utils.py#L41) 在 `build_module` 时才 `__import__`，所以 spec 可以在不触发导入副作用的前提下被声明、拷贝、序列化（[官方 docstring 的 TODO 自己承认 *make this importer module more robust, at least make sure there are no side effects of using this as is*](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/spec_utils.py#L50-L52)）。
 > * **`TransformerLayerSubmodules` 的每个字段默认值都是 `IdentityOp`。** 这是整套机制的关键设计：层结构不是「列出有哪些组件」，而是「默认全部不存在，谁来替换谁就存在」（[L278–L295](https://github.com/NVIDIA/Megatron-LM/blob/60e039626/megatron/core/transformer/transformer_layer.py#L278-L295)）。

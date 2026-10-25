@@ -19,8 +19,8 @@ mathjax: true
 > - 00 引擎在栈里的位置 → 01 架构分歧的根 → 02 调度与批处理 → 03 支持矩阵（上）→ **04 支持矩阵（下）（本文）** →
 >   05 PD 分离 → 06 benchmark 交叉验证 → 07 选型手册 → 08 前缀命中率
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **迁移的真实成本不在端点数量，在同名参数的语义差**：`enable_prefix_caching` 与
 >   `disable_radix_cache` 一个正一个反、默认值都是「开」；`async_scheduling` 与
 >   `disable_overlap_schedule` 同样一正一反、默认值都是「关/开相反」。

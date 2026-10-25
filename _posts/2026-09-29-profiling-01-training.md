@@ -12,8 +12,8 @@ mathjax: true
 >
 > 上一篇做的是尺子：MFU / HFU 的分子分母、timer 的语义、goodput 的边界。这一篇用那把尺子回答栈级问题——**一次迭代的时间去哪了**。单 kernel 怎么分析已经由 [算子系列 op-04](/2026/09/03/op-04-performance-analysis/) 讲过，这里只做聚合与归因。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **三个观测面管三种时间尺度，不能互相替代。** OTel spans（Megatron v0.20 原生）覆盖全训练期的漂移与 goodput、代价极低可常开；Perfetto / NVTX 区间覆盖单次迭代的阶段分解；nsys / ncu / torch.profiler 覆盖微秒级的“谁在等谁”。**拿 nsys 看整轮训练的漂移、拿 OTel 看单个 kernel，都是层级错配**——前者会让 trace 大到读不动，后者根本量不到 kernel 内部。
 > * **Megatron v0.20 的 OTel trace 是按 checkpoint 周期重新生根的。** `training.py:625` 的 `_maybe_reroot_otel_interval()` 在每个 `save_interval` 边界重开一个 interval root，用一个独立计数器分块（不受 resume 偏移影响）。写这段的理由在代码注释里：**曾经的 run-long umbrella span 会在“训练已经死了、exporter 还没 flush”的窗口里被 SIGKILL 一起带走**。这个细节决定了你读 OTel 数据时的聚合粒度。
 > * **`overlap` 有两个分母，两个分母给出两个结论。** 同一份 trace：`overlap / comm_total` = 50.0%（通信藏住了一半，效率视角），`overlap / iter_time` = 14.2%（通信在整步里占这么多，“还能再藏多少”的上界视角）。混用就会出现“我们 overlap 只有 14%，还有很大空间”这种把上界当缺口的结论。

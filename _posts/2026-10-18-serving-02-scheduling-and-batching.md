@@ -21,8 +21,8 @@ mathjax: true
 >
 > 指标口径（TTFT / TPOT / 吞吐）见[《性能分析（02）》](/2026/09/29/profiling-02-inference/)。
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **continuous batching 的全部收益来自一件事：decode 阶段每步都要把全部权重读一遍，
 >   这个成本被 batch 内所有请求摊薄。** 每请求每步成本从「一次权重读取」降到
 >   「一次权重读取 / batch + 自己的 KV」，所以 decode 阶段天然希望 batch 越大越好。

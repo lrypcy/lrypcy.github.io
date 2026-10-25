@@ -12,11 +12,12 @@ mathjax: true
 >
 > [第 0 篇 全景](/2026/08/25/compiler-00-overview/) ← **本篇** → [第 2 篇 语义分析与 IR](/2026/08/25/compiler-02-semantic-ir/)
 
-**TL;DR**
-* 词法分析的本质是**正则语言的识别问题**：正则表达式 → Thompson 构造 → NFA → 子集构造 → DFA。本文用约 150 行 Python 完成全部数学构造，并以 `(a|b)*abb` 为例实测：NFA 14 态、DFA 5 态（Hopcroft 最小化后为经典的 4 态），3000 个随机串上 NFA/DFA 判定 100% 一致。
-* 语法分析的主战场是 CFG。LL 家族（自顶向下）适合手写——递归下降 + 优先级爬升是 clang/Rust/Swift/Go 共同的选择；LR 家族（自底向上）能力强但依赖生成器（bison/Yacc 系）。本文给出 LL(1) 表的 FIRST/FOLLOW 完整计算过程与一个 5000 语料、143k 条/s 的递归下降实现。
-* 工程上比“能不能解析”更重要的是**错误恢复**：本文实现 panic mode 并演示在 3 条语句中跳过 1 处错误继续解析。
-* 本文所有数字来自随文脚本 `experiments_01_lexing_parsing.py` 的真实运行（Python 3，固定种子，可复现）。
+> **TL;DR**
+>
+> * 词法分析的本质是**正则语言的识别问题**：正则表达式 → Thompson 构造 → NFA → 子集构造 → DFA。本文用约 150 行 Python 完成全部数学构造，并以 `(a|b)*abb` 为例实测：NFA 14 态、DFA 5 态（Hopcroft 最小化后为经典的 4 态），3000 个随机串上 NFA/DFA 判定 100% 一致。
+> * 语法分析的主战场是 CFG。LL 家族（自顶向下）适合手写——递归下降 + 优先级爬升是 clang/Rust/Swift/Go 共同的选择；LR 家族（自底向上）能力强但依赖生成器（bison/Yacc 系）。本文给出 LL(1) 表的 FIRST/FOLLOW 完整计算过程与一个 5000 语料、143k 条/s 的递归下降实现。
+> * 工程上比“能不能解析”更重要的是**错误恢复**：本文实现 panic mode 并演示在 3 条语句中跳过 1 处错误继续解析。
+> * 本文所有数字来自随文脚本 `experiments_01_lexing_parsing.py` 的真实运行（Python 3，固定种子，可复现）。
 
 ---
 

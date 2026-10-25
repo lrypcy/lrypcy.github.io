@@ -14,7 +14,8 @@ mathjax: true
 >
 > 收尾篇：把 TTT 放进**更广阔的序列模型图景**里——DeltaNet、Gated Linear Attention、Mamba2、RetNet、Titans 全部是“test-time regression”这一个框架在不同损失/正则/优化器下的特例；再讲 TTRL、MesaNet、LaCT、E2-TTT 等前沿；最后给一张**决策树 + 常见陷阱**帮你落地。
 
-**TL;DR**
+> **TL;DR**
+>
 > * **统一视角（test-time regression）**：所有高效序列模型的隐藏状态都是一个 fast weight 矩阵 $\Phi$，用在线学习规则更新。区别只在**损失函数**（inner product vs MSE）和**正则项**（固定 vs 可遗忘 $\alpha_t$）。
 > * **一张表看清全家福**：线性注意力 = Hebbian 累加；Mamba2 = 门控累加（能整体衰减但不能精确删）；DeltaNet = delta rule（先擦除再写入，精确但无遗忘）；**Gated DeltaNet = 门控 + delta**（两全）；Titans = delta + 动量 + 权重衰减（deep MLP 记忆）。
 > * **前沿三支**：① **TTRL** 用强化学习在 test time 更新（无需监督标签，直接用奖励信号）；② **MesaNet** 每个时刻求**最优** fast weights（CG 方法，LMS 升级成 RLS）；③ **E2-TTT/LaCT** 解决 token-wise 的低硬件利用率和表达性损失。

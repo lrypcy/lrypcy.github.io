@@ -14,7 +14,8 @@ mathjax: true
 >
 > 本篇把 TTT 的**数学地基**讲透：统一框架、fast/slow weights 的内外循环、TTT-Linear/MLP 的推导、为什么朴素实现无法并行、mini-batch 与对偶形式如何救场。**数学推导扎实、生产优化有理有据**是主线。
 
-**TL;DR**
+> **TL;DR**
+>
 > * **统一框架**：所有序列建模层 = 隐藏状态 + 更新规则。TTT 的创新是让隐藏状态 $W_t \in \mathbb{R}^{d\times d}$ 本身是一个可训练模型，更新规则是一步梯度下降。
 > * **TTT-Linear 更新式**：$W_t = W_{t-1} - 2\eta (W_{t-1} k_t - v_t) k_t^\top$，来自 reconstruction loss $\ell = \|W k_t - v_t\|^2$ 的梯度。这本质上是对 Hebbian 学习的修正版——“预测错了就调权重，让下次看到该 key 时预测更准”。
 > * **内外循环**：内循环用单个 token 更新 fast weights $W$；外循环用整个序列的 next-token prediction 更新 slow weights $\theta$。外循环不学“怎么做 TTT”，只学“如何初始化/设计架构让 TTT 更有效”。

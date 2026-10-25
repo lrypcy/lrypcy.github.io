@@ -12,10 +12,11 @@ mathjax: true
 > [00 度量口径](/2026/09/29/profiling-00-metrics/) → [01 训练栈 profiling](/2026/09/29/profiling-01-training/) → [02 推理服务 profiling](/2026/09/29/profiling-02-inference/)
 
 > **TL;DR**
-> *   **背景**：大模型训练与推理工程师最常见的困境是——服务在跑、指标在涨，但没人说得清 GPU 的时间到底花在哪。`time.time()` 在 CUDA 异步执行下会系统性地说谎，而 NVIDIA 的剖析栈（nvidia-smi、Nsight Systems、Nsight Compute、torch.profiler）各自只回答一个问题，用错层级就会白忙一场。
-> *   **核心结论**：GPU 剖析是一个分层漏斗——nvidia-smi 排除环境问题（功耗墙、降频、显存溢出），nsys 回答「时间去哪了」（launch gap、memcpy、通信窗口），ncu 回答「单个 kernel 为什么慢」（SOL 吞耗、warp stall、roofline 定位），torch.profiler 把时间归因到 Python 行；CUPTI 是这一切共同的底座。
-> *   **反直觉发现**：① `nvidia-smi` 的 utilization 100% 只表示采样窗口内有 kernel 在执行，与算力饱和毫无关系；② decode 阶段 SM 利用率很低、而 HBM 带宽接近峰值才是健康形态；③ ncu 默认以 kernel replay 模式收集指标——它会序列化执行并反复重放被测 kernel，你看到的可能已经不是程序本来的样子。
-> *   **工具选型一句话**：先 nsys 后 ncu，中间用 torch.profiler 关联 Python 行；永远不要跳过时间线直接看单 kernel。
+>
+> * **背景**：大模型训练与推理工程师最常见的困境是——服务在跑、指标在涨，但没人说得清 GPU 的时间到底花在哪。`time.time()` 在 CUDA 异步执行下会系统性地说谎，而 NVIDIA 的剖析栈（nvidia-smi、Nsight Systems、Nsight Compute、torch.profiler）各自只回答一个问题，用错层级就会白忙一场。
+> * **核心结论**：GPU 剖析是一个分层漏斗——nvidia-smi 排除环境问题（功耗墙、降频、显存溢出），nsys 回答「时间去哪了」（launch gap、memcpy、通信窗口），ncu 回答「单个 kernel 为什么慢」（SOL 吞耗、warp stall、roofline 定位），torch.profiler 把时间归因到 Python 行；CUPTI 是这一切共同的底座。
+> * **反直觉发现**：① `nvidia-smi` 的 utilization 100% 只表示采样窗口内有 kernel 在执行，与算力饱和毫无关系；② decode 阶段 SM 利用率很低、而 HBM 带宽接近峰值才是健康形态；③ ncu 默认以 kernel replay 模式收集指标——它会序列化执行并反复重放被测 kernel，你看到的可能已经不是程序本来的样子。
+> * **工具选型一句话**：先 nsys 后 ncu，中间用 torch.profiler 关联 Python 行；永远不要跳过时间线直接看单 kernel。
 
 ---
 

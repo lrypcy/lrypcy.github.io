@@ -10,8 +10,8 @@ mathjax: true
 
 > **系列导航** ｜ 本系列：[01 Megatron 训练栈](/2026/10/24/rl-frameworks-01-megatron/) ｜ [02 slime](/2026/10/24/rl-frameworks-02-slime/) ｜ [03 veRL](/2026/10/24/rl-frameworks-03-verl/) ｜ [04 AReaL](/2026/10/24/rl-frameworks-04-areal/) ｜ 本文 05 ｜ [06 SGLang 接缝](/2026/10/24/rl-frameworks-06-sglang/) ｜ [07 vLLM 接缝](/2026/10/24/rl-frameworks-07-vllm/) ｜ [08 两族横评](/2026/10/24/rl-frameworks-08-landscape/) ｜ 全景：[RL 训练框架横评](/2026/09/29/rl-training-frameworks-survey/) ｜ 算法侧：[从 MDP 到 GRPO](/2026/08/21/mdp-to-grpo-05-grpo-group-relative/)
 
-**TL;DR**
-
+> **TL;DR**
+>
 > * **RLinf 的存在理由不是「又一个 LLM RL 框架」，而是「rollout 的粒度变了」**。LLM 的 rollout 是一次自回归生成，几秒到几分钟；具身智能的 rollout 是一个 episode，几十到几百步，每步都要渲染、物理仿真、动作下发。同一个框架要同时吃下这两种时间尺度，原本理所当然的「同步屏障」直接失效。
 > * **它自建了一套调度层，而不是用 Ray 的 actor 模型硬凑**。`rlinf/scheduler/` 下有 `worker` / `placement` / `channel` / `collective` / `dynamic_scheduler` / `hardware` / `cluster` / `manager` 八个子模块——**这是一套完整的分布式编排基础设施**，承担的职责与 veRL 的 `single_controller` 同级，只是设计目标不同。
 > * **`Channel` 是这套调度层的心脏**。它被设计成「带 key 路由与权重的 FIFO 队列」，语义对齐 `asyncio.Queue`。文档里点明了存在理由：*multi-turn scenarios in agent and embodied RL, where a data is processed by a fixed set of workers*——**多轮与具身场景需要「数据去找固定的 worker」而不是「worker 抢数据」**，这是普通队列做不到的。
