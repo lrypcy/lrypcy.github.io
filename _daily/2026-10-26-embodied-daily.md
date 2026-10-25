@@ -1,7 +1,7 @@
 ---
-title: 具身智能日报 · 10/26：三维原生 WAM 与自伴随流策略
+title: 具身智能日报 · 10/26：三维原生 WAM、自伴随流策略与「别预测像素」
 date: 2026-10-26
-summary: UNITAS 用 1.7B 参数超过 8B 模型，SAFLOW 让流策略可算似然，SteerAct 冻权重提升 21 个百分点。
+summary: UNITAS 1.7B 超过 8B 对手；DRILL 指出像素 MSE 更低反而可能损伤策略梯度；FRED 把人机迁移成功率翻倍。
 ---
 
 ## UNITAS：1.7B 的三维原生世界动作模型，超过 6B 与 8B 对手
@@ -38,6 +38,38 @@ NVIDIA、MIT、港大与 UCSD 的工作给出一个反直觉的发现：更长�
 
 工程侧通过流式观察编码、异步执行与硬件加速部署到 RTX 5090 / DGX Spark / Jetson AGX Thor，RTX 5090 上每个 action chunk（含未来视频 latent 预测）107.4 ms。真机部署在 Unitree G1 与 YAM 上，动态叠杯子 95% 成功率，而 Pi0.5 与 Fast-WAM 在 20 次试验中均未成功。
 
+## DRILL：世界模型的像素误差更低，策略却可能更差
+
+**来源**：[arXiv:2610.30814](http://arxiv.org/abs/2610.30814)
+
+用世界模型减少环境交互、对 VLA 策略做强化学习后训练，是当下的常见做法。但世界模型通常按「一步预测像素」训练，而它在这一流程里的实际作用是**产生能改进策略的学习信号**，不是渲染逼真的视频。
+
+论文指出这个错配相当实质：**更低的像素 MSE 可能产生更差的策略梯度**；一个按策略效用训练的世界模型，在下一帧像素 MSE 高出 17% 的情况下，仍能训出更好的下游策略。DRILL 用双层优化更新世界模型，目标是最大化内层 GRPO 更新后的策略回报。DRILL-VWI 是闭式 surrogate，按策略访问频率、GRPO group-relative advantage 和模型置信度重加权预测误差；DRILL-IMG 则走完整的 meta-gradient。在五个操作仿真器和两个 VLA 骨干上，DRILL-IMG 相比 WMPO 提高平均成功率 13.1 个点，相比 RLVR-World 提高 7.9 个点。
+
+## FRED：自蒸馏提升未来视频表示，人机迁移成功率 19.4% → 50.0%
+
+**来源**：[HuggingFace Daily Papers](https://huggingface.co/papers/2610.30320)（⭐37） ｜ 论文：[arXiv:2610.30320](https://arxiv.org/abs/2610.30320) ｜ 代码：[suhyeok-jang/FRED](https://github.com/suhyeok-jang/FRED)
+
+一类 WAM 为省掉扩散模型的迭代去噪，改为把单独的动作解码器条件化在**单步去噪得到的中间未来视频表示**上。这个设计让动作预测直接取决于该表示的质量。FRED 用自蒸馏从噪声预测未来表示，以真实未来观测提取的表示作目标，并额外把历史观测条件化进去提供时序上下文。
+
+论文报告在长程与分布外任务上优势尤其明显：在机器人训练数据中不存在、仅由人类视频演示的任务上达到 50.0% 成功率，对比最好的 competing WAM 为 19.4%。
+
+## AtomicRL：用「原子子任务」边界阻断信用污染
+
+**来源**：[arXiv:2610.30097](http://arxiv.org/abs/2610.30097)
+
+VLA 策略做长程操作时，轨迹级稀疏奖励会带来延迟且有偏的信用分配，而各子任务掌握程度不均又会形成瓶颈。AtomicRL 的核心是 Semantic-Aware Policy Optimization：用语义感知门控**阻止失败子任务的 TD residual 跨任务边界传播**，在缓解信用污染的同时保留子任务内部的信用分配与价值引导。配套的 BATE 按各原子子任务的掌握程度动态调整任务采样与局部探索激励。
+
+LIBERO-LONG 上相比 PPO 取得 3.6% 与 4.0% 的绝对提升（两个 VLA 架构）。论文另附 Real2Sim2Real 流程连接仿真在线 RL 与真机部署。
+
+## DiffDreamer：可微仿真只管本体，世界模型只管外界
+
+**来源**：[arXiv:2610.31617](http://arxiv.org/abs/2610.31617)
+
+基于世界模型的强化学习常把环境演化与机器人自身动力学纠缠在同一次 latent rollout 里，模型偏差会影响策略优化效率。DiffDreamer 的做法是分头传播：在同一步优化中，**学习到的世界模型传播捕捉外部动力学与历史依赖特征的 latent 状态，可微仿真器传播机器人显式的物理状态**。actor 目标也拆成两条通路——critic 驱动处理不可微的任务奖励，仿真器驱动处理可微的运动奖励。
+
+论文在激进跟踪与动态穿门竞速上报告训练收敛优于 model-free、model-based 与可微 RL 基线，最终表现也优于这些基线及经典规划控制方法，并给出真机飞行的概念验证。
+
 ## 立场论文：机器人的身体也该进化
 
 **来源**：[青稞社区](https://qingkeai.online/blog/Embracing-Evolution) ｜ 论文：[arXiv:2510.03081](https://arxiv.org/abs/2510.03081)（NeurIPS 2026 Position Paper Track）
@@ -48,4 +80,4 @@ NVIDIA、MIT、港大与 UCSD 的工作给出一个反直觉的发现：更长�
 
 ---
 
-本期 5 条，来源：青稞社区。
+本期 8 条，来源：青稞社区 / HuggingFace Daily Papers / arXiv。
