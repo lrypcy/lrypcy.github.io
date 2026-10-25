@@ -573,6 +573,8 @@ $$
 
 第 3 步就是**所有“量化边界白插了”的来源**：你插的节点在训练里起了作用（让权重适应了量化误差），在执行层却可能因为没有对应 kernel 而被反量化回浮点——那部分收益变成纯误差而没有速度。这也是为什么“先定部署目标、再决定插哪里”的顺序不能反：**训练图可以任意插，但只有能被 lower 的边界才值得插。**
 
+**融合本身做什么，本篇不展开。** 把 DQ 的仿射系数提出来后，整数 GEMM 之外会多出三项 zero-point 修正（权重的行和项、激活的元素和项、一个常量项），它们是代数必需项而非精度微调；requantize 还要用定点乘子把 INT32 累加器拉回 INT8；加速的账分算力 / 带宽 / 显存三笔，decode 阶段的算术强度退化为闭式 $$16/b_W$$ 而与激活位宽无关。这三条是 §7.3 的另一半，见 [E5 篇 部署时 Q/DQ 怎么被吸收](/2026/09/22/llm-quant-E5-deploy-fusion/)。
+
 ### 7.4 一个必须知道的坑：`reduce_range=True`
 
 torch 的 `get_default_qat_qconfig("x86")` 里，激活的 observer 是 `MovingAverageMinMaxObserver(quant_min=0, quant_max=255, reduce_range=True)`。`reduce_range=True` 会把范围收缩到 `[0,127]`，理由是历史上某些 x86 VNNI 实现处理 uint8 时存在饱和问题。后果是：**你以为在训 W8A8，激活实际只有 7-bit 有效位**。
@@ -719,4 +721,4 @@ cd ../fake_quant_torch_onnx
 - 上一篇：[15 GGUF k-quants / FP8 / MXFP4](/2026/08/24/ptq-08-gguf-fp8-mxfp4/) ｜ 下一篇：[18 LSQ / PACT / DSQ](/2026/08/29/llm-quant-18-lsq-pact-dsq/)
 - PTQ 部分（00–16 篇）提供量化器数学基础；本篇开启 QAT 部分
 
-> **继续阅读**：[18 LSQ / PACT / DSQ →](/2026/08/29/llm-quant-18-lsq-pact-dsq/)（把 scale 从常数变成可学参数）｜ [19 AdaRound / BRECQ / QDrop](/2026/09/19/llm-quant-19-adaround-brecq-qdrop/)（PTQ 与 QAT 之间的舍入决策带）
+> **继续阅读**：[E5 部署时 Q/DQ 怎么被吸收 →](/2026/09/22/llm-quant-E5-deploy-fusion/)（本篇 §7.3 的另一半：融合代数、requantize 与三笔收益账）｜ [18 LSQ / PACT / DSQ →](/2026/08/29/llm-quant-18-lsq-pact-dsq/)（把 scale 从常数变成可学参数）｜ [19 AdaRound / BRECQ / QDrop](/2026/09/19/llm-quant-19-adaround-brecq-qdrop/)（PTQ 与 QAT 之间的舍入决策带）

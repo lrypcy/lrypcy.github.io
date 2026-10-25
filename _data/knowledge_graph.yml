@@ -198,7 +198,7 @@ series:
     layer: 1
     order: 2
     prefixes: [llm-quant-, ptq-, qat-]
-    desc: 30 篇。00–25 主线 + E1–E4 扩展篇：量化器数学地基 → PTQ 全家桶 → QAT/可学习 scale → KV Cache、混合精度、部署生态与 1-bit 前沿。
+    desc: 31 篇。00–25 主线 + E1–E5 扩展篇：量化器数学地基 → PTQ 全家桶 → QAT/可学习 scale → KV Cache、混合精度、部署生态、1-bit 前沿与部署侧算子融合。
 
   - id: mdp-grpo
     name: 从 MDP 到 GRPO

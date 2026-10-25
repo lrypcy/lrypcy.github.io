@@ -231,6 +231,8 @@ TorchAO QAT  ──►  Int4WeightOnlyConfig(group_size=32)  ──►  HF check
 
 **一句话**：如果你做了 QAT，只要输出的是 `Int4WeightOnlyConfig` 或 `compressed-tensors` 能表达的格式，**部署侧不需要额外工作**。真正需要额外工作的是**自定义量化函数**（如 SEQ、非均匀网格、自定义码本）——那些必须自己写 `QuantizationConfig`，甚至要写 kernel。
 
+**但「格式对了」只保证能加载，不保证收益落在哪一笔账上。** 有了对应 kernel 之后，QDQ 图还要被 lower 成整数 GEMM：融合会多出三项 zero-point 修正，requantize 要把 INT32 累加器拉回 INT8，而加速本身分算力 / 带宽 / 显存三笔且主收益随 batch 转移。见 [E5 篇 部署时 Q/DQ 怎么被吸收](/2026/09/22/llm-quant-E5-deploy-fusion/)。
+
 ---
 
 ## 7. 到底哪些开箱即用，哪些必须调优
@@ -352,4 +354,4 @@ python -c "import llmcompressor; help(llmcompressor.oneshot)"
 
 ---
 
-> **回到系列**：[E2 发展史与收敛地图](/2026/09/19/llm-quant-E2-history-convergence-map/)（算法侧的收敛判断）｜ [23 统一视角](/2026/08/29/llm-quant-23-unified-view/)（算法在改哪个自由度）｜ [课程路线图](/quantization-roadmap/)
+> **回到系列**：[E2 发展史与收敛地图](/2026/09/19/llm-quant-E2-history-convergence-map/)（算法侧的收敛判断）｜ [E5 部署时 Q/DQ 怎么被吸收](/2026/09/22/llm-quant-E5-deploy-fusion/)（本篇讲「哪些格式有 kernel」，E5 讲有了 kernel 之后融合的代数与三笔收益账）｜ [23 统一视角](/2026/08/29/llm-quant-23-unified-view/)（算法在改哪个自由度）｜ [课程路线图](/quantization-roadmap/)

@@ -467,4 +467,4 @@ C 相对 A 的改善: 10.5%   A/C = 1.12x   距全精度上界仍有 103x（A）
 
 > **系列导航** ｜ [课程路线图](/quantization-roadmap/) ｜ **扩展篇 E4**
 >
-> 相关：[17 伪量化算子插入](/2026/08/26/llm-quant-11-fake-quant-insertion/)（STE 的地基） ｜ [18 LSQ/PACT/DSQ](/2026/08/29/llm-quant-18-lsq-pact-dsq/)（可学习 scale） ｜ [20 蒸馏 + QAT](/2026/09/19/llm-quant-20-distillation-qat/) ｜ [22 Reasoning LLM 低比特](/2026/09/19/llm-quant-22-reasoning-llm-lowbit/) ｜ [E2 发展史与收敛地图](/2026/09/19/llm-quant-E2-history-convergence-map/) ｜ [E3 部署侧视角](/2026/09/19/llm-quant-E3-deployment-support/)
+> 相关：[17 伪量化算子插入](/2026/08/26/llm-quant-11-fake-quant-insertion/)（STE 的地基） ｜ [18 LSQ/PACT/DSQ](/2026/08/29/llm-quant-18-lsq-pact-dsq/)（可学习 scale） ｜ [20 蒸馏 + QAT](/2026/09/19/llm-quant-20-distillation-qat/) ｜ [22 Reasoning LLM 低比特](/2026/09/19/llm-quant-22-reasoning-llm-lowbit/) ｜ [E2 发展史与收敛地图](/2026/09/19/llm-quant-E2-history-convergence-map/) ｜ [E3 部署侧视角](/2026/09/19/llm-quant-E3-deployment-support/) ｜ [E5 部署融合](/2026/09/22/llm-quant-E5-deploy-fusion/)
