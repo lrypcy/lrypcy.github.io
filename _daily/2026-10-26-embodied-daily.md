@@ -70,6 +70,18 @@ LIBERO-LONG 上相比 PPO 取得 3.6% 与 4.0% 的绝对提升（两个 VLA 架�
 
 论文在激进跟踪与动态穿门竞速上报告训练收敛优于 model-free、model-based 与可微 RL 基线，最终表现也优于这些基线及经典规划控制方法，并给出真机飞行的概念验证。
 
+## NVIDIA Cosmos：开放世界模型的训练与评估工具链
+
+**来源**：[NVIDIA Blog](https://blogs.nvidia.com/blog/cosmos-open-train-evaluate-deploy-world-models/)
+
+NVIDIA 扩展了 Cosmos 平台，新增训练工具、仿真 checkpoint 与 Cosmos Data Factory blueprints，用于构建帮助物理 AI 系统理解并仿真真实世界的世界模型。官方称 Cosmos 在六个不同的开放模型排行榜中位列前五。
+
+## Kyutai CADRE：把世界模型的响应延迟压到 230 ms 以下
+
+**来源**：[MarkTechPost](https://www.marktechpost.com/2026/10/23/kyutai-cadre-video-autoencoders-interactive-world-models/)
+
+Kyutai 发布 CADRE——一组 7 个开放的**因果扩散视频自编码器**，面向交互式世界模型。官方数据：基于 CADRE 构建的世界模型在单张 H100 上以 20 fps 运行，反应延迟低于 230 ms。交互式世界模型的瓶颈一直是延迟而非画质，这条路线把自编码器单独作为优化对象。
+
 ## 立场论文：机器人的身体也该进化
 
 **来源**：[青稞社区](https://qingkeai.online/blog/Embracing-Evolution) ｜ 论文：[arXiv:2510.03081](https://arxiv.org/abs/2510.03081)（NeurIPS 2026 Position Paper Track）
@@ -80,4 +92,4 @@ LIBERO-LONG 上相比 PPO 取得 3.6% 与 4.0% 的绝对提升（两个 VLA 架�
 
 ---
 
-本期 8 条，来源：青稞社区 / HuggingFace Daily Papers / arXiv。
+本期 10 条，来源：青稞社区 / HuggingFace Daily Papers / arXiv / NVIDIA Blog / MarkTechPost。

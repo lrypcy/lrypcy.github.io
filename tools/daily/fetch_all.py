@@ -2,12 +2,22 @@
 """每日资讯统一采集器：汇总多个信源到一个 raw json。
 
 信源（2026-10-26 实测）：
-  ✅ qingke     青稞社区（Halo API + 正文抓取）—— 中文解读主力
-  ✅ hf         HuggingFace Daily Papers（带 arXiv id / 摘要 / github / upvotes）
-  ✅ arxiv      arXiv API（按检索式）
-  ✅ github     GitHub 仓库搜索（按 push 时间找活跃项目）
-  ✅ nvidia     NVIDIA Developer Blog（Atom feed）
-  ❌ zhihu      匿名访问 403（需登录态）；青稞正文里常附作者知乎原文链接，间接覆盖
+  中文 / 论文
+    ✅ qingke     青稞社区（Halo API + 正文抓取）—— 中文解读主力
+    ✅ hf         HuggingFace Daily Papers（arXiv id / 摘要 / github / upvotes）
+    ✅ arxiv      arXiv API（4 条检索式）
+    ✅ github     GitHub 仓库搜索（按 push 时间找活跃项目）
+  英文官方博客（RSS）
+    ✅ nvidia     NVIDIA Developer Blog + blogs.nvidia.com
+    ✅ deepmind   Google DeepMind Blog
+    ✅ bair       BAIR Blog（Berkeley）
+    ✅ hf_blog    HuggingFace Blog（与 hf 论文流不同，是官方发布/教程）
+  英文机器人媒体（RSS）
+    ✅ ieee_robotics  IEEE Spectrum Robotics
+    ✅ robohub        Robohub
+    ✅ marktechpost   MarkTechPost
+    ❌ zhihu      匿名访问 403（需登录态）；青稞正文里常附作者知乎原文链接，间接覆盖
+    ❌ therobotreport 403 ｜ venturebeat 429 ｜ ai.meta.com 无 feed
 
 网络：**必须走本机代理 127.0.0.1:7890**（ClashX）。系统代理设置里就有，
 直连 HF / NVIDIA / 知乎全部不通。代理挂了本脚本会大量失败 —— 先看 §排查。
@@ -73,7 +83,8 @@ def _get(url: str, timeout: int = 25, retries: int = 3, headers: dict | None = N
         except Exception as e:  # noqa: BLE001
             last = e
             if i < retries - 1:
-                time.sleep(1.5 * (i + 1))
+                # 指数退避：arXiv 的 reset 常常要等几秒才恢复
+                time.sleep(2 ** i * 1.5)
     raise RuntimeError(str(last))
 
 
@@ -202,8 +213,10 @@ def src_arxiv(days: int, per_query: int = 12) -> list[dict]:
             + f"&start=0&max_results={per_query}"
             + "&sortBy=submittedDate&sortOrder=descending"
         )
+        # export.arxiv.org 经常间歇性 Connection reset / 502（不是我们的错）。
+        # 加重试次数 + 退避，仍失败则整源降级（HF 源已覆盖大部分论文）。
         try:
-            raw = _get(url, timeout=35)
+            raw = _get(url, timeout=35, retries=4)
         except Exception as e:  # noqa: BLE001
             print(f"  [warn] arXiv 检索失败（{q[:30]}…）：{e}", file=sys.stderr)
             continue
@@ -277,67 +290,86 @@ def src_github(days: int) -> list[dict]:
     return items
 
 
-NV_FEEDS = [
-    "https://developer.nvidia.com/blog/feed/",
-    "https://blogs.nvidia.com/feed/",
+# --- 通用 RSS/Atom 源 -------------------------------------------------
+# 每条：(信源名, feed URL)。英文源是补国内看不到的官方一手信息与业界动态的。
+RSS_FEEDS: list[tuple[str, str]] = [
+    # NVIDIA（两个 feed 有重叠，末尾统一去重）
+    ("nvidia", "https://developer.nvidia.com/blog/feed/"),
+    ("nvidia", "https://blogs.nvidia.com/feed/"),
+    # 英文：实验室 / 厂商官方博客
+    ("deepmind", "https://deepmind.google/blog/rss.xml"),
+    ("bair", "https://bair.berkeley.edu/blog/feed.xml"),
+    ("hf_blog", "https://huggingface.co/blog/feed.xml"),
+    # 英文：机器人垂直媒体
+    ("ieee_robotics", "https://spectrum.ieee.org/feeds/topic/robotics.rss"),
+    ("robohub", "https://robohub.org/feed/"),
+    ("marktechpost", "https://www.marktechpost.com/feed/"),
 ]
 
 
-def src_nvidia(days: int) -> list[dict]:
-    cut = _cutoff(days)
-    items = []
-    for f in NV_FEEDS:
-        try:
-            raw = _get(f, timeout=30)
-        except Exception as e:  # noqa: BLE001
-            print(f"  [warn] NVIDIA feed 失败（{f}）：{e}", file=sys.stderr)
-            continue
-        entries = re.findall(r"<entry>(.*?)</entry>", raw, flags=re.S)
-        if not entries:
-            entries = re.findall(r"<item>(.*?)</item>", raw, flags=re.S)
-        for e in entries:
-
-            def g(tag: str) -> str:
-                m = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", e, flags=re.S)
-                if not m:
-                    return ""
-                v = re.sub(r"^<!\[CDATA\[|\]\]>$", "", m.group(1).strip())
-                return _text(v)
-
-            link_m = re.search(r'<link[^>]*href="([^"]+)"', e) or re.search(
-                r"<link>(.*?)</link>", e, flags=re.S
-            )
-            url = link_m.group(1) if link_m else ""
-            pub = g("published") or g("pubDate") or g("updated")
-            pub = _norm_date(pub)
-            if pub and pub < cut:
-                continue
-            title = g("title")
-            if not title:
-                continue
-            items.append(
-                {
-                    "source": "nvidia",
-                    "title": title,
-                    "url": url,
-                    "published": pub,
-                    "upvotes": None,
-                    "github": None,
-                    "excerpt": (g("summary") or g("content"))[:300],
-                    "body": (g("summary") or g("content"))[:3000],
-                    "keywords": [],
-                }
-            )
-    # 去重（两个 feed 有重叠）
-    seen = set()
+def _parse_feed(raw: str, source: str, cut: str) -> list[dict]:
+    """RSS <item> 与 Atom <entry> 通吃。"""
+    entries = re.findall(r"<entry>(.*?)</entry>", raw, flags=re.S)
+    if not entries:
+        entries = re.findall(r"<item>(.*?)</item>", raw, flags=re.S)
     out = []
-    for x in items:
-        k = x["title"][:60]
-        if k in seen:
+    for e in entries:
+
+        def g(tag: str) -> str:
+            m = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", e, flags=re.S)
+            if not m:
+                return ""
+            v = re.sub(r"^<!\[CDATA\[|\]\]>$", "", m.group(1).strip())
+            return _text(v)
+
+        link_m = re.search(r'<link[^>]*href="([^"]+)"', e) or re.search(
+            r"<link>(.*?)</link>", e, flags=re.S
+        )
+        url = link_m.group(1) if link_m else ""
+        pub = _norm_date(g("published") or g("pubDate") or g("updated"))
+        if pub and pub < cut:
             continue
-        seen.add(k)
-        out.append(x)
+        title = g("title")
+        if not title:
+            continue
+        body = g("summary") or g("content") or g("description")
+        out.append(
+            {
+                "source": source,
+                "title": title,
+                "url": url,
+                "published": pub,
+                "upvotes": None,
+                "github": None,
+                "excerpt": body[:300],
+                "body": body[:3000],
+                "keywords": [],
+            }
+        )
     return out
+
+
+def src_rss(name: str, urls: list[str]):
+    def run(days: int, no_body: bool = False) -> list[dict]:
+        cut = _cutoff(days)
+        items: list[dict] = []
+        for f in urls:
+            try:
+                raw = _get(f, timeout=30)
+            except Exception as e:  # noqa: BLE001
+                print(f"  [warn] {name} feed 失败（{f}）：{e}", file=sys.stderr)
+                continue
+            items += _parse_feed(raw, name, cut)
+        seen, out = set(), []
+        for x in items:
+            k = x["title"][:60].lower()
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(x)
+        return out
+
+    return run
 
 
 # ---------------------------------------------------------------- 工具
@@ -362,8 +394,10 @@ SOURCES = {
     "hf": lambda days, nb: src_hf(days),
     "arxiv": lambda days, nb: src_arxiv(days),
     "github": lambda days, nb: src_github(days),
-    "nvidia": lambda days, nb: src_nvidia(days),
 }
+# RSS 源按名字聚合（nvidia 有两个 feed）
+for _name in dict.fromkeys(n for n, _ in RSS_FEEDS):
+    SOURCES[_name] = src_rss(_name, [u for n, u in RSS_FEEDS if n == _name])
 
 
 def main() -> int:

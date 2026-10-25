@@ -27,10 +27,20 @@
 | --- | --- | --- | --- |
 | 青稞 `qingkeai.online` | ✅ | Halo 列表 API + 正文全文。中文解读主力，每篇自带 arXiv / 代码 / 署名 | 否 |
 | HuggingFace Daily Papers | ✅ | 论文标题、摘要、AI 摘要、arXiv id、github 仓库、upvotes、关键词 | **是** |
-| arXiv API | ✅ | 4 条检索式覆盖 WAM / VLA+具身 / RL+机器人 / sim-to-real | 否（走代理更稳） |
+| arXiv API | ✅ | 4 条检索式覆盖 WAM / VLA+具身 / RL+机器人 / sim-to-real。**间歇性抽风**，见 §7 | 否（走代理更稳） |
 | GitHub 仓库搜索 | ✅ | 按 push 时间筛活跃项目，带 star 数与 topics | **是** |
-| NVIDIA Developer Blog | ✅ | 两个 Atom feed，去重后约 28 条/周 | **是** |
+| NVIDIA Blog（两个 feed） | ✅ | 官方发布，世界模型 / 物理 AI 一手信息 | **是** |
+| DeepMind Blog | ✅ | 官方研究发布（机器人相关较少，Gemini Robotics 系列会出） | **是** |
+| BAIR Blog（Berkeley） | ✅ | 官方研究博客。**更新很慢**（实测最新停在 2026-07），多数周期为空，正常 | **是** |
+| HuggingFace Blog | ✅ | 官方发布与教程，与 `hf` 论文流不同 | **是** |
+| IEEE Spectrum Robotics | ✅ | 机器人垂直媒体，含 Video Friday 等周更栏目 | **是** |
+| Robohub | ✅ | 机器人学术社区转载，学术内容占比高 | **是** |
+| MarkTechPost | ✅ | 论文速讯，覆盖中文源常漏掉的欧洲实验室（如 Kyutai） | **是** |
 | 知乎 | ❌ | 匿名访问 403（API 与网页都是）。见 §2.1 | — |
+
+英文源的价值：中文源（青稞/HF 论文）覆盖不到的**官方一手发布**与**欧美实验室动态**。
+实测当天就靠 MarkTechPost 捞到了 Kyutai CADRE、靠 NVIDIA Blog 捞到了 Cosmos 工具链，
+这两条中文源完全没有。
 
 **代理是硬依赖**：`127.0.0.1:7890`（ClashX，系统代理设置里已启用）。
 HF / GitHub / NVIDIA 直连全不通。脚本启动时会先探代理，挂了直接报错退出。
@@ -135,7 +145,13 @@ python3 tools/daily/fetch_all.py --date 2026-10-27 --days 2
 
 - **`select.py` 会遮蔽标准库 `select`**。文件名改成 `pick_topics.py` 才正常。
   症状是 `AttributeError: module 'select' has no attribute 'select'`。
+- **`export.arxiv.org` 会间歇性 Connection reset / 502**，而且一挂就是全部四条检索式。
+  不是我们的错，等几秒重试通常能恢复。已改为 4 次重试 + 指数退避（1.5/3/6s）。
+  真跑不出来时 HF 源已覆盖大部分论文，不必死等。
+- **arXiv RSS（`rss.arxiv.org/rss/<cat>`）是空壳** —— 只有 channel 头没有 item，别用。
+- **BAIR feed 更新极慢**（实测最新 2026-07），7 天窗口内返回 0 条是常态，不是故障。
 - **Halo 列表 API 带 `sort` / `fieldSelector` 参数返回 500**。只能 `?page=1&size=N` 裸取，本地排序。
 - **arXiv 官方要求请求间隔**，四条检索式之间 sleep 3s，别并发。
-- **代理挂掉的症状**是 HF / GitHub / NVIDIA 三个源集体返回 0 条。脚本已加启动探测。
+- **`therobotreport` 403 / `venturebeat` 429 / `ai.meta.com` 无 feed** —— 试过，别再加。
+- **代理挂掉的症状**是 HF / GitHub / 博客类源集体返回 0 条。脚本已加启动探测。
 - 青稞正文抓取要带浏览器 UA；抓取间隔 0.4s。

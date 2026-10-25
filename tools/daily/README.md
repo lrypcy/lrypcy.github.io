@@ -12,15 +12,21 @@ python3 tools/daily/pick_topics.py --top 12 --by-source   # 筛选，看候选
 # 精读后写 _daily/YYYY-MM-DD-<slug>.md，校验，提交推送
 ```
 
-## 信源
+## 信源（11 个）
 
-| 脚本 | 信源 | 代理 |
-| --- | --- | --- |
-| `fetch_all.py` | 青稞 / HuggingFace Daily Papers / arXiv / GitHub / NVIDIA Blog | HF·GitHub·NVIDIA 需代理 |
-| `fetch_qingke.py` | 只抓青稞（调试用，`fetch_all` 已含） | 不需要 |
+`fetch_all.py` 统一采集，`fetch_qingke.py` 是青稞单源调试用的（`fetch_all` 已含）。
 
-**代理 `127.0.0.1:7890`（ClashX）是硬依赖**，脚本启动会先探测，挂了直接报错。
-不带代理跑：`DAILY_PROXY= python3 tools/daily/fetch_all.py`。
+**中文 / 论文**：青稞社区、HuggingFace Daily Papers、arXiv（4 条检索式）、GitHub 搜索
+
+**英文官方博客**：NVIDIA（2 个 feed）、DeepMind、BAIR、HuggingFace Blog
+
+**英文机器人媒体**：IEEE Spectrum Robotics、Robohub、MarkTechPost
+
+英文源用来补中文源覆盖不到的官方一手发布与欧美实验室动态。实测当天靠 MarkTechPost
+捞到 Kyutai CADRE、靠 NVIDIA Blog 捞到 Cosmos 工具链，这两条中文源完全没有。
+
+**代理 `127.0.0.1:7890`（ClashX）是硬依赖** —— 除青稞和 arXiv 外全都要走代理。
+脚本启动会先探测，挂了直接报错。不带代理跑：`DAILY_PROXY= python3 tools/daily/fetch_all.py`。
 
 **知乎抓不了**：匿名访问全部 403（网页、API、问答接口都需要登录态）。
 当前靠青稞正文里附的作者知乎原文链接间接覆盖。

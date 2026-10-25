@@ -52,13 +52,39 @@ NEGATIVE: list[tuple[str, int]] = [
     ("芯片", -3), ("GPU", -2), ("数据库", -5), ("前端", -4),
 ]
 
-# 各信源基础分：青稞是中文解读（信息密度高），HF/arXiv 是一手论文
-SOURCE_BONUS = {"qingke": 0, "hf": 4, "arxiv": 4, "github": 2, "nvidia": 2}
+# 各信源基础分。
+# 青稞是中文深度解读（信息密度最高，但已是二手）；HF/arXiv 是一手论文；
+# 英文官方博客是一手发布；媒体源噪声大，给负分压一压。
+SOURCE_BONUS = {
+    "qingke": 0,
+    "hf": 4,
+    "arxiv": 4,
+    "github": 2,
+    "nvidia": 2,
+    "deepmind": 3,
+    "bair": 3,
+    "hf_blog": 2,
+    "ieee_robotics": 1,
+    "robohub": 1,
+    "marktechpost": 0,
+}
 
 SOURCE_LABEL = {
     "qingke": "青稞", "hf": "HF Papers", "arxiv": "arXiv",
     "github": "GitHub", "nvidia": "NVIDIA",
+    "deepmind": "DeepMind", "bair": "BAIR", "hf_blog": "HF Blog",
+    "ieee_robotics": "IEEE Spectrum", "robohub": "Robohub",
+    "marktechpost": "MarkTechPost",
 }
+
+# 英文源的降权词：产业新闻、融资、产品发布一般不是研究进展
+NEGATIVE_EN: list[tuple[str, int]] = [
+    ("funding", -4), ("raises", -4), ("series a", -5), ("series b", -5),
+    ("acquisition", -4), ("acquires", -4), ("ipo", -4), ("valuation", -4),
+    ("partnership", -3), ("toy", -6), ("christmas", -6), ("gift", -5),
+    ("podcast", -3), ("episode", -3), ("webinar", -4), ("newsletter", -3),
+    ("job", -5), ("hiring", -5), ("conference", -2), ("award", -3),
+]
 
 
 def score(title: str, body: str, source: str = "") -> tuple[int, list[str]]:
@@ -71,10 +97,11 @@ def score(title: str, body: str, source: str = "") -> tuple[int, list[str]]:
             v = w * min(n, 3)
             total += v
             hits.append((kw, v))
-    for kw, w in NEGATIVE:
+    for kw, w in NEGATIVE + NEGATIVE_EN:
         if kw.lower() in head:
             total += w
             hits.append((kw, w))
+    # 英文源整篇没有中文目标词时，靠英文词命中也能入选，但要求更高分
     hits.sort(key=lambda x: -x[1])
     return total, [f"{k}({v:+d})" for k, v in hits[:7]]
 
