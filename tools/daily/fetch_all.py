@@ -141,12 +141,15 @@ def src_qingke(days: int, size: int, no_body: bool) -> list[dict]:
     items.sort(key=lambda x: x["published"], reverse=True)
     items = [x for x in items if x["published"] >= _cutoff(days)]
     for x in items:
+        x["images"] = []
         if no_body:
             continue
         try:
             page = _get(x["url"])
             m = re.search(r"<article\b.*?</article>", page, flags=re.S | re.I)
-            x["body"] = _text(m.group(0) if m else "")
+            frag = m.group(0) if m else ""
+            x["body"] = _text(frag)
+            x["images"] = _extract_images(frag, x["url"])
         except Exception:  # noqa: BLE001
             x["body"] = ""
         time.sleep(0.4)
@@ -186,6 +189,13 @@ def src_hf(days: int) -> list[dict]:
                 "excerpt": summ[:400],
                 "body": (summ + "\n" + ai)[:4000],
                 "keywords": kw,
+                # HF 的 thumbnail 是论文首页自动生成的预览图，可直接当配图
+                "images": (
+                    [{"url": p["thumbnail"], "alt": (paper.get("title") or "")[:120],
+                      "w": None, "h": None}]
+                    if p.get("thumbnail")
+                    else []
+                ),
             }
         )
     items.sort(key=lambda x: -(x.get("upvotes") or 0))
@@ -243,6 +253,7 @@ def src_arxiv(days: int, per_query: int = 12) -> list[dict]:
                 "excerpt": re.sub(r"\s+", " ", e.findtext("a:summary", "", ns)).strip()[:400],
                 "body": re.sub(r"\s+", " ", e.findtext("a:summary", "", ns)).strip(),
                 "keywords": [],
+                "images": [],  # arXiv API 不给图；需要时取 arxiv.org/abs 页的首图
             }
         time.sleep(3)  # arXiv 官方要求请求间隔
     return list(seen.values())
@@ -284,10 +295,81 @@ def src_github(days: int) -> list[dict]:
                     "excerpt": (r.get("description") or "")[:300],
                     "body": (r.get("description") or "") + " topics: " + ", ".join(topics[:10]),
                     "keywords": topics[:8],
+                    # GitHub 的 social preview 图（仓库卡片），可当配图
+                    "images": (
+                        [{"url": f"https://opengraph.githubassets.com/1/{r.get('full_name','')}",
+                          "alt": r.get("full_name", ""), "w": None, "h": None}]
+                        if r.get("full_name")
+                        else []
+                    ),
                 }
             )
     items.sort(key=lambda x: -(x.get("upvotes") or 0))
     return items
+
+
+def _extract_images(fragment: str, base_url: str, limit: int = 4) -> list[dict]:
+    """从正文 HTML 片段里挑候选配图。
+
+    只收「看起来是内容图」的：有 alt 说明、或在 figure 里、或尺寸够大。
+    排除头像 / 二维码 / 站点 UI / 表情。
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    # figure 内的 img 优先（通常是论文插图）
+    fig_imgs = []
+    for fig in re.findall(r"<figure\b.*?</figure>", fragment, flags=re.S | re.I):
+        fig_imgs += re.findall(r"<img\b[^>]*>", fig, flags=re.I)
+    plain_imgs = [
+        i for i in re.findall(r"<img\b[^>]*>", fragment, flags=re.I) if i not in fig_imgs
+    ]
+
+    for tag in fig_imgs + plain_imgs:
+        src = _img_attr(tag, "src") or _img_attr(tag, "data-src")
+        if not src:
+            continue
+        src = urllib.parse.urljoin(base_url, src)
+        if src in seen:
+            continue
+        alt = _img_attr(tag, "alt") or ""
+        w = _to_int(_img_attr(tag, "width"))
+        h = _to_int(_img_attr(tag, "height"))
+        low = (src + " " + alt).lower()
+        # 排除噪声图
+        if any(
+            k in low
+            for k in (
+                "avatar", "qrcode", "qr_", "icon", "logo", "emoji", "badge",
+                "button", "banner", "placeholder", "loading", "spinner",
+                "wx", "wechat", "zhihu", "xiaohongshu", "bilibili", "video-number",
+            )
+        ):
+            continue
+        # 太小的多半是装饰
+        if w and w < 300:
+            continue
+        if not alt and not (w and w >= 600):
+            continue
+        seen.add(src)
+        out.append({"url": src, "alt": alt[:200], "w": w, "h": h})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _img_attr(tag: str, name: str) -> str:
+    m = re.search(rf'{name}\s*=\s*"([^"]*)"', tag, flags=re.I) or re.search(
+        rf"{name}\s*=\s*'([^']*)'", tag, flags=re.I
+    )
+    return html.unescape(m.group(1)).strip() if m else ""
+
+
+def _to_int(s) -> int | None:
+    try:
+        return int(str(s).strip().rstrip("px"))
+    except Exception:  # noqa: BLE001
+        return None
 
 
 # --- 通用 RSS/Atom 源 -------------------------------------------------
@@ -332,7 +414,14 @@ def _parse_feed(raw: str, source: str, cut: str) -> list[dict]:
         title = g("title")
         if not title:
             continue
-        body = g("summary") or g("content") or g("description")
+        raw_body = g("summary") or g("content") or g("description")
+        body = raw_body[:3000]
+        # feed 里常带 <img>（enclosure / media:content / 正文内嵌）
+        imgs = _extract_images(e, url)
+        if not imgs:
+            enc = re.search(r'<enclosure[^>]*url="([^"]+)"[^>]*type="image', e, flags=re.I)
+            if enc:
+                imgs = [{"url": enc.group(1), "alt": title, "w": None, "h": None}]
         out.append(
             {
                 "source": source,
@@ -342,8 +431,9 @@ def _parse_feed(raw: str, source: str, cut: str) -> list[dict]:
                 "upvotes": None,
                 "github": None,
                 "excerpt": body[:300],
-                "body": body[:3000],
+                "body": body,
                 "keywords": [],
+                "images": imgs,
             }
         )
     return out
@@ -404,6 +494,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=7)
     ap.add_argument("--only", default=None, help="逗号分隔，只跑指定信源")
+    ap.add_argument("--no-merge", action="store_true", help="--only 时不保留上次其他源的数据")
     ap.add_argument("--date", default=None)
     ap.add_argument("--no-body", action="store_true", help="跳过青稞正文抓取")
     args = ap.parse_args()
@@ -420,9 +511,22 @@ def main() -> int:
             )
             return 1
 
-    names = args.only.split(",") if args.only else list(SOURCES)
+    # 源会间歇性 reset（arXiv / IEEE 尤其），重跑单个源时不能把别的源冲掉。
+    # 默认按 source 合并：本次抓到的覆盖同名的旧数据，其他源原样保留。
     all_items: list[dict] = []
     stats: dict[str, int] = {}
+    names = args.only.split(",") if args.only else list(SOURCES)
+    if args.only and not args.no_merge:
+        prev = OUT_DIR / f"raw-{args.date or datetime.now().strftime('%Y-%m-%d')}.json"
+        if prev.exists():
+            try:
+                old = json.loads(prev.read_text(encoding="utf-8"))
+                all_items += [x for x in old.get("items", []) if x.get("source") not in names]
+                if all_items:
+                    print(f"（保留上次其他源 {len(all_items)} 条）")
+            except Exception:  # noqa: BLE001
+                pass
+
     for n in names:
         if n not in SOURCES:
             print(f"[warn] 未知信源 {n}", file=sys.stderr)

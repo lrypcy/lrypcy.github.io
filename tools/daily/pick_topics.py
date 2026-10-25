@@ -156,12 +156,32 @@ def main() -> int:
             print(f"  {SOURCE_LABEL.get(k,k)}: {v}")
 
     brief = OUT_DIR / f"brief-{day}.json"
+    # brief 里若没有正文，回 raw 取 —— 评分要看正文里的 arXiv / github 链接与数字
+    body_by_url: dict[str, str] = {}
+    raw_path = OUT_DIR / f"raw-{day}.json"
+    if raw_path.exists():
+        try:
+            raw = json.loads(raw_path.read_text(encoding="utf-8"))
+            for it in raw.get("items", []):
+                if it.get("url"):
+                    body_by_url[it["url"]] = (it.get("body") or "") + " " + (
+                        it.get("excerpt") or ""
+                    )
+        except Exception:  # noqa: BLE001
+            pass
+
     brief.write_text(
         json.dumps(
             {
                 "date": day,
                 "picked": [
-                    {"score": s, "hits": h, **{k: v for k, v in x.items() if k != "body"}}
+                    {
+                        "score": s,
+                        "hits": h,
+                        "body": (x.get("body") or "")[:1200]
+                        or body_by_url.get(x.get("url", ""), "")[:1200],
+                        **{k: v for k, v in x.items() if k != "body"},
+                    }
                     for s, h, x in kept
                 ],
             },

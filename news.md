@@ -12,7 +12,7 @@ no_sidebar: true
   <a class="news-row" href="{{ note.url }}">
     <span class="news-date">{{ note.date | date: "%Y-%m-%d" }}</span>
     <span class="news-main">
-      <span class="news-title">{{ note.title }}</span>
+      <span class="news-title">{{ note.title }}{% if note.rating %}<span class="news-rating" title="本期综合评分 {{ note.rating }}/5">{% assign r = note.rating | plus: 0 %}{% for i in (1..5) %}{% if i <= r %}★{% else %}☆{% endif %}{% endfor %}</span>{% endif %}</span>
       {% if note.summary %}<span class="news-desc">{{ note.summary }}</span>{% endif %}
     </span>
   </a>

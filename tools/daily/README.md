@@ -7,10 +7,29 @@
 
 ```bash
 cd ~/Desktop/Projects/github/lrypcy.github.io
-python3 tools/daily/fetch_all.py --days 7            # 五源采集
+python3 tools/daily/fetch_all.py --days 7            # 11 源采集
 python3 tools/daily/pick_topics.py --top 12 --by-source   # 筛选，看候选
+python3 tools/daily/rate.py --top 12                # 评分建议（可选）
 # 精读后写 _daily/YYYY-MM-DD-<slug>.md，校验，提交推送
 ```
+
+| 脚本 | 干什么 |
+| --- | --- |
+| `fetch_all.py` | 11 源统一采集，顺带抓候选配图（含中文 alt） |
+| `pick_topics.py` | 关键词加权打分做主题初筛，输出候选清单 |
+| `rate.py` | 给候选打 1–5 星建议分（值得读 / 影响力两个维度） |
+| `fetch_qingke.py` | 只抓青稞（调试用，`fetch_all` 已含） |
+
+## 两个特性
+
+**配图**：采集器把候选图（架构图、结果表、真机对比）抓进 `raw-*.json` 的 `images` 字段。
+默认**外链**源站图片，特别有价值的才下载到 `assets/img/daily/`。没有合适的图就不加。
+
+**评分**：每期 front matter 有 `rating`（1–5，显示在列表页标题后）；正文每条给
+`值得读` 和 `影响力` 两个星。`rate.py` 给建议分，但最终由人定 —— 它只看得懂证据信号
+（数字 / 论文 / 代码 / 热度），看不懂「这个结果重不重要」。
+
+口径见 `.agents/DAILY-PIPELINE.md` §4.2 / §4.3。
 
 ## 信源（11 个）
 
@@ -34,16 +53,19 @@ python3 tools/daily/pick_topics.py --top 12 --by-source   # 筛选，看候选
 ## 常用参数
 
 - `--days N` 采集窗口（默认 7 天）
-- `--only qingke,hf` 只跑指定信源
+- `--only qingke,hf` 只跑指定信源（**默认合并**上次其他源的数据，不冲掉）
+- `--no-merge` 配合 `--only`，强制只留本次抓的
 - `--date YYYY-MM-DD` 补跑历史某天
 - `--source hf,arxiv` 只看某些信源的候选
 - `--dump-body` 打印摘要，方便直接阅读
-- `--no-body` 跳过青稞正文抓取（快，但拿不到细节）
+- `--no-body` 跳过青稞正文抓取（快，但拿不到细节和配图）
+- `rate.py --all` 给 raw 全部条目打分（不只看候选）
 
 ## 注意
 
 - `out/` 在 `.gitignore` 里，是抓取产物，不入库
 - **`pick_topics.py` 不能改名成 `select.py`** —— 会遮蔽标准库 `select`，所有网络脚本都会挂
-- 筛选器只做初筛，直播预告 / 招聘 / 广告要人工丢掉
+- 筛选器只做初筛，直播预告 / 招聘 / 广告要人工丢掉；`rate.py` 的星级也只是建议
 - 同一工作常被多源重复命中，合并成一条写，链接给全
+- 外链图片前先 curl 确认能访问（有的站防盗链）
 - 当天没有符合主题的新内容就跳过，不凑数

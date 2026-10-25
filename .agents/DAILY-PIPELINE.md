@@ -9,8 +9,9 @@
 
 | 路径 | 作用 |
 | --- | --- |
-| `tools/daily/fetch_all.py` | **统一采集器**（五源，主力入口） |
+| `tools/daily/fetch_all.py` | **统一采集器**（11 源，主力入口） |
 | `tools/daily/pick_topics.py` | 主题筛选与打分，输出候选清单 |
+| `tools/daily/rate.py` | 给候选打 1–5 星建议分（两个维度），写作时参考 |
 | `tools/daily/fetch_qingke.py` | 青稞单源采集器（fetch_all 已含，留着调试用） |
 | `tools/daily/out/raw-<date>.json` | 当日原始抓取（含摘要全文） |
 | `tools/daily/out/brief-<date>.json` | 当日候选清单 |
@@ -62,16 +63,26 @@ HF / GitHub / NVIDIA 直连全不通。脚本启动时会先探代理，挂了�
 ```bash
 cd ~/Desktop/Projects/github/lrypcy.github.io
 
-# 1. 采集（五源，7 天窗口）
+# 1. 采集（11 源，7 天窗口）
 python3 tools/daily/fetch_all.py --days 7
 
 # 2. 筛选
 python3 tools/daily/pick_topics.py --top 12 --by-source
 python3 tools/daily/pick_topics.py --top 6 --dump-body   # 看正文再定
 
+# 2b. 评分建议（可选，写之前看一眼心里有数）
+python3 tools/daily/rate.py --top 12
+
 # 3. 精读入选条目，写 _daily/YYYY-MM-DD-<slug>.md（格式见 §4）
 # 4. 校验（§5）
 # 5. git add 该条目 && git commit && git push
+```
+
+某个源间歇性 reset 时重跑它**不会冲掉其他源**（默认按 source 合并）：
+
+```bash
+python3 tools/daily/fetch_all.py --only arxiv        # 只重跑 arxiv，其余保留
+python3 tools/daily/fetch_all.py --only arxiv --no-merge  # 强制只留这一源
 ```
 
 筛选器只是**初筛**。以下情况人工介入：
@@ -80,6 +91,7 @@ python3 tools/daily/pick_topics.py --top 6 --dump-body   # 看正文再定
 - 直播预告 / 招聘 / 广告 → 直接丢弃（`NEGATIVE` 已降权，但会漏）
 - 分数低但确实是本方向重磅 → 手动捞回
 - **优先照顾多样性**：一期里别全是 arXiv 论文，也别全是青稞解读
+- 星级参考 `rate.py` 的建议，但**自己定**（见 §4.3）
 
 ---
 
@@ -90,13 +102,21 @@ python3 tools/daily/pick_topics.py --top 6 --dump-body   # 看正文再定
 title: 具身智能日报 · <月日>：<一句话点出当日主线>
 date: YYYY-MM-DD
 summary: 列表页显示的那一句话，40 字内
+rating: 4
 ---
 
+**评分说明**：每条给两个星——`值得读`是读者花几分钟看这条能拿回什么，
+`影响力`是这条对领域的冲击。两者不等价。
+
 ## <条目标题>
+
+`值得读 ★★★★☆` ｜ `影响力 ★★★★☆`
 
 **来源**：[青稞社区](链接) ｜ 论文：[arXiv:xxxx](链接) ｜ 代码：[repo](链接)
 
 <3–5 句：解决什么问题、方法是什么、关键数字>
+
+![<图的中文说明，用原文 alt>](<图片 URL>)
 
 ## <第二条>
 ...
@@ -114,6 +134,51 @@ summary: 列表页显示的那一句话，40 字内
 - 一条 200–400 字，一期 4–6 条
 - 不写元叙述（「本文由 XX 整理」不进正文，见 `WRITING.md` §4）
 - 纯观点类内容写清「未见公开论文」
+
+### 4.1 front matter 的 `rating`
+
+本期**综合评分**（1–5），显示在 `/news/` 列表页标题后面。取本期各条目星级的大致均值，
+再按「今天这期整体含金量」微调。没有 `rating` 字段就不显示星，不报错。
+
+### 4.2 配图
+
+**默认外链**源站图片（零体积、零版权风险，只是引用）。采集器已把候选图抓进
+`raw-*.json` 的 `images` 字段（含中文 alt），直接用：
+
+```bash
+python3 tools/daily/pick_topics.py --dump-body   # 候选里带 images
+```
+
+规则：
+
+- 选**能说明问题**的图（架构图、结果表、真机对比），不选装饰性配图
+- alt 用原文的中文说明，或自己写一句「这张图在说什么」，别只写「图 1」
+- **没有合适的图就不加**——不为了有图而放图
+- 一张条目最多 2 张
+- 外链前先用 curl 确认能访问且是图片（防盗链的站会返 403）：
+
+  ```bash
+  curl -sI -x http://127.0.0.1:7890 -A "Mozilla/5.0" <图片 URL> | head -3
+  ```
+- **特别有价值的图才下载到仓库** `assets/img/daily/`（与既有文章一致，永不裂图）。
+  单张控制在 200 KB 内，用 `![说明](/assets/img/daily/xxx.png)`
+
+### 4.3 每条的星级
+
+`值得读` 与 `影响力` 各 1–5 星，写在标题下一行。`rate.py` 会给建议分，但**它只看得懂
+证据信号**（有没有数字 / 论文 / 代码 / 热度），看不懂「这个结果重不重要」——
+**最终星级由人定**。参考口径：
+
+| 星 | 值得读 | 影响力 |
+|:--:|:--|:--|
+| 5 | 必读，有硬数字 + 新路线 | 方向级突破或重磅开源 |
+| 4 | 值得看，有对照实验数字 | 明显推进，别人会接着做 |
+| 3 | 一般，有增量 | 增量改进 |
+| 2 | 边缘相关，扫一眼即可 | 小修小补 |
+| 1 | 凑数 | 几乎无影响 |
+
+立场论文 / 综述默认 `值得读` 低（没实验数字）、`影响力` 未必低——这两个维度就是为
+区分这种情况而设的。
 
 ---
 
