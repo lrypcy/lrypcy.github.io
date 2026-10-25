@@ -30,3 +30,6 @@ tools/analytics/map-preview.html
 # Python 字节码缓存
 __pycache__/
 *.pyc
+
+# 每日资讯流水线的抓取产物（含正文全文，每天累积，不入库）
+tools/daily/out/
