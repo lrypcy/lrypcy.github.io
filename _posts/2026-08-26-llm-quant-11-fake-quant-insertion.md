@@ -15,7 +15,7 @@ mathjax: true
 > **TL;DR**
 >
 > * **核心问题与结论**：伪量化（Fake Quantize）不是“量化的近似”，而是**量化器本身的一种表示**——浮点进、浮点出，输出钉在量化网格上。定义必须量化与反量化成对执行，零点在解码时减掉：$$q=\mathrm{clip}(\mathrm{round}(x/s)+z_p,q_{\min},q_{\max})$$、$$\hat{x}=s(q-z_p)$$。同一算子既是 PTQ 的离线评估工具，也是 QAT 里模拟量化的节点，差别只在是否处在优化循环里。
-> * **关键证据**：① 非对称网格漏掉 $$-z_p$$ 会让可表示区间平移 $$s\,z_p$$，§3.2 算例中误差达 $$s/2$$ 的 20 倍；② 重尾激活上 4-bit min-max 只用到 9/16 个码字，改 0.999 分位裁剪后相对误差降 4.66 dB——但同一操作在 8-bit 上**反亏 16.00 dB**（`fake_quant_ste` C 组，合成探针，SEED=0）；③ `MinMaxObserver(-128,127)` 对 $$[-1,0,2,5]$$ 给出 $$z_p=-86$$——决定对称性的是 `qscheme`，不是码字范围。
+> * **关键证据**：① 漏写 $$z_p$$ 有两种错法——解码漏减使全体平移 $$s\,z_p$$（$$x=0$$ 都保不住），编解码同漏只偏在饱和元素上（§3.3，1(e) 组）；② 重尾激活上 4-bit min-max 只用 9/16 个码字，0.999 分位裁剪降 4.66 dB，8-bit 上却**反亏 16.00 dB**（`fake_quant_ste` C 组）；③ 权重与伪量化权重的差距**不单调**：峰值在第 2 步、40 步内回落 28 次，冻结 scale 后仍不单调（2b 组）。
 > * **适用边界与代价**：伪量化**不省任何计算**——训练更慢、显存更大，推理不会变快；加速发生在部署侧，由引擎把 QDQ 图 lower 成整数 kernel（§7.3）。以上数字来自合成探针与 torch 2.10 实测，不是真实模型精度。
 
 ---
@@ -393,7 +393,11 @@ flowchart TD
 | **前向执行** | **每次前向都执行**：权重是可训练参数，每步都要重新 round-trip | 每次前向都执行，输入每次不同 |
 | **scale 更新** | 通常冻结（校准值）；也可学（LSQ） | 观察器滑动平均 / 冻结 / 每 token 现算 / 可学（PACT 的 $$\alpha$$） |
 
-关键更正：**“一次插入”说的是图构建，不是数值执行**。QAT 里权重每步都被重新伪量化，所以“权重 Fake Quant 是离线的”是错的——离线的是**scale 的估计**，不是算子的执行。这一点在实验上可以直接看到：训练一阵之后，浮点权重与伪量化权重的差距会变大（`fake_quant_torch_onnx` 2 组实测：40 步训练后相对 L2 误差 $$\sqrt{\sum(W-\hat W)^2/\sum W^2}$$ 从 3.7429e-03 涨到 **5.3566e-02**；同一组还断言 `disable_observer` 后 scale 逐位不变、权重仍在变）。**口径提醒**：实验 stdout 把这个量打成 `rel.MSE`，但它的实现 `wgap()` 返回的是 $$\sqrt{\sum(W-\hat W)^2/\sum W^2}$$——开了方根，实际是**相对 L2 误差（rel-RMSE）**。读别的资料时按这个名字差异换算，别把两个量当同一个。另外它也不是「一路单调涨」——x86 默认观察器持续更新 scale，误差先冲高再回落；只有把 observer 冻结住，差距才随权重变大单调上升。
+关键更正：**“一次插入”说的是图构建，不是数值执行**。QAT 里权重每步都被重新伪量化，所以“权重 Fake Quant 是离线的”是错的——离线的是**scale 的估计**，不是算子的执行。这一点在实验上可以直接看到：训练一阵之后，浮点权重与伪量化权重的差距会变大（`fake_quant_torch_onnx` 2 组实测：40 步训练后相对 L2 误差 $$\sqrt{\sum(W-\hat W)^2/\sum W^2}$$ 从 3.7429e-03 涨到 **5.3566e-02**；同一组还断言 `disable_observer` 后 scale 逐位不变、权重仍在变）。**口径提醒**：实验 stdout 把这个量打成 `rel.MSE`，但它的实现 `wgap()` 返回的是 $$\sqrt{\sum(W-\hat W)^2/\sum W^2}$$——开了方根，实际是**相对 L2 误差（rel-RMSE）**。读别的资料时按这个名字差异换算，别把两个量当同一个。
+
+**两个端点不能外推成趋势。** 上引两个数是 40 步训练的首尾两点，中间过程在两个端点之外没有任何采样。把这件差距逐步量出来（`fake_quant_torch_onnx` 2b 组，逐 step 采 41 个点）可以看到它**不是单调上升**：第 5 步就已到 $$6.7455\times10^{-2}$$，峰值 $$7.0319\times10^{-2}$$ 出现在**第 2 步**，之后一路回落到第 40 步的 $$5.4800\times10^{-2}$$，40 步里回落 28 次。原因是 x86 默认观察器每步都在重定 scale，网格跟着数据走，差距被反复拉回。
+
+值得注意的是，**把 scale 冻结住也不会让这条曲线变成单调**：`disable_observer` 之后连训 5 步，差距是 $$5.4800\to5.4645\to5.4840\to5.5140\to5.5167\to5.5115\;(\times10^{-2})$$，仍有 2 次回落。冻结的只是**网格**，权重相对这个固定网格仍在动，两件事不能混为一谈——「冻结 scale 就得到干净的单调趋势」是一个想当然的推论。
 
 对应的训练流程图：
 
@@ -543,7 +547,7 @@ $$
 y=(x-y_{\rm zero\_point})\cdot y_{\rm scale}
 $$
 
-三个细节决定了“QDQ 不是占位符”：
+四个细节决定了“QDQ 不是占位符”：
 
 1. **scale 是 initializer，不是注解**：导出之后 scale 就是图里的常量张量。改 scale = 改图，不是改一个属性。
 2. **判粒度只看 scale 的 shape，不能看有没有 `axis`**：torch 2.10 的 pt2e 导出链把 per-tensor 配置也写成了**每个 QDQ 节点都带 `axis=1`、而 scale 全是标量**（`fake_quant_torch_onnx` 4 组：8 个 QDQ 节点全部 `axis=1`，`shape=()`）——`axis` 在这里是冗余属性。反过来，ONNX 规范确实支持 per-axis（scale 形状为 `[out_channels]`），但**这条导出链路目前导不出来**：per-channel 配置直接失败于 `DispatchError: No ONNX function found for quantized_decomposed.dequantize_per_channel`（4b 组）。per-group 还需要 blocked quantization 的额外属性。所以“看 `axis` 反推粒度”在真实导出物上是错的。
@@ -608,8 +612,8 @@ simulated_quantize(data, output_scale, output_zero_point, axis=-1, out_dtype="in
 
 | 实验 | 内容 | 断言 |
 |---|---|---|
-| [`fake_quant_ste`](https://github.com/lrypcy/ipynbs/blob/b9756706414a53ec5d53b12d50334e53d369215b/experiments/quantization/fake_quant_ste/fake_quant_ste.ipynb) | numpy：A 算子正确性与两段误差、B 粒度、C 裁剪、D STE 判据与直通比例、E 插入位置端到端 | **33** |
-| [`fake_quant_torch_onnx`](https://github.com/lrypcy/ipynbs/blob/b9756706414a53ec5d53b12d50334e53d369215b/experiments/quantization/fake_quant_torch_onnx/fake_quant_torch_onnx.ipynb) | torch 2.10 + onnx 1.20：手写式对账、STE 梯度、observer qparams、eager/FX QAT、PT2E→ONNX QDQ | **49** |
+| [`fake_quant_ste`](https://github.com/lrypcy/ipynbs/blob/7ebcff4e1c6293d580540ea180b1ebc8b05617c2/experiments/quantization/fake_quant_ste/fake_quant_ste.ipynb) | numpy：A 算子正确性与两段误差、B 粒度、C 裁剪、D STE 判据与直通比例、E 插入位置端到端 | **33** |
+| [`fake_quant_torch_onnx`](https://github.com/lrypcy/ipynbs/blob/7ebcff4e1c6293d580540ea180b1ebc8b05617c2/experiments/quantization/fake_quant_torch_onnx/fake_quant_torch_onnx.ipynb) | torch 2.10 + onnx 1.20：手写式对账、STE 梯度、observer qparams、eager/FX QAT、逐 step 差距轨迹、PT2E→ONNX QDQ | **52** |
 
 ```bash
 cd experiments/quantization/fake_quant_ste
@@ -619,7 +623,7 @@ cd ../fake_quant_torch_onnx
 ~/Software/miniconda3/envs/torch/bin/jupyter nbconvert --to notebook --execute --inplace fake_quant_torch_onnx.ipynb
 ```
 
-固化输出：[`fake_quant_ste/results/stdout.txt`](https://github.com/lrypcy/ipynbs/blob/b9756706414a53ec5d53b12d50334e53d369215b/experiments/quantization/fake_quant_ste/results/stdout.txt) · [`fake_quant_torch_onnx/results/stdout.txt`](https://github.com/lrypcy/ipynbs/blob/b9756706414a53ec5d53b12d50334e53d369215b/experiments/quantization/fake_quant_torch_onnx/results/stdout.txt) · [导出的 QDQ 图](https://github.com/lrypcy/ipynbs/blob/b9756706414a53ec5d53b12d50334e53d369215b/experiments/quantization/fake_quant_torch_onnx/results/fq_qdq_model.onnx)
+固化输出：[`fake_quant_ste/results/stdout.txt`](https://github.com/lrypcy/ipynbs/blob/7ebcff4e1c6293d580540ea180b1ebc8b05617c2/experiments/quantization/fake_quant_ste/results/stdout.txt) · [`fake_quant_torch_onnx/results/stdout.txt`](https://github.com/lrypcy/ipynbs/blob/7ebcff4e1c6293d580540ea180b1ebc8b05617c2/experiments/quantization/fake_quant_torch_onnx/results/stdout.txt) · [导出的 QDQ 图](https://github.com/lrypcy/ipynbs/blob/7ebcff4e1c6293d580540ea180b1ebc8b05617c2/experiments/quantization/fake_quant_torch_onnx/results/fq_qdq_model.onnx)
 
 ### 8.1 逐张量的插入效果：网格对齐率才是判据（E 组）
 
@@ -663,6 +667,7 @@ cd ../fake_quant_torch_onnx
 | D | 数值差分非零占比 0.37%、非零差商恒 $$\pm500=s/(2\varepsilon)$$；直通比例 1.0000→0.5715 与闭式解吻合 |
 | torch 1(b) | STE 切断点卡在 $$\pm0.5$$ 格，两端不对称（$$127.5\to128$$ 断、$$-128.5\to-128$$ 通） |
 | torch 1(c) | `qint8`+affine 得 $$z_p=-86$$；`per_tensor_symmetric` 下 qint8 是 0、quint8 是 127 |
+| torch 2b | 差距**不是单调涨**：峰值 $$7.0319\times10^{-2}$$ 在第 2 步，第 40 步回落到 $$5.4800\times10^{-2}$$，40 步内回落 28 次；冻结 scale 后 5 步仍有 2 次回落（$$5.4800\to5.4645\to5.4840\to5.5140\to5.5167\to5.5115\times10^{-2}$$） |
 | torch 2 | x86 QAT 默认 `reduce_range=True`，有效码字 **128** 个；`disable_observer` 后 scale 逐位不变而权重仍在变；`fuse_modules` 在 train 下报错，`fuse_modules_qat` 产出 `ConvBn2d` |
 | torch 3 | 图上节点名 `activation_post_process`（无 FakeQuant 字样）；权重侧 `weight_fake_quant` 不在图上；`scale.shape` 要跑过一次前向才从 `(1,)` 变 `(32,)` |
 | torch 4 | QDQ 导出成功（3 Q / 5 DQ）；8/8 节点带**冗余** `axis=1` 而 scale 全是标量；2/2 矩阵乘输入来自 DQ |
@@ -670,13 +675,14 @@ cd ../fake_quant_torch_onnx
 
 ### 8.4 与旧版本结论的差异
 
-本篇在重写时推翻了四类旧结论，全部有上述实测背书：
+本篇在重写时推翻了五类旧结论，全部有上述实测背书：
 
 | 旧说法 | 实测 |
 |---|---|
 | “4-bit per-tensor → per-group 白捡 13.02 dB” | 本网格上 per-group(32) 只有 +0.83 dB 且劣于 per-channel。那个 13.02 dB 是另一个实验（`quantizer_granularity`，per-group(128) 沿不同轴）的数字，不能跨实验搬用 |
 | “STE 梯度均值 1.0 vs 软量化 0.5，系统性高估一倍” | 口径不成立：那个 0.5 依赖软量化函数与采样区间，改扫描区间就变 1.0。换成“逐点 vs 一格积分”与“直通比例闭式解”两个口径 |
 | “残差两支必须量化到同一网格” | scale 差 8.5 倍时不退化（§6.5） |
+| “QAT 训得越久，权重离量化网格就越远（单调上升）；冻结 observer 后差距就单调了” | 逐步实测都不是单调：观察器活着时峰值在第 2 步、40 步内回落 28 次；冻结 scale 后 5 步仍有 2 次回落（2b 组）。两个端点在涨≠趋势单调 |
 | “TVM 的 relay qnn 走 annotate→calibrate→realize 三段式” | 三段式属于 `relay.quantize`；且 relay qnn 在 v0.20.0 已删除（§7.5） |
 
 ---
@@ -699,7 +705,7 @@ cd ../fake_quant_torch_onnx
 
 **代码与规范**
 
-- 本篇配套实验（两组，输出已固化）：[fake_quant_ste](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_ste/)（纯 numpy，算子数学 / 粒度 / 裁剪 / STE 判据 / 插入位置，SEED=0）、[fake_quant_torch_onnx](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_torch_onnx/)（torch 2.10 + onnx 1.20，observer qparams / 梯度 / eager 与 FX 流程 / ONNX QDQ 导出）
+- 本篇配套实验（两组，输出已固化）：[fake_quant_ste](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_ste/)（纯 numpy，算子数学 / 粒度 / 裁剪 / STE 判据 / 插入位置，SEED=0）、[fake_quant_torch_onnx](https://github.com/lrypcy/ipynbs/tree/main/experiments/quantization/fake_quant_torch_onnx/)（torch 2.10 + onnx 1.20，observer qparams / 梯度 / eager 与 FX 流程 / 权重差距的逐 step 轨迹 / ONNX QDQ 导出）
 - [PyTorch torch.ao.quantization](https://pytorch.org/docs/stable/quantization.html) —— eager / FX mode 量化 API
 - [ONNX Quantization](https://onnx.ai/onnx/api/onnx_quantization.html) —— QDQ 图规范
 - [TVM QNN 文档](https://tvm.apache.org/docs/tutorial/quantization.html)—— `relay.qnn` 自 v0.20.0 起已移除，本篇所有 TVM 结论锁 **v0.19.0**
