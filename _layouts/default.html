@@ -49,8 +49,8 @@
     </div>
   </header>
 
-  <main class="layout-grid{% if page.layout == 'post' %} layout-post{% endif %}{% if page.home_atlas %} layout-atlas{% endif %}{% if page.no_sidebar %} layout-nosidebar{% endif %}">
-    {% unless page.home_atlas or page.no_sidebar %}{% include rail.html %}{% endunless %}
+  <main class="layout-grid{% if page.layout == 'post' %} layout-post{% endif %}{% if page.layout == 'daily' %} layout-daily{% endif %}{% if page.home_atlas %} layout-atlas{% endif %}{% if page.no_sidebar %} layout-nosidebar{% endif %}">
+    {% unless page.home_atlas or page.no_sidebar or page.layout == 'daily' %}{% include rail.html %}{% endunless %}
 
     <div class="layout-main">
       {{ content }}
@@ -58,7 +58,7 @@
 
     {% unless page.home_atlas or page.no_sidebar %}
     <aside class="sidebar">
-      {% if page.layout == 'post' %}
+      {% if page.layout == 'post' or page.layout == 'daily' %}
       {%- assign giscus_id = site.giscus.category_id | default: "" -%}
       {%- if page.comments != false and giscus_id != "" and giscus_id != "__GISCUS_CATEGORY_ID__" -%}
       <div class="sidebar-section sidebar-comments">
@@ -148,12 +148,14 @@
 
   {% include mathjax.html %}
   <script src="/assets/js/search.js" defer></script>
-  {%- comment -%} 选中正文 → 引用到评论区（仅文章页且评论区存在时加载） {%- endcomment -%}
-  {% if page.layout == 'post' and page.comments != false %}
+  {%- comment -%} 选中正文 → 引用到评论区（文章页 / 资讯详情页且评论区存在时加载） {%- endcomment -%}
+  {% if page.layout == 'post' or page.layout == 'daily' %}
+  {% if page.comments != false %}
   {%- assign quote_giscus_id = site.giscus.category_id | default: "" -%}
   {%- if quote_giscus_id != "" and quote_giscus_id != "__GISCUS_CATEGORY_ID__" -%}
   <script src="/assets/js/quote-comment.js" defer></script>
   {%- endif -%}
+  {% endif %}
   {% endif %}
   {% if page.home_atlas %}<script src="/assets/js/atlas.js" defer></script>{% endif %}
   {% include analytics.html %}

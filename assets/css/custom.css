@@ -88,6 +88,9 @@ a { color: var(--primary); }
 
 /* ========== 文章页：右侧栏 = 评论区 ========== */
 .layout-grid.layout-post { grid-template-columns: var(--rail-w) minmax(0, 1fr) 360px; }
+/* 资讯详情页：不放左侧目录，右侧栏 = 评论区（不预留 rail 列，避免正文偏移） */
+.layout-grid.layout-daily { grid-template-columns: minmax(0, 1fr) 360px; }
+html.hide-sidebar .layout-grid.layout-daily { grid-template-columns: minmax(0, 1fr); }
 .sidebar-comments { padding-bottom: 14px; }
 .sidebar-comments .giscus,
 .sidebar-comments iframe.giscus-frame { width: 100%; }
@@ -158,9 +161,12 @@ html.rail-off .rail-head-title { display: none; }
 
 @media (max-width: 1120px) {
   .layout-grid.layout-post { grid-template-columns: minmax(0, 1fr) 330px; }
+  .layout-grid.layout-daily { grid-template-columns: minmax(0, 1fr) 330px; }
 }
 @media (max-width: 768px) {
   .layout-grid.layout-post { grid-template-columns: 1fr; }
+  .layout-grid.layout-daily,
+  html.hide-sidebar .layout-grid.layout-daily { grid-template-columns: 1fr; }
 }
 
 /* ========== 三栏布局：左侧目录 + 文章流 + 右侧 sidebar ========== */
@@ -2982,7 +2988,9 @@ html.rail-off .rail-toggle { padding: 0; width: 26px; justify-content: center; }
 @media (min-width: 769px) and (max-width: 1199px) {
   .layout-grid,
   .layout-grid.layout-post { grid-template-columns: minmax(0, 1fr) 330px; }
-  .layout-grid:not(.layout-post) { grid-template-columns: minmax(0, 1fr) 300px; }
+  .layout-grid:not(.layout-post):not(.layout-daily) { grid-template-columns: minmax(0, 1fr) 300px; }
+  /* 左栏在此宽度已 display:none，窄幅偏好不能再预留 rail 列，否则正文整体右移 */
+  html.post-narrow .layout-grid.layout-post { grid-template-columns: minmax(0, 1fr) 320px; }
   html.hide-sidebar .layout-grid.layout-post { grid-template-columns: 1fr; }
 }
 
