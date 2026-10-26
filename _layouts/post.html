@@ -54,152 +54,16 @@ layout: default
   <button class="read-ctrl-btn read-ctrl-side" type="button" id="sidebarToggle" title="显示 / 隐藏右侧评论区">评论</button>
 </div>
 
+<script src="/assets/js/toc.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>
 (function () {
-  // 悬浮目录：宽屏 = 左侧竖排章节横线（hover 展开完整面板）
-  // 窄屏 = sidebar 内目录卡片；均带 scrollspy 高亮 + 平滑跳转
+  /* 章节目录：与资讯页共用 assets/js/toc.js（宽屏 = 左侧竖排章节线，hover 展开成文字；
+     中屏 = 右侧 sidebar 目录卡；窄屏 = 正文顶部可折叠目录卡）。
+     文章页只收 h2；正文左侧有 rail，不需要 minRoom。 */
   function buildToc() {
-    var body = document.querySelector('.post-body');
-    if (!body) return;
-    var hs = body.querySelectorAll('h2');
-    if (hs.length < 3) return;
-
-    // 宽屏 = 左侧竖排章节横线（hover 展开完整面板）；窄屏 = sidebar 内目录卡片
-    var w = window.innerWidth;
-    if (w >= 992) {
-      buildFloatingToc(hs);
-    } else {
-      buildSidebarToc(hs, body, w < 769);
-    }
-  }
-
-  function buildFloatingToc(hs) {
-    var wrap = document.createElement('div');
-    wrap.className = 'side-toc';
-    var lines = document.createElement('div');
-    lines.className = 'side-toc-lines';
-    var items = [];
-
-    hs.forEach(function (h, i) {
-      if (!h.id) h.id = 'sec-' + Math.random().toString(36).slice(2, 8);
-      var item = document.createElement('div');
-      item.className = 'side-toc-item';
-      item.dataset.idx = i;
-      item.title = h.textContent;
-      var bar = document.createElement('span');
-      bar.className = 'side-toc-bar';
-      var label = document.createElement('span');
-      label.className = 'side-toc-label';
-      label.textContent = String(i + 1).padStart(2, '0') + '  ' + h.textContent;
-      item.appendChild(bar);
-      item.appendChild(label);
-      lines.appendChild(item);
-      items.push(item);
-    });
-    wrap.appendChild(lines);
-    document.body.appendChild(wrap);
-
-    // 左侧有分类目录时，把竖排章节线挪到目录右缘的缝隙里，避免压在目录上
-    function place() {
-      var rail = document.getElementById('rail');
-      if (rail && rail.offsetWidth > 0) {
-        wrap.classList.add('side-toc-shifted');
-        wrap.style.left = Math.round(rail.getBoundingClientRect().right + 4) + 'px';
-      } else {
-        wrap.classList.remove('side-toc-shifted');
-        wrap.style.left = '';
-      }
-    }
-    place();
-    window.addEventListener('resize', place);
-    // 目录收起 / 展开时由 rail.js 回调重新定位
-    window.PCYToc = { reposition: place };
-
-    // 点击 item（横线或文字）平滑跳转
-    lines.addEventListener('click', function (e) {
-      var it = e.target.closest('.side-toc-item');
-      if (!it) return;
-      var target = document.getElementById(hs[+it.dataset.idx].id);
-      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-
-    function onScroll() {
-      var y = window.scrollY + 110;
-      var idx = -1;
-      for (var i = 0; i < hs.length; i++) {
-        if (hs[i].getBoundingClientRect().top + window.scrollY <= y) idx = i;
-        else break;
-      }
-      items.forEach(function (el, j) {
-        el.classList.toggle('active', j === idx);
-      });
-    }
-    window.addEventListener('scroll', onScroll, { passive: true });
-    setTimeout(onScroll, 100);
-  }
-
-  function buildSidebarToc(hs, body, inline) {
-    // 手机端正文顶部目录默认折叠，点开再展开
-    var toc = document.createElement(inline ? 'details' : 'div');
-    toc.className = inline ? 'post-toc' : 'sidebar-toc';
-    var title = document.createElement(inline ? 'summary' : 'div');
-    title.textContent = inline ? '📑 目录 · ' + hs.length + ' 节' : '📑 目录';
-    var ul = document.createElement('ul');
-    var links = [];
-    hs.forEach(function (h) {
-      if (!h.id) h.id = 'sec-' + Math.random().toString(36).slice(2, 8);
-      var li = document.createElement('li');
-      var a = document.createElement('a');
-      a.href = '#' + h.id;
-      a.textContent = h.textContent;
-      li.appendChild(a);
-      ul.appendChild(li);
-      links.push(a);
-    });
-    toc.appendChild(title);
-    toc.appendChild(ul);
-
-    var sidebar = document.querySelector('.sidebar');
-    function placeToc() {
-      var wantSidebar = !inline && sidebar && getComputedStyle(sidebar).display !== 'none';
-      if (wantSidebar && toc.parentElement !== sidebar) {
-        title.className = 'sidebar-title';
-        toc.classList.remove('post-toc');
-        sidebar.insertBefore(toc, sidebar.firstChild);
-      } else if (!wantSidebar && toc.parentElement !== body) {
-        title.className = 'post-toc-title';
-        toc.classList.add('post-toc');
-        body.insertBefore(toc, body.firstChild);
-      }
-    }
-    placeToc();
-    // 右侧评论栏显示 / 隐藏后，由 initReadCtrl 回调重新安置
-    window.PCYToc = { reposition: placeToc };
-
-    ul.addEventListener('click', function (e) {
-      var a = e.target.closest('a');
-      if (!a) return;
-      var target = document.getElementById(a.getAttribute('href').slice(1));
-      if (target) {
-        e.preventDefault();
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    });
-
-    function onScroll() {
-      var y = window.scrollY + 110;
-      var idx = -1;
-      for (var i = 0; i < hs.length; i++) {
-        if (hs[i].getBoundingClientRect().top + window.scrollY <= y) idx = i;
-        else break;
-      }
-      links.forEach(function (a, j) {
-        a.classList.toggle('active', j === idx);
-      });
-    }
-    window.addEventListener('scroll', onScroll, { passive: true });
-    setTimeout(onScroll, 100);
+    if (!window.pcyToc) { return; }
+    window.pcyToc({ selector: 'h2', minItems: 3 });
   }
 
   // 宽表格外包一层横向滚动容器，避免长代码把相邻列挤在一起

@@ -1140,6 +1140,7 @@ html.rail-off .rail-head-title { display: none; }
   transition: color 0.2s;
 }
 .post-toc a:hover { color: var(--primary); }
+.post-toc a.active { color: var(--primary); font-weight: 600; }
 /* 手机端目录卡可折叠 */
 .post-toc > summary.post-toc-title {
   display: flex;
@@ -1306,6 +1307,78 @@ html.rail-off .rail-head-title { display: none; }
   color: var(--primary);
   font-weight: 600;
 }
+
+/* ---------- 目录按分类着色 / 分组（资讯页，见 assets/js/toc.js） ---------- */
+/* 分类节（h2）在目录里当分组标题：不参与条目计数，字号小一档、加粗、留上间距 */
+.side-toc-item.is-section { height: 24px; }
+.side-toc-item.is-section .side-toc-bar { width: 22px; height: 3px; opacity: 0.9; }
+.side-toc-item.is-section .side-toc-label { font-weight: 700; }
+.side-toc-item + .side-toc-item.is-section { margin-top: 6px; }
+
+/* 条目横线用所属分类的色相（--cat-fg 由上面的调色板给） */
+.side-toc-item[data-cat] .side-toc-bar { background: var(--cat-fg); opacity: 0.5; }
+.side-toc-item[data-cat]:hover .side-toc-bar { opacity: 1; }
+.side-toc-item[data-cat].active .side-toc-bar {
+  opacity: 1;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--cat-fg) 55%, transparent);
+}
+.side-toc-item[data-cat]:hover .side-toc-label,
+.side-toc-item[data-cat].active .side-toc-label { color: var(--cat-fg); }
+
+/* 卡片式目录（中屏 sidebar / 窄屏正文内）同理 */
+.post-toc li.is-section,
+.sidebar-toc li.is-section {
+  counter-increment: none;   /* 分组标题不占条目号 */
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.post-toc li.is-section:first-child,
+.sidebar-toc li.is-section:first-child { margin-top: 0; }
+.post-toc li.is-section::before,
+.sidebar-toc li.is-section::before { content: none; }
+.post-toc li.is-section > a,
+.sidebar-toc li.is-section > a {
+  display: inline;
+  padding: 0;
+  color: var(--cat-fg, var(--text-light));
+  background: none;
+  border-left: none;
+}
+.post-toc li.is-section > a::before,
+.sidebar-toc li.is-section > a::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: 0;
+  background: var(--cat-fg);
+}
+/* 分类色条只给有 data-cat 的条目挂，未分类的条目保持中性 */
+.sidebar-toc li[data-cat]:not(.is-section) a { border-left-color: var(--cat-bg); }
+.sidebar-toc li[data-cat]:not(.is-section) a:hover,
+.sidebar-toc li[data-cat]:not(.is-section) a.active {
+  color: var(--cat-fg);
+  background: var(--cat-bg);
+  border-left-color: var(--cat-fg);
+}
+.post-toc li[data-cat]:not(.is-section) a.active { color: var(--cat-fg); font-weight: 600; }
+.post-toc li[data-cat]:not(.is-section) a::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 7px;
+  background: var(--cat-fg);
+  opacity: 0.45;
+  transition: opacity 0.18s ease;
+}
+.post-toc li[data-cat]:not(.is-section) a:hover::before,
+.post-toc li[data-cat]:not(.is-section) a.active::before { opacity: 1; }
 
 /* 暗色模式 */
 @media (prefers-color-scheme: dark) {
@@ -3167,15 +3240,24 @@ html.rail-off .rail-toggle { padding: 0; width: 26px; justify-content: center; }
   box-shadow: inset 0 0 0 1.5px var(--cat-fg);
 }
 /* 色相表：key 必须与 _data/daily_categories.yml 对齐（同一处改） */
-.news-cat[data-cat="embodied"],     .daily-cat[data-cat="embodied"]     { --cat-fg: #d97706; --cat-bg: rgba(217, 119, 6, 0.11); }
-.news-cat[data-cat="world-model"],  .daily-cat[data-cat="world-model"]  { --cat-fg: #7c3aed; --cat-bg: rgba(124, 58, 237, 0.11); }
-.news-cat[data-cat="rl"],           .daily-cat[data-cat="rl"]           { --cat-fg: #2563eb; --cat-bg: rgba(37, 99, 235, 0.11); }
-.news-cat[data-cat="llm"],          .daily-cat[data-cat="llm"]          { --cat-fg: #0d9488; --cat-bg: rgba(13, 148, 136, 0.11); }
-.news-cat[data-cat="agents"],       .daily-cat[data-cat="agents"]       { --cat-fg: #db2777; --cat-bg: rgba(219, 39, 119, 0.11); }
-.news-cat[data-cat="infra"],        .daily-cat[data-cat="infra"]        { --cat-fg: #475569; --cat-bg: rgba(71, 85, 105, 0.12); }
-.news-cat[data-cat="auto-driving"], .daily-cat[data-cat="auto-driving"] { --cat-fg: #65a30d; --cat-bg: rgba(101, 163, 13, 0.12); }
-.news-cat[data-cat="safety"],       .daily-cat[data-cat="safety"]       { --cat-fg: #dc2626; --cat-bg: rgba(220, 38, 38, 0.10); }
-.news-cat[data-cat="misc"],         .daily-cat[data-cat="misc"]         { --cat-fg: #78716c; --cat-bg: rgba(120, 113, 108, 0.13); }
+.news-cat[data-cat="embodied"],     .daily-cat[data-cat="embodied"],
+  .side-toc-item[data-cat="embodied"], .post-toc li[data-cat="embodied"], .sidebar-toc li[data-cat="embodied"] { --cat-fg: #d97706; --cat-bg: rgba(217, 119, 6, 0.11); }
+.news-cat[data-cat="world-model"],  .daily-cat[data-cat="world-model"],
+  .side-toc-item[data-cat="world-model"], .post-toc li[data-cat="world-model"], .sidebar-toc li[data-cat="world-model"] { --cat-fg: #7c3aed; --cat-bg: rgba(124, 58, 237, 0.11); }
+.news-cat[data-cat="rl"],           .daily-cat[data-cat="rl"],
+  .side-toc-item[data-cat="rl"], .post-toc li[data-cat="rl"], .sidebar-toc li[data-cat="rl"] { --cat-fg: #2563eb; --cat-bg: rgba(37, 99, 235, 0.11); }
+.news-cat[data-cat="llm"],          .daily-cat[data-cat="llm"],
+  .side-toc-item[data-cat="llm"], .post-toc li[data-cat="llm"], .sidebar-toc li[data-cat="llm"] { --cat-fg: #0d9488; --cat-bg: rgba(13, 148, 136, 0.11); }
+.news-cat[data-cat="agents"],       .daily-cat[data-cat="agents"],
+  .side-toc-item[data-cat="agents"], .post-toc li[data-cat="agents"], .sidebar-toc li[data-cat="agents"] { --cat-fg: #db2777; --cat-bg: rgba(219, 39, 119, 0.11); }
+.news-cat[data-cat="infra"],        .daily-cat[data-cat="infra"],
+  .side-toc-item[data-cat="infra"], .post-toc li[data-cat="infra"], .sidebar-toc li[data-cat="infra"] { --cat-fg: #475569; --cat-bg: rgba(71, 85, 105, 0.12); }
+.news-cat[data-cat="auto-driving"], .daily-cat[data-cat="auto-driving"],
+  .side-toc-item[data-cat="auto-driving"], .post-toc li[data-cat="auto-driving"], .sidebar-toc li[data-cat="auto-driving"] { --cat-fg: #65a30d; --cat-bg: rgba(101, 163, 13, 0.12); }
+.news-cat[data-cat="safety"],       .daily-cat[data-cat="safety"],
+  .side-toc-item[data-cat="safety"], .post-toc li[data-cat="safety"], .sidebar-toc li[data-cat="safety"] { --cat-fg: #dc2626; --cat-bg: rgba(220, 38, 38, 0.10); }
+.news-cat[data-cat="misc"],         .daily-cat[data-cat="misc"],
+  .side-toc-item[data-cat="misc"], .post-toc li[data-cat="misc"], .sidebar-toc li[data-cat="misc"] { --cat-fg: #78716c; --cat-bg: rgba(120, 113, 108, 0.13); }
 
 .news-empty {
   font-size: 13.5px;
@@ -3242,15 +3324,24 @@ html.rail-off .rail-toggle { padding: 0; width: 26px; justify-content: center; }
     box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
   }
   /* 暗底上同样的色相太闷，统一换成更亮的字色 + 更高的底色不透明度 */
-  .news-cat[data-cat="embodied"],     .daily-cat[data-cat="embodied"]     { --cat-fg: #fbbf24; --cat-bg: rgba(251, 191, 36, 0.14); }
-  .news-cat[data-cat="world-model"],  .daily-cat[data-cat="world-model"]  { --cat-fg: #c4b5fd; --cat-bg: rgba(196, 181, 253, 0.15); }
-  .news-cat[data-cat="rl"],           .daily-cat[data-cat="rl"]           { --cat-fg: #93c5fd; --cat-bg: rgba(147, 197, 253, 0.15); }
-  .news-cat[data-cat="llm"],          .daily-cat[data-cat="llm"]          { --cat-fg: #5eead4; --cat-bg: rgba(94, 234, 212, 0.14); }
-  .news-cat[data-cat="agents"],       .daily-cat[data-cat="agents"]       { --cat-fg: #f9a8d4; --cat-bg: rgba(249, 168, 212, 0.14); }
-  .news-cat[data-cat="infra"],        .daily-cat[data-cat="infra"]        { --cat-fg: #cbd5e1; --cat-bg: rgba(203, 213, 225, 0.14); }
-  .news-cat[data-cat="auto-driving"], .daily-cat[data-cat="auto-driving"] { --cat-fg: #a3e635; --cat-bg: rgba(163, 230, 53, 0.13); }
-  .news-cat[data-cat="safety"],       .daily-cat[data-cat="safety"]       { --cat-fg: #fca5a5; --cat-bg: rgba(252, 165, 165, 0.14); }
-  .news-cat[data-cat="misc"],         .daily-cat[data-cat="misc"]         { --cat-fg: #d6d3d1; --cat-bg: rgba(214, 211, 209, 0.12); }
+  .news-cat[data-cat="embodied"],     .daily-cat[data-cat="embodied"],
+  .side-toc-item[data-cat="embodied"], .post-toc li[data-cat="embodied"], .sidebar-toc li[data-cat="embodied"] { --cat-fg: #fbbf24; --cat-bg: rgba(251, 191, 36, 0.14); }
+  .news-cat[data-cat="world-model"],  .daily-cat[data-cat="world-model"],
+  .side-toc-item[data-cat="world-model"], .post-toc li[data-cat="world-model"], .sidebar-toc li[data-cat="world-model"] { --cat-fg: #c4b5fd; --cat-bg: rgba(196, 181, 253, 0.15); }
+  .news-cat[data-cat="rl"],           .daily-cat[data-cat="rl"],
+  .side-toc-item[data-cat="rl"], .post-toc li[data-cat="rl"], .sidebar-toc li[data-cat="rl"] { --cat-fg: #93c5fd; --cat-bg: rgba(147, 197, 253, 0.15); }
+  .news-cat[data-cat="llm"],          .daily-cat[data-cat="llm"],
+  .side-toc-item[data-cat="llm"], .post-toc li[data-cat="llm"], .sidebar-toc li[data-cat="llm"] { --cat-fg: #5eead4; --cat-bg: rgba(94, 234, 212, 0.14); }
+  .news-cat[data-cat="agents"],       .daily-cat[data-cat="agents"],
+  .side-toc-item[data-cat="agents"], .post-toc li[data-cat="agents"], .sidebar-toc li[data-cat="agents"] { --cat-fg: #f9a8d4; --cat-bg: rgba(249, 168, 212, 0.14); }
+  .news-cat[data-cat="infra"],        .daily-cat[data-cat="infra"],
+  .side-toc-item[data-cat="infra"], .post-toc li[data-cat="infra"], .sidebar-toc li[data-cat="infra"] { --cat-fg: #cbd5e1; --cat-bg: rgba(203, 213, 225, 0.14); }
+  .news-cat[data-cat="auto-driving"], .daily-cat[data-cat="auto-driving"],
+  .side-toc-item[data-cat="auto-driving"], .post-toc li[data-cat="auto-driving"], .sidebar-toc li[data-cat="auto-driving"] { --cat-fg: #a3e635; --cat-bg: rgba(163, 230, 53, 0.13); }
+  .news-cat[data-cat="safety"],       .daily-cat[data-cat="safety"],
+  .side-toc-item[data-cat="safety"], .post-toc li[data-cat="safety"], .sidebar-toc li[data-cat="safety"] { --cat-fg: #fca5a5; --cat-bg: rgba(252, 165, 165, 0.14); }
+  .news-cat[data-cat="misc"],         .daily-cat[data-cat="misc"],
+  .side-toc-item[data-cat="misc"], .post-toc li[data-cat="misc"], .sidebar-toc li[data-cat="misc"] { --cat-fg: #d6d3d1; --cat-bg: rgba(214, 211, 209, 0.12); }
   .daily-page .post-body h2[id="cat-embodied"]     { color: #fbbf24; }
   .daily-page .post-body h2[id="cat-world-model"]  { color: #c4b5fd; }
   .daily-page .post-body h2[id="cat-rl"]           { color: #93c5fd; }

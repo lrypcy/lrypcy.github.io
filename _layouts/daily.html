@@ -31,3 +31,25 @@ layout: default
   </div>
   <p class="daily-back"><a href="/news/">← 返回资讯</a></p>
 </div>
+
+<script src="/assets/js/toc.js"></script>
+<script>
+/* 资讯页章节目录：形式与文章页一致（同一套 assets/js/toc.js）。
+   h2 = 分类节（流水线写的 <h2 id="cat-<key>">），h3 = 条目，目录按分类分组。
+   minRoom:96 —— 资讯页刻意**不放左侧 rail**（见 custom.css 的
+   .layout-grid.layout-daily），正文左缘只靠 shell 居中的余量撑开：
+   站点最大宽度 1560，所以屏宽 ≥ 约 1750 才够一条悬浮竖条的落点，那时**与文章页
+   同一形态**（左侧竖排章节线，hover 展开成文字）；再窄就没有左留白，
+   自动退回右侧栏的目录卡 / 手机端正文顶部折叠卡 —— 都是文章目录的既有组件。
+   硬在无留白时摆悬浮线，就是之前修掉的「正文偏移」，所以 minRoom 不能省。 */
+(function () {
+  function init() {
+    if (window.pcyToc) {
+      window.pcyToc({ selector: 'h2, h3', minItems: 3, grouped: true, minRoom: 96 });
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else { init(); }
+})();
+</script>
