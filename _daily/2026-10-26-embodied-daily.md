@@ -7,6 +7,22 @@ rating: 4
 
 **评分说明**：每条给两个星——`值得读`是读者花几分钟看这条能拿回什么，`影响力`是这条对领域的冲击。两者不等价：一条重要的立场论文可能影响力高但不值得细读，一条工程 trick 可能很好用但影响有限。
 
+## GroundingPI：4B 感知基座超过 GPT-6 Astra，并直接提升操作泛化
+
+`值得读 ★★★★☆` ｜ `影响力 ★★★★☆`
+
+**来源**：[青稞社区](https://qingkeai.online/blog/GroundingPI) ｜ 论文：[arXiv:2609.39601](https://arxiv.org/abs/2609.39601) ｜ 代码：[groundingpi/GroundingPI](https://github.com/groundingpi/GroundingPI) ｜ 权重：[GroundingPI/GroundingPI](https://huggingface.co/GroundingPI/GroundingPI)
+
+主流 VLA / WAM 都拿通用视觉语言或视频生成模型当基座，但它们的预训练目标并非为物理交互所需的精确定位而设计。小鹏、北大、港大团队的切入点是把 Grounding 前移到**预训练阶段**：用统一的量化坐标词表表示点和框，把多种感知任务组织成语言条件下的结构化生成，再结合多模态与空间预训练、监督微调和 GRPO。
+
+![GroundingPI 在 Grounding、Pointing、OCR 等 11 类能力上的雷达图](https://qingkeai.online/upload/03_Grounding能力雷达图.png)
+
+在 34 项基准、44 个对比 baselines 上，4B 的 GroundingPI 综合得分 73.68%，超过 GPT-6 Astra（High thinking）的 71.54%。
+
+![原生 Grounding 基座的设计思路](https://qingkeai.online/upload/04_感知基座设计思路.png)
+
+更关键的是**只换基座、固定动作头与训练预算**的对照：RoboTwin 2.0 与 RoboCasa-GR1 上，GroundingPI 在全部四种分布外设置下领先，RoboTwin Clean2Random 较次优相对提升 24.8%；RoboCasa-GR1 上只用 50% 演示数据就超过所有用 75% 数据的对照基座。数据配比的消融也说明不是堆量：从完整配方移除 Dense Grounding，操作 ID/OOD 分别降 4.67 / 3.47 个百分点；移除 OCR 组降 5.33 / 3.63 个百分点，而只用 OCR 组 OOD 仅 7.28%。文中称 OCR 的「催化」机制仍是有待验证的假说。
+
 ## UNITAS：1.7B 的三维原生世界动作模型，超过 6B 与 8B 对手
 
 `值得读 ★★★★☆` ｜ `影响力 ★★★★☆`
@@ -109,6 +125,16 @@ VLA 策略做长程操作时，轨迹级稀疏奖励会带来延迟且有偏的�
 
 LIBERO-LONG 上相比 PPO 取得 3.6% 与 4.0% 的绝对提升（两个 VLA 架构）。论文另附 Real2Sim2Real 流程连接仿真在线 RL 与真机部署。
 
+## Inside-JEPA：潜空间世界模型的状态不透明，逆动力学损失能把关系通道「锚定」
+
+`值得读 ★★★☆☆` ｜ `影响力 ★★★☆☆`
+
+**来源**：[arXiv:2610.31194](http://arxiv.org/abs/2610.31194)
+
+JEPA 在潜空间学世界模型，规划效率高，但状态本身不可读。Inside-JEPA 把「有序实体对」的关系通道显式放进 JEPA 潜状态，并证明**逆动力学损失可以在没有关系标注的情况下把这些通道锚定**（从通道变化反推动作）。
+
+一个值得注意的否定结果：在 Something-Something V2 上，**只做潜空间预测不比随机关系头好**——光有预测不足以让通道携带关系信息。加上逆动力学监督后，关系 AUROC 在十种有标注框的设置下提升 0.065–0.103，在 RH20T 机器人片段的留出任务上提升 0.081。另外三组对照都失败：打乱标签、两种无标签目标、只给 5% 实体对动作标签。给定一步关系目标时，16 通道的监督读出把正确动作排进 65 个候选前五的比例为 43%，纯预测潜表示为 24%，频率先验 17%。
+
 ## DiffDreamer：可微仿真只管本体，世界模型只管外界
 
 `值得读 ★★☆☆☆` ｜ `影响力 ★★☆☆☆`
@@ -133,4 +159,4 @@ LIBERO-LONG 上相比 PPO 取得 3.6% 与 4.0% 的绝对提升（两个 VLA 架�
 
 ---
 
-本期 11 条，来源：青稞社区 / HuggingFace Daily Papers / arXiv / NVIDIA Blog / MarkTechPost。
+本期 13 条，来源：青稞社区 / HuggingFace Daily Papers / arXiv / NVIDIA Blog / MarkTechPost。
