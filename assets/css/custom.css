@@ -3066,135 +3066,203 @@ html.rail-off .rail-toggle { padding: 0; width: 26px; justify-content: center; }
   .pcy-quote-toast { bottom: 74px; font-size: 12.5px; }
 }
 
-/* ========== AI 日报：分类筛选与分节 ========== */
-/* 词表在 _data/daily_categories.yml；这里只负责「筛选条 + 每期 chip + 日报内分节」。
-   规则全部收在 .news-* / .daily-* 作用域里，别影响长文的 h2 排版。 */
+/* ========== AI 日报：分类标签与分节 ========== */
+/* 词表在 _data/daily_categories.yml。标签放在**每期自己的卡片里**（不占页顶一排），
+   点它 = 只看该分类的各期；规则全部收在 .news-* / .daily-* 作用域里。
+
+   ⚠️ [hidden] 必须逐个补一条 display:none：
+   main.css 的 `[hidden] { display:none }` 特异性只有 (0,1,0)，和本文件里
+   `.news-row { display:flex }` / `.pager { display:flex }` 打平，**后加载的赢**，
+   于是被筛选 / 被翻页隐藏的卡片其实还杵在那儿（截图里「有结果」和「暂无条目」
+   同时出现就是这么来的）。所以凡是自己设了 display 的元素，都要显式补 [hidden]。 */
+.news-list .news-row[hidden],
+.news-filter[hidden],
+.news-empty[hidden],
+.pager[hidden] { display: none; }
+
+/* ---------- 筛选态提示条：只在 ?cat= 生效时出现 ---------- */
 .news-filter {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 0 0 18px;
-  padding: 12px 14px;
+  margin: 0 0 12px;
+  padding: 0 2px;
+  font-size: 12.5px;
+  color: var(--text-light);
+}
+.news-filter-cat { font-weight: 600; color: var(--text); }
+.news-clear {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-light);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.news-clear:hover { color: var(--primary); border-color: var(--primary); }
+
+/* ---------- 每期卡片：更软的边框与阴影 ---------- */
+.news-list { display: flex; flex-direction: column; gap: 10px; }
+.news-list .news-row {
+  align-items: flex-start;
+  gap: 14px 16px;
+  padding: 14px 16px;
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(30, 41, 59, 0.04);
+  transition: box-shadow 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
 }
-.news-filter-label {
-  font-size: 12.5px;
-  color: var(--text-light);
-  margin-right: 2px;
+.news-list .news-row:hover {
+  background: var(--card-bg);
+  border-color: rgba(59, 130, 246, 0.28);
+  box-shadow: 0 6px 18px rgba(30, 41, 59, 0.09);
+  transform: translateY(-1px);
 }
-.news-chip {
-  font: inherit;
-  font-size: 12.5px;
-  line-height: 1;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  cursor: pointer;
-  transition: var(--transition);
-}
-.news-chip:hover { border-color: var(--primary); color: var(--primary); }
-.news-chip.is-active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-  font-weight: 600;
-}
-/* 每期标题后面的分类 chip：能点，但不抢标题的视觉重心 */
-.news-cats {
-  display: inline-flex;
+.news-row .news-date { padding-top: 2px; }
+/* 标签单独占一行，跟在摘要后面，别挤在标题尾巴上 */
+.news-list .news-cats {
+  display: flex;
   flex-wrap: wrap;
-  gap: 5px;
-  margin-left: 2px;
-  vertical-align: 1px;
+  gap: 6px;
+  margin: 7px 0 0;
 }
-.news-cat {
-  font-size: 11px;
+
+/* ---------- 分类标签：按类配色、无边框、低饱和底 ---------- */
+/* 每类一个色相，浅色底 + 同色系字；暗色模式换成半透明白底提亮版 */
+.news-cat, .daily-cat {
+  --cat-fg: var(--primary);
+  --cat-bg: rgba(59, 130, 246, 0.10);
+  font-size: 11.5px;
   line-height: 1;
-  padding: 3px 8px;
+  padding: 5px 10px;
+  border: none;
   border-radius: 999px;
-  background: var(--tag-bg);
-  color: var(--text-light);
-  border: 1px solid transparent;
-  cursor: pointer;
+  background: var(--cat-bg);
+  color: var(--cat-fg);
   white-space: nowrap;
-  transition: var(--transition);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
-.news-cat:hover {
-  color: var(--primary);
-  border-color: var(--primary);
-  background: var(--primary-soft);
+.news-cat:hover, .daily-cat:hover {
+  background: var(--cat-bg);
+  color: var(--cat-fg);
+  box-shadow: inset 0 0 0 1px var(--cat-fg);
 }
+.news-cat:focus-visible, .daily-cat:focus-visible {
+  outline: 2px solid var(--cat-fg);
+  outline-offset: 2px;
+}
+/* 选中态用描边而不是「实底色块 + 白字」：
+   琥珀 / 黄绿这类亮色配白字，在 11.5px 小字上对比度不够 4.5:1，
+   描边 + 加粗则与静态标签同字色，对比度天然继承，不必逐色相校。 */
+.news-cat.is-active {
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1.5px var(--cat-fg);
+}
+/* 色相表：key 必须与 _data/daily_categories.yml 对齐（同一处改） */
+.news-cat[data-cat="embodied"],     .daily-cat[data-cat="embodied"]     { --cat-fg: #d97706; --cat-bg: rgba(217, 119, 6, 0.11); }
+.news-cat[data-cat="world-model"],  .daily-cat[data-cat="world-model"]  { --cat-fg: #7c3aed; --cat-bg: rgba(124, 58, 237, 0.11); }
+.news-cat[data-cat="rl"],           .daily-cat[data-cat="rl"]           { --cat-fg: #2563eb; --cat-bg: rgba(37, 99, 235, 0.11); }
+.news-cat[data-cat="llm"],          .daily-cat[data-cat="llm"]          { --cat-fg: #0d9488; --cat-bg: rgba(13, 148, 136, 0.11); }
+.news-cat[data-cat="agents"],       .daily-cat[data-cat="agents"]       { --cat-fg: #db2777; --cat-bg: rgba(219, 39, 119, 0.11); }
+.news-cat[data-cat="infra"],        .daily-cat[data-cat="infra"]        { --cat-fg: #475569; --cat-bg: rgba(71, 85, 105, 0.12); }
+.news-cat[data-cat="auto-driving"], .daily-cat[data-cat="auto-driving"] { --cat-fg: #65a30d; --cat-bg: rgba(101, 163, 13, 0.12); }
+.news-cat[data-cat="safety"],       .daily-cat[data-cat="safety"]       { --cat-fg: #dc2626; --cat-bg: rgba(220, 38, 38, 0.10); }
+.news-cat[data-cat="misc"],         .daily-cat[data-cat="misc"]         { --cat-fg: #78716c; --cat-bg: rgba(120, 113, 108, 0.13); }
+
 .news-empty {
   font-size: 13.5px;
   color: var(--text-light);
-  padding: 8px 2px;
+  padding: 18px 2px 4px;
+  text-align: center;
 }
-/* 日报单篇：本期分类导航 */
+
+/* ---------- 日报单篇：本期分类导航 ---------- */
 .daily-cats {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
   margin: 0 0 26px;
 }
 .daily-cats-label {
   font-size: 12.5px;
   color: var(--text-light);
+  margin-right: 1px;
 }
-.daily-cat {
-  font-size: 12.5px;
-  line-height: 1;
-  padding: 5px 12px;
-  border-radius: 999px;
-  text-decoration: none;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  transition: var(--transition);
-}
-.daily-cat:hover {
-  color: var(--primary);
-  border-color: var(--primary);
-  background: var(--primary-soft);
-}
-/* 分类分节标题（<h2 id="cat-xxx">）要压成「小节标签」，不是章节大标题；
-   条目本身是 h3，层级靠这个区分。 */
+/* 分节标题（<h2 id="cat-xxx">）压成「小节标签」，不是章节大标题；
+   条目本身是 h3，层级靠这个区分。色相跟着该类走。 */
 .daily-page .daily-meta { margin-bottom: 14px; }
 .daily-page .post-body h2 {
-  margin-top: 40px;
-  padding-left: 0;
-  padding-bottom: 7px;
-  font-size: 1.16em;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 44px;
+  padding: 0 0 8px;
+  font-size: 1.02em;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--primary);
-  border-top: 1px solid var(--border);
-  border-bottom: none;
-}
-.daily-page .post-body h2::before { content: none; }
-.daily-page .post-body h2:first-child {
-  margin-top: 0;
-  padding-top: 0;
+  letter-spacing: 0.06em;
+  color: var(--text-light);
   border-top: none;
+  border-bottom: 1px solid var(--border);
 }
+.daily-page .post-body h2::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.55;
+}
+.daily-page .post-body h2:first-of-type { margin-top: 6px; }
 .daily-page .post-body h3 { margin-top: 24px; font-size: 1.22em; }
+/* 各类分节标题的强调色（小方块 + 文字） */
+.daily-page .post-body h2[id="cat-embodied"]     { color: #b45309; }
+.daily-page .post-body h2[id="cat-world-model"]  { color: #6d28d9; }
+.daily-page .post-body h2[id="cat-rl"]           { color: #1d4ed8; }
+.daily-page .post-body h2[id="cat-llm"]          { color: #0f766e; }
+.daily-page .post-body h2[id="cat-agents"]       { color: #be185d; }
+.daily-page .post-body h2[id="cat-infra"]        { color: #475569; }
+.daily-page .post-body h2[id="cat-auto-driving"] { color: #4d7c0f; }
+.daily-page .post-body h2[id="cat-safety"]       { color: #b91c1c; }
+.daily-page .post-body h2[id="cat-misc"]         { color: #78716c; }
 
 @media (prefers-color-scheme: dark) {
-  .news-chip { background: var(--bg); }
-  .news-cat { color: var(--text-light); }
-  .news-chip:hover, .news-cat:hover, .daily-cat:hover {
-    color: var(--primary-light);
-    border-color: var(--primary-light);
+  .news-list .news-row { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
+  .news-list .news-row:hover {
+    background: var(--card-bg);
+    border-color: rgba(125, 180, 255, 0.32);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
   }
-  .news-chip.is-active { color: #fff; }
+  /* 暗底上同样的色相太闷，统一换成更亮的字色 + 更高的底色不透明度 */
+  .news-cat[data-cat="embodied"],     .daily-cat[data-cat="embodied"]     { --cat-fg: #fbbf24; --cat-bg: rgba(251, 191, 36, 0.14); }
+  .news-cat[data-cat="world-model"],  .daily-cat[data-cat="world-model"]  { --cat-fg: #c4b5fd; --cat-bg: rgba(196, 181, 253, 0.15); }
+  .news-cat[data-cat="rl"],           .daily-cat[data-cat="rl"]           { --cat-fg: #93c5fd; --cat-bg: rgba(147, 197, 253, 0.15); }
+  .news-cat[data-cat="llm"],          .daily-cat[data-cat="llm"]          { --cat-fg: #5eead4; --cat-bg: rgba(94, 234, 212, 0.14); }
+  .news-cat[data-cat="agents"],       .daily-cat[data-cat="agents"]       { --cat-fg: #f9a8d4; --cat-bg: rgba(249, 168, 212, 0.14); }
+  .news-cat[data-cat="infra"],        .daily-cat[data-cat="infra"]        { --cat-fg: #cbd5e1; --cat-bg: rgba(203, 213, 225, 0.14); }
+  .news-cat[data-cat="auto-driving"], .daily-cat[data-cat="auto-driving"] { --cat-fg: #a3e635; --cat-bg: rgba(163, 230, 53, 0.13); }
+  .news-cat[data-cat="safety"],       .daily-cat[data-cat="safety"]       { --cat-fg: #fca5a5; --cat-bg: rgba(252, 165, 165, 0.14); }
+  .news-cat[data-cat="misc"],         .daily-cat[data-cat="misc"]         { --cat-fg: #d6d3d1; --cat-bg: rgba(214, 211, 209, 0.12); }
+  .daily-page .post-body h2[id="cat-embodied"]     { color: #fbbf24; }
+  .daily-page .post-body h2[id="cat-world-model"]  { color: #c4b5fd; }
+  .daily-page .post-body h2[id="cat-rl"]           { color: #93c5fd; }
+  .daily-page .post-body h2[id="cat-llm"]          { color: #5eead4; }
+  .daily-page .post-body h2[id="cat-agents"]       { color: #f9a8d4; }
+  .daily-page .post-body h2[id="cat-infra"]        { color: #cbd5e1; }
+  .daily-page .post-body h2[id="cat-auto-driving"] { color: #a3e635; }
+  .daily-page .post-body h2[id="cat-safety"]       { color: #fca5a5; }
+  .daily-page .post-body h2[id="cat-misc"]         { color: #d6d3d1; }
 }
 @media (max-width: 768px) {
-  .news-filter { gap: 6px; padding: 10px 12px; }
-  .news-chip { font-size: 12px; padding: 5px 10px; }
-  .daily-page .post-body h2 { margin-top: 32px; font-size: 1.08em; }
+  .news-list .news-row { gap: 4px 12px; padding: 13px 14px; }
+  .news-cat, .daily-cat { font-size: 11px; padding: 4px 9px; }
+  .daily-page .post-body h2 { margin-top: 34px; }
 }

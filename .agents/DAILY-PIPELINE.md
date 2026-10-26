@@ -55,6 +55,19 @@
   脚本给的是**建议**——人工精读时该改就改。
 - front matter 里写 **ASCII key**：`cats: [embodied, world-model, rl]`，中文显示由模板映射。
 
+### 2.05 标签在前端出现在哪
+
+**不设页顶筛选条**（2026-10-27 用户明确要求：标签应在每篇文章里）。三个落点：
+
+- `/news/` 每期卡片内一行**分类标签**（摘要下方，按类配色、无边框胶囊）——
+  点它 = 只看该分类的各期，URL 同步成 `?cat=<key>`，再点一次取消；
+- 筛选态顶部出现一条「正在查看「X」· 看全部 ×」提示条，非筛选态完全隐藏；
+- 日报单篇开头一排「本期分类」标签，点进 `/news/?cat=<key>`（与列表里同名标签**行为一致**，
+  不做成站内目录——同一个标签在两处指向不同东西会让人踩坑）。
+
+标签配色表在 `assets/css/custom.css` 的 `[data-cat="<key>"]` 规则里（浅色 + 暗色各一套），
+**改 key 要连着改**。
+
 ### 2.1 为什么分节标题用 raw HTML
 
 ```markdown
@@ -307,6 +320,16 @@ python3 tools/daily/fetch_all.py --date 2026-10-27 --days 2
 - **`select.py` 会遮蔽标准库 `select`**。文件名改成 `pick_topics.py` 才正常。
   症状是 `AttributeError: module 'select' has no attribute 'select'`。
 - **kramdown 的 `{: #id}` 不生效**，会当字面文字留在标题里。分节锚点一律写 raw `<h2 id="...">`。
+- **自己设了 `display` 的元素，`hidden` 属性会失效**。`css/main.css` 里的
+  `[hidden] { display:none }` 特异性只有 (0,1,0)，和 `assets/css/custom.css`（后加载）
+  里的 `.news-row { display:flex }` 打平，于是**后者的 display 赢**，被筛选 / 被翻页
+  隐藏的行其实还杵在那儿。症状看着很诡异：列表同时显示结果和「该分类下暂无条目」。
+  已在 custom.css 给 `.news-row / .news-filter / .news-empty / .pager` 逐个补了
+  `[hidden] { display:none }`——**新加带 display 的可隐藏元素时要跟着补**。
+  本仓库其他组件也是这么处理的（`.tag-cloud .tag-item[hidden]` 等），不是多此一举。
+- **分类筛选匹配用逗号包围**：`data-cats` 是 Liquid `join: ','` 出来的，
+  判断包含必须写 `(',' + v + ',').indexOf(',key,')`。按 `|` 包围去查会永远查不到，
+  表现为「任何分类都筛出 0 条」。
 - **`export.arxiv.org` 会间歇性 Connection reset / 502**。不是我们的错，等几秒重试通常能恢复。
   已改为多次重试 + 指数退避。真跑不出来时 HF 源已覆盖大部分论文，不必死等。
 - **arXiv 检索式之间要 sleep 3s**（官方要求请求间隔），别并发。现在 9 条检索式，全量跑约 30s+。

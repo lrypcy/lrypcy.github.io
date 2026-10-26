@@ -2,10 +2,12 @@
 layout: default
 ---
 {% comment %}
-  本期分类导航：front matter 的 cats 是 ASCII key 数组，中文 label 由
+  本期分类：front matter 的 cats 是 ASCII key 数组，中文 label 由
   site.data.daily_categories（唯一事实源）映射而来，顺序即词表顺序。
-  每个 chip 链到 /news/?cat=<key>，回到列表并筛到同类各期。
-  正文里的分节标题 <h2 id="cat-<key>"> 由后端生成（raw HTML），这里不动。
+  标签的行为与 /news/ 列表里的同名标签**保持一致**：都是「只看该分类的各期」，
+  不做成站内目录（同一个标签在两处指向不同东西会让人踩坑）。
+  正文里的分节标题 <h2 id="cat-<key>"> 由流水线生成，这里不动。
+  data-cat 只给 CSS 上色用，key 必须与词表一致。
 {% endcomment %}
 <div class="post-block page daily-page">
   <h1 class="post-title">{{ page.title }}</h1>
@@ -18,7 +20,7 @@ layout: default
     <span class="daily-cats-label">本期分类</span>
       {% for c in site.data.daily_categories %}
         {% if page.cats contains c.key %}
-    <a class="daily-cat" href="/news/?cat={{ c.key }}" title="查看「{{ c.label }}」的各期日报">{{ c.label }}</a>
+    <a class="daily-cat" data-cat="{{ c.key }}" href="/news/?cat={{ c.key }}" title="只看「{{ c.label }}」的各期日报">{{ c.label }}</a>
         {% endif %}
       {% endfor %}
   </div>
