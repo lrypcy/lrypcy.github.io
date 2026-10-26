@@ -1,0 +1,43 @@
+# AI 日报的分类词表（唯一事实源）
+# - 脚本：tools/daily/pick_topics.py 读这里做自动打标（缺文件时回退到内置表）
+# - 前端：news.md 与 _layouts/daily.html 读这里渲染 chip 与锚点
+# key  = 锚点后缀（正文里写成 `## 具身智能 {#c-embodied}`），也是条目内部标识
+# label = 对外显示名（front matter 的 cats: 列表里用这个）
+# 顺序 = 日报正文分节顺序 + 资讯页 chip 顺序，新增类别加在末尾，别插中间。
+# 顺序被 2026-10-26 之后已发布的条目依赖，改 key 会让历史条目的锚点失效。
+
+- key: embodied
+  label: 具身智能
+  desc: VLA、操作与抓取、人形与灵巧手、locomotion、sim-to-real、模仿学习
+
+- key: world-model
+  label: 世界模型
+  desc: world model / WAM、视频生成即模拟、JEPA、神经仿真器、dynamics model
+
+- key: rl
+  label: 强化学习与后训练
+  desc: RL 算法、GRPO / PPO / RLVR / RLHF、奖励建模、信用分配、post-training
+
+- key: llm
+  label: 大模型与前沿实验室
+  desc: 模型发布与评测、预训练与推理技术、OpenAI / DeepMind / Anthropic 等一手发布
+
+- key: agents
+  label: 智能体与超级智能
+  desc: agent 与多智能体、工具使用、自我改进、long-horizon、AGI / 超级智能路线
+
+- key: infra
+  label: AI Infra
+  desc: 训练与推理系统、并行与显存、kernel 与量化部署、集群、吞吐与成本
+
+- key: auto-driving
+  label: 自动驾驶
+  desc: 端到端、驾驶 VLA、BEV / occupancy、数据闭环与仿真
+
+- key: safety
+  label: 安全与对齐
+  desc: interpretability、alignment、red teaming、评测与治理
+
+- key: misc
+  label: 交叉与观点
+  desc: 立场论文、综述、开源工具、其他 AI 进展

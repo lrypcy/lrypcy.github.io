@@ -3065,3 +3065,136 @@ html.rail-off .rail-toggle { padding: 0; width: 26px; justify-content: center; }
   .pcy-quote-btn { font-size: 12.5px; padding: 6px 11px; }
   .pcy-quote-toast { bottom: 74px; font-size: 12.5px; }
 }
+
+/* ========== AI 日报：分类筛选与分节 ========== */
+/* 词表在 _data/daily_categories.yml；这里只负责「筛选条 + 每期 chip + 日报内分节」。
+   规则全部收在 .news-* / .daily-* 作用域里，别影响长文的 h2 排版。 */
+.news-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.news-filter-label {
+  font-size: 12.5px;
+  color: var(--text-light);
+  margin-right: 2px;
+}
+.news-chip {
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.news-chip:hover { border-color: var(--primary); color: var(--primary); }
+.news-chip.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+/* 每期标题后面的分类 chip：能点，但不抢标题的视觉重心 */
+.news-cats {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-left: 2px;
+  vertical-align: 1px;
+}
+.news-cat {
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--tag-bg);
+  color: var(--text-light);
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+}
+.news-cat:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.news-empty {
+  font-size: 13.5px;
+  color: var(--text-light);
+  padding: 8px 2px;
+}
+/* 日报单篇：本期分类导航 */
+.daily-cats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 26px;
+}
+.daily-cats-label {
+  font-size: 12.5px;
+  color: var(--text-light);
+}
+.daily-cat {
+  font-size: 12.5px;
+  line-height: 1;
+  padding: 5px 12px;
+  border-radius: 999px;
+  text-decoration: none;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  transition: var(--transition);
+}
+.daily-cat:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+/* 分类分节标题（<h2 id="cat-xxx">）要压成「小节标签」，不是章节大标题；
+   条目本身是 h3，层级靠这个区分。 */
+.daily-page .daily-meta { margin-bottom: 14px; }
+.daily-page .post-body h2 {
+  margin-top: 40px;
+  padding-left: 0;
+  padding-bottom: 7px;
+  font-size: 1.16em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--primary);
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+}
+.daily-page .post-body h2::before { content: none; }
+.daily-page .post-body h2:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.daily-page .post-body h3 { margin-top: 24px; font-size: 1.22em; }
+
+@media (prefers-color-scheme: dark) {
+  .news-chip { background: var(--bg); }
+  .news-cat { color: var(--text-light); }
+  .news-chip:hover, .news-cat:hover, .daily-cat:hover {
+    color: var(--primary-light);
+    border-color: var(--primary-light);
+  }
+  .news-chip.is-active { color: #fff; }
+}
+@media (max-width: 768px) {
+  .news-filter { gap: 6px; padding: 10px 12px; }
+  .news-chip { font-size: 12px; padding: 5px 10px; }
+  .daily-page .post-body h2 { margin-top: 32px; font-size: 1.08em; }
+}

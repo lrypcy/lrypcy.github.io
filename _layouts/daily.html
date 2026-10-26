@@ -1,9 +1,29 @@
 ---
 layout: default
 ---
+{% comment %}
+  本期分类导航：front matter 的 cats 是 ASCII key 数组，中文 label 由
+  site.data.daily_categories（唯一事实源）映射而来，顺序即词表顺序。
+  每个 chip 链到 /news/?cat=<key>，回到列表并筛到同类各期。
+  正文里的分节标题 <h2 id="cat-<key>"> 由后端生成（raw HTML），这里不动。
+{% endcomment %}
 <div class="post-block page daily-page">
   <h1 class="post-title">{{ page.title }}</h1>
   <p class="daily-meta">{{ page.date | date: "%Y-%m-%d" }}</p>
+  {% if page.cats %}
+    {% assign has_cat = false %}
+    {% for c in site.data.daily_categories %}{% if page.cats contains c.key %}{% assign has_cat = true %}{% endif %}{% endfor %}
+    {% if has_cat %}
+  <div class="daily-cats">
+    <span class="daily-cats-label">本期分类</span>
+      {% for c in site.data.daily_categories %}
+        {% if page.cats contains c.key %}
+    <a class="daily-cat" href="/news/?cat={{ c.key }}" title="查看「{{ c.label }}」的各期日报">{{ c.label }}</a>
+        {% endif %}
+      {% endfor %}
+  </div>
+    {% endif %}
+  {% endif %}
   <div class="post-body">
     {{ content }}
   </div>

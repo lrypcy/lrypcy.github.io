@@ -1,23 +1,42 @@
 #!/usr/bin/env python3
-"""每日资讯统一采集器：汇总多个信源到一个 raw json。
+"""AI 日报统一采集器：汇总多个信源到一个 raw json。
 
-信源（2026-10-26 实测）：
-  中文 / 论文
-    ✅ qingke     青稞社区（Halo API + 正文抓取）—— 中文解读主力
-    ✅ hf         HuggingFace Daily Papers（arXiv id / 摘要 / github / upvotes）
-    ✅ arxiv      arXiv API（4 条检索式）
-    ✅ github     GitHub 仓库搜索（按 push 时间找活跃项目）
-  英文官方博客（RSS）
-    ✅ nvidia     NVIDIA Developer Blog + blogs.nvidia.com
-    ✅ deepmind   Google DeepMind Blog
-    ✅ bair       BAIR Blog（Berkeley）
-    ✅ hf_blog    HuggingFace Blog（与 hf 论文流不同，是官方发布/教程）
-  英文机器人媒体（RSS）
-    ✅ ieee_robotics  IEEE Spectrum Robotics
-    ✅ robohub        Robohub
-    ✅ marktechpost   MarkTechPost
-    ❌ zhihu      匿名访问 403（需登录态）；青稞正文里常附作者知乎原文链接，间接覆盖
-    ❌ therobotreport 403 ｜ venturebeat 429 ｜ ai.meta.com 无 feed
+信源（2026-10-26 实测，共 24 个；多 feed 的已按名字合并去重）：
+   中文 / 论文
+     ✅ qingke     青稞社区（Halo API + 正文抓取）—— 中文解读主力
+     ✅ hf         HuggingFace Daily Papers（arXiv id / 摘要 / github / upvotes）
+     ✅ arxiv      arXiv API（具身 / 世界模型 / RL / AI Infra / 自驾 / agentic）
+     ✅ github     GitHub 仓库搜索（按 push 时间找活跃项目）
+   中文 AI 媒体
+     ✅ qbitai     量子位
+   前沿实验室 / 厂商官方（一手发布）
+     ✅ nvidia     NVIDIA Developer Blog + blogs.nvidia.com（2 feed 合并）
+     ✅ deepmind   Google DeepMind Blog
+     ✅ bair       BAIR Blog（Berkeley）
+     ✅ hf_blog    HuggingFace Blog（与 hf 论文流不同，是官方发布 / 教程）
+     ✅ openai     OpenAI News
+     ✅ google_research  Google Research Blog
+     ✅ msr        Microsoft Research
+   英文机器人 / 科技媒体（AI 向）
+     ✅ ieee_robotics   IEEE Spectrum Robotics
+     ✅ robohub         Robohub
+     ✅ marktechpost    MarkTechPost
+     ✅ techcrunch_ai   TechCrunch AI
+     ✅ arstechnica_ai  Ars Technica AI
+   英文 AI Infra
+     ✅ vllm       vLLM Blog
+     ✅ together   Together AI Blog
+     ✅ aws_ml     AWS Machine Learning Blog
+     ✅ pytorch    PyTorch Blog
+   英文观点 / 深度
+     ✅ interconnects  Interconnects（Nathan Lambert）
+     ✅ raschka        Sebastian Raschka 的 Magazine
+     ✅ lesswrong      LessWrong（AGI / 超级智能路线讨论）
+
+实测不可用，**别加**：Anthropic(404)、ai.meta.com(400)、机器之心 RSS(返回 HTML)、
+Synced(停在 2025)、SemiAnalysis(停在 2025)、Anyscale(0 item)、Modal(404)、
+新智元(不通)、InfoQ(405)、ImportAI(不通)、知乎(匿名 403)、
+therobotreport(403)、venturebeat(429)。
 
 网络：**必须走本机代理 127.0.0.1:7890**（ClashX）。系统代理设置里就有，
 直连 HF / NVIDIA / 知乎全部不通。代理挂了本脚本会大量失败 —— 先看 §排查。
@@ -202,12 +221,26 @@ def src_hf(days: int) -> list[dict]:
     return items
 
 
-# arXiv 检索式：具身 / 世界模型 / WAM / RL 四大类
+# arXiv 检索式：具身 / 世界模型 / RL / AI Infra / 自动驾驶端到端 / agentic / 后训练
+# 每条 max_results=12，检索式之间 sleep 3s（arXiv 官方要求请求间隔）。
 ARXIV_QUERIES = [
-    'abs:"world action model" OR abs:"world model" OR ti:"world action model"',
+    # 具身智能
     'abs:"vision-language-action" OR abs:"VLA" OR abs:"embodied"',
-    'abs:"reinforcement learning" AND (abs:"robot" OR abs:"manipulation")',
     'abs:"sim-to-real" OR abs:"imitation learning" OR abs:"policy gradient"',
+    'abs:"reinforcement learning" AND (abs:"robot" OR abs:"manipulation")',
+    # 世界模型 / 世界动作模型
+    'abs:"world model" OR ti:"world action model" OR abs:"world simulator"',
+    # AI Infra：推理 / 投机解码 / KV cache / 服务化
+    'abs:"LLM inference" OR abs:"speculative decoding" OR abs:"KV cache"',
+    'abs:"LLM serving" OR abs:"inference throughput" OR abs:"distributed inference"',
+    # 自动驾驶端到端
+    # AND / OR 混写必须显式加括号：arXiv 的解析对优先级并不直观，
+    # 不写括号会退化成「OR 全放行」，捞回一堆和驾驶无关的 trajectory planning。
+    'abs:"end-to-end autonomous driving" OR (abs:"trajectory planning" AND abs:"driving")',
+    # agentic / 多智能体
+    'abs:"LLM agent" OR abs:"multi-agent" OR abs:"tool use"',
+    # RLHF / 奖励模型 / 后训练
+    'abs:"RLHF" OR abs:"reward model" OR abs:"post-training"',
 ]
 
 
@@ -260,9 +293,18 @@ def src_arxiv(days: int, per_query: int = 12) -> list[dict]:
 
 
 GITHUB_QUERIES = [
+    # 具身 / 世界模型
     "embodied OR robotics OR VLA",
     "world model OR world action model",
+    # RL 基础设施
     "reinforcement learning infrastructure",
+    # AI Infra：推理 / 训练系统
+    "llm inference OR inference engine OR kv cache",
+    "distributed training OR gpu kernel OR quantization",
+    # 自动驾驶端到端
+    "autonomous driving end-to-end OR bev perception",
+    # agent
+    "llm agent framework OR multi-agent",
 ]
 
 
@@ -378,14 +420,30 @@ RSS_FEEDS: list[tuple[str, str]] = [
     # NVIDIA（两个 feed 有重叠，末尾统一去重）
     ("nvidia", "https://developer.nvidia.com/blog/feed/"),
     ("nvidia", "https://blogs.nvidia.com/feed/"),
-    # 英文：实验室 / 厂商官方博客
+    # 前沿实验室 / 厂商官方博客（一手发布）
     ("deepmind", "https://deepmind.google/blog/rss.xml"),
     ("bair", "https://bair.berkeley.edu/blog/feed.xml"),
     ("hf_blog", "https://huggingface.co/blog/feed.xml"),
-    # 英文：机器人垂直媒体
+    ("openai", "https://openai.com/news/rss.xml"),
+    ("google_research", "https://research.google/blog/rss/"),
+    ("msr", "https://www.microsoft.com/en-us/research/feed/"),
+    # 英文：机器人垂直媒体 + 科技媒体 AI 版
     ("ieee_robotics", "https://spectrum.ieee.org/feeds/topic/robotics.rss"),
     ("robohub", "https://robohub.org/feed/"),
     ("marktechpost", "https://www.marktechpost.com/feed/"),
+    ("techcrunch_ai", "https://techcrunch.com/category/artificial-intelligence/feed/"),
+    ("arstechnica_ai", "https://arstechnica.com/ai/feed/"),
+    # 英文：AI Infra（推理 / 服务 / 训练系统）
+    ("vllm", "https://vllm.ai/blog/rss.xml"),
+    ("together", "https://www.together.ai/blog/rss.xml"),
+    ("aws_ml", "https://aws.amazon.com/blogs/machine-learning/feed/"),
+    ("pytorch", "https://pytorch.org/blog/feed.xml"),
+    # 中文 AI 媒体
+    ("qbitai", "https://www.qbitai.com/feed"),
+    # 英文：深度观点 / 超级智能讨论
+    ("interconnects", "https://www.interconnects.ai/feed"),
+    ("raschka", "https://magazine.sebastianraschka.com/feed"),
+    ("lesswrong", "https://www.lesswrong.com/feed.xml"),
 ]
 
 
@@ -449,7 +507,24 @@ def src_rss(name: str, urls: list[str]):
             except Exception as e:  # noqa: BLE001
                 print(f"  [warn] {name} feed 失败（{f}）：{e}", file=sys.stderr)
                 continue
-            items += _parse_feed(raw, name, cut)
+            got = _parse_feed(raw, name, cut)
+            # 抓到 200 但一条都没解析出来，有两种完全不同的原因，得分开报：
+            #   - 返回的根本不是 feed（反爬页 / 登录墙 / 网关错误页）→ 源坏了，要修
+            #   - 是 feed，只是窗口内没有新条目 → 正常（BAIR 常年如此）
+            # 不区分的话，源被反爬挡掉会一直静默返回 0 条，跟「今天没更新」长得一样。
+            if not got:
+                n_blocks = len(re.findall(r"<item\b|<entry\b", raw, flags=re.I))
+                head = raw[:200].lstrip()
+                looks_feed = head.startswith("<?xml") or "<rss" in head.lower() or "<feed" in head.lower()
+                if n_blocks == 0 or not looks_feed:
+                    print(
+                        f"  [warn] {name} 返回的不是可解析的 feed"
+                        f"（可能反爬 / 登录墙，前 60 字：{head[:60]!r}）",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(f"  [info] {name}：feed 正常，{days} 天窗口内无新条目", file=sys.stderr)
+            items += got
         seen, out = set(), []
         for x in items:
             k = x["title"][:60].lower()

@@ -24,6 +24,10 @@
   python3 tools/daily/rate.py                    # 给 brief-*.json 的候选打分
   python3 tools/daily/rate.py --date 2026-10-26
   python3 tools/daily/rate.py --all              # 给 raw 全部条目打分（不只看候选）
+  python3 tools/daily/rate.py --top 20 --by-category  # 按分类聚合打印
+
+分类（`category` / `category_label`）由 pick_topics.py 打好，这里只**透传**到
+rated-*.json，供 scaffold.py 按分类分节；本脚本不重新打标。
 """
 
 from __future__ import annotations
@@ -35,19 +39,39 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import categories as C  # noqa: E402
+
 OUT_DIR = Path(__file__).resolve().parent / "out"
 
 STAR = {1: "★☆☆☆☆", 2: "★★☆☆☆", 3: "★★★☆☆", 4: "★★★★☆", 5: "★★★★★"}
 
 # 硬数字的证据：百分比、百分点、倍数、速度、时延、参数量
+# Infra 类条目常报吞吐 / 时延 / 成本，所以 tokens/s、GB/s、TFLOPS、MFU、加速比
+# 都要认 —— 以前只认 % 和 ms，vLLM / TensorRT 这类会全被判成「没有数字」。
 NUM_PAT = re.compile(
     r"(\d+(?:\.\d+)?\s*%)"                    # 45.2%
     r"|(\d+(?:\.\d+)?\s*(?:pp|个百分点))"        # 7.9 pp
     r"|(\d+(?:\.\d+)?\s*(?:×|x)\s)"            # 3.5×
     r"|(\d+(?:\.\d+)?\s*(?:fps|FPS))"          # 20 fps
     r"|(\d+(?:\.\d+)?\s*ms\b)"                 # 107.4 ms
+    r"|(\d+(?:\.\d+)?\s*(?:s|sec|seconds)\b)"   # 12.4 s
     r"|(\d+(?:\.\d+)?\s*B\s+(?:参数|param))"    # 1.7B 参数
-    r"|(\d+(?:\.\d+)?\s*dB)",                  # 15.25 dB
+    r"|(\d+(?:\.\d+)?\s*dB)"                   # 15.25 dB
+    # --- Infra 形态 ---
+    r"|(\d+(?:\.\d+)?\s*(?:tokens?|tok)/s\b)"   # 2400 tokens/s
+    r"|(\d+(?:\.\d+)?\s*(?:tok|tokens?)\s*/?\s*(?:per\s*)?sec)"  # 2400 tokens/sec
+    r"|(\d+(?:\.\d+)?\s*(?:GB|MB|TB)/s\b)"      # 3.2 GB/s
+    r"|(\d+(?:\.\d+)?\s*(?:GB|MB|TB|GiB|GiB)\b)"  # 80GB（显存 / 带宽）
+    r"|(\d+(?:\.\d+)?\s*(?:TFLOPS|TFLOP/s|FLOPS|PFLOPS)\b)"  # 1.4 TFLOPS
+    r"|(\d+(?:\.\d+)?\s*MFU\b)"                # 42% MFU / 0.42 MFU
+    r"|(\d+(?:\.\d+)?\s*(?:×|x)\s*(?:加速|speedup))"  # 3.2× 加速
+    r"|(speedup\s*(?:of\s*)?\d+(?:\.\d+)?)"     # speedup of 3.2
+    r"|(\d+(?:\.\d+)?\s*(?:req|requests)/s\b)"  # 120 req/s
+    r"|(\d+(?:\.\d+)?\s*(?:QPS|qps)\b)"        # 800 QPS
+    r"|(\$\s*\d+(?:\.\d+)?)"                   # 成本 $0.42
+    r"|(\d+(?:\.\d+)?\s*(?:USD|美元|万元|亿元))",   # 成本
     re.I,
 )
 COMPARE_PAT = re.compile(
@@ -138,7 +162,20 @@ def main() -> int:
     ap.add_argument("--date", default=None)
     ap.add_argument("--all", action="store_true", help="给 raw 全部条目打分")
     ap.add_argument("--top", type=int, default=20)
+    ap.add_argument("--by-category", action="store_true", help="按分类分组打印（便于挑条目）")
+    ap.add_argument("--categories", default=None, help="逗号分隔，只看这些分类（key）")
     args = ap.parse_args()
+
+    CATS = C.load_categories()
+    CAT_KEYS = [c["key"] for c in CATS]
+    CAT_LABEL = {c["key"]: c["label"] for c in CATS}
+    want_cats = None
+    if args.categories:
+        want_cats = [c.strip() for c in args.categories.split(",") if c.strip()]
+        bad = [c for c in want_cats if c not in CAT_KEYS]
+        if bad:
+            print(f"[error] 未知分类 {bad}；可用：{', '.join(CAT_KEYS)}", file=sys.stderr)
+            return 1
 
     day = args.date or datetime.now().strftime("%Y-%m-%d")
     src_path = OUT_DIR / (f"raw-{day}.json" if args.all else f"brief-{day}.json")
@@ -150,14 +187,18 @@ def main() -> int:
 
     rows = []
     for x in items:
+        # 分类由 pick_topics.py 打好，这里透传；缺了就归 misc（--all 跑 raw 时会发生）
+        cat = x.get("category") or "misc"
+        if cat not in CAT_LABEL:
+            cat = "misc"
+        if want_cats and cat not in want_cats:
+            continue
         e = _evidence(x)
-        rows.append((rate_worth(e), rate_impact(e), e, x))
+        label = CAT_LABEL.get(cat, cat)
+        rows.append((rate_worth(e), rate_impact(e), e, x, cat, label))
     rows.sort(key=lambda r: (-(r[0] + r[1]), -(r[2]["heat"] or 0)))
 
-    print(f"日期 {day} ｜ {len(rows)} 条 ｜ worth=值不值得读，impact=领域影响力\n")
-    for w, im, e, x in rows[: args.top]:
-        tag = x.get("source", "?")
-        print(f"worth {STAR[w]}  impact {STAR[im]}  [{tag}] {x['title'][:46]}")
+    def _sig(e: dict) -> str:
         sig = [
             ("数字" if e["has_number"] else None),
             (f"数字×{e['n_numbers']}" if e["n_numbers"] >= 3 else None),
@@ -169,18 +210,48 @@ def main() -> int:
             ("预告/推广" if e["is_promo"] else None),
             (f"热度{e['heat']}" if e["heat"] else None),
         ]
-        print(f"     证据：{' '.join('·' + s for s in sig if s)}")
-        print()
+        return ' '.join('·' + s for s in sig if s)
+
+    print(f"日期 {day} ｜ {len(rows)} 条 ｜ worth=值不值得读，impact=领域影响力\n")
+
+    # 每类占比：全局 top N 会被最大的一类（通常是 agents/github）占满，
+    # 分类视图的意义正是「每类都能看到」，所以每类给一个上限。
+    per_cat = max(1, args.top // max(1, len(CAT_KEYS)))
+    if args.by_category:
+        grouped: dict[str, list] = {}
+        for r in rows:  # rows 已按 (worth+impact, heat) 排好
+            g = grouped.setdefault(r[4], [])
+            if len(g) < per_cat:
+                g.append(r)
+        for key in CAT_KEYS:
+            if key not in grouped:
+                continue
+            print(f"### {CAT_LABEL.get(key, key)}（{key}）— {len(grouped[key])} 条"
+                  f"（每类上限 {per_cat}）\n")
+            for w, im, e, x, cat, label in grouped[key]:
+                tag = x.get("source", "?")
+                print(f"  worth {STAR[w]}  impact {STAR[im]}  [{tag}] {x['title'][:44]}")
+                print(f"       {x['url'][:100]}")
+                print(f"       证据：{_sig(e)}")
+                print()
+    else:
+        for w, im, e, x, cat, label in rows[: args.top]:
+            tag = x.get("source", "?")
+            print(f"worth {STAR[w]}  impact {STAR[im]}  [{tag}] ({label}) {x['title'][:42]}")
+            print(f"     证据：{_sig(e)}")
+            print()
 
     out = OUT_DIR / f"rated-{day}.json"
     out.write_text(
         json.dumps(
             {
                 "date": day,
+                "categories": CAT_KEYS,
                 "rated": [
                     {"worth": w, "impact": im, "evidence": e,
+                     "category": cat, "category_label": label,
                      **{k: v for k, v in x.items() if k != "body"}}
-                    for w, im, e, x in rows
+                    for w, im, e, x, cat, label in rows
                 ],
             },
             ensure_ascii=False,
