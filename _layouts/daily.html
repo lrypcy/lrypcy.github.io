@@ -34,14 +34,17 @@ layout: default
 
 <script src="/assets/js/toc.js"></script>
 <script>
-/* 资讯页章节目录：形式与文章页一致（同一套 assets/js/toc.js）。
+/* 资讯页章节目录：形式与文章页**完全一致**（同一套 assets/js/toc.js）——
+   贴边竖排章节横线，hover 原位展开成章节名，滚动高亮当前节。
    h2 = 分类节（流水线写的 <h2 id="cat-<key>">），h3 = 条目，目录按分类分组。
-   minRoom:96 —— 资讯页刻意**不放左侧 rail**（见 custom.css 的
-   .layout-grid.layout-daily），正文左缘只靠 shell 居中的余量撑开：
-   站点最大宽度 1560，所以屏宽 ≥ 约 1750 才够一条悬浮竖条的落点，那时**与文章页
-   同一形态**（左侧竖排章节线，hover 展开成文字）；再窄就没有左留白，
-   自动退回右侧栏的目录卡 / 手机端正文顶部折叠卡 —— 都是文章目录的既有组件。
-   硬在无留白时摆悬浮线，就是之前修掉的「正文偏移」，所以 minRoom 不能省。 */
+
+   资讯页刻意**不放左侧 rail**（见 custom.css 的 .layout-grid.layout-daily），
+   所以横线落进正文卡片自己的左内边距（实测 36px）：收起态最宽 = active 横线
+   26px + .side-toc-lines 左内边距 6px + 起点 2px = 34px，正好放进 36px；
+   实测横线右缘 58 / 正文左缘 61，留 3px 不压字（与文章页无 rail 档同几何）。
+   minRoom:96 只作**兜底**：卡片内边距不足 34px 时，要求正文外侧有 96px 留白，
+   否则退回卡片式目录——硬压到正文上就是之前修掉的「正文偏移」。
+   窄屏（<992）仍是右侧栏目录卡 / 手机端正文顶部折叠卡，都是既有组件。 */
 (function () {
   function init() {
     if (window.pcyToc) {

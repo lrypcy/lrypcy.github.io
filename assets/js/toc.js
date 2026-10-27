@@ -70,10 +70,25 @@
 
     var view = null;   // { kind:'float'|'card', destroy() }
 
+    /* 摆放位置：
+       1. 有左侧 rail（文章页）→ 贴到 rail 右缘的缝隙，与改造前逐字一致；
+       2. 没有 rail（资讯页刻意不预留 rail 列）→ 落进正文卡片自己的左内边距里，
+          收起态只有 28px 宽（padding 6 + 横线 16），卡片内边距 40px 装得下，
+          既贴边又不压到文字；hover 展开时盖住正文，与文章页悬浮目录同套路。
+          内边距不够才退回卡片外侧。 */
     function hasRoom() {
       if (!minRoom) { return true; }
       var rail = document.getElementById('rail');
-      if (rail && rail.offsetWidth > 0) { return true; }   // 有左栏：贴到栏右缘，不会压正文
+      if (rail && rail.offsetWidth > 0) { return true; }
+      return cardPaddingRoom() >= 34 || outsideRoom();
+    }
+
+    function cardPaddingRoom() {
+      var block = body.closest('.post-block') || body;
+      return parseFloat(getComputedStyle(block).paddingLeft || '0') || 0;
+    }
+
+    function outsideRoom() {
       var main = document.querySelector('.layout-main') || body;
       return main.getBoundingClientRect().left >= minRoom;
     }
@@ -143,10 +158,18 @@
         }
         wrap.classList.remove('side-toc-shifted');
         if (!minRoom) { wrap.style.left = ''; return; }   // 文章页：沿用 CSS 默认落点，行为与改造前一致
-        // 资讯页没有左栏：落进正文左侧留白，按**收起态宽度**避让，
-        // 保证不压到正文卡片；hover 展开时盖住正文，与文章页悬浮目录同套路。
-        var main = document.querySelector('.layout-main') || body;
-        wrap.style.left = Math.max(12, Math.round(main.getBoundingClientRect().left) - 46) + 'px';
+        var block = body.closest('.post-block') || body;
+        var bRect = block.getBoundingClientRect();
+        var padL = parseFloat(getComputedStyle(block).paddingLeft || '0') || 0;
+        if (padL >= 34) {
+          /* 落在卡片左内边距里。留白计算要按**最宽的那一档**：横线默认 16px、
+             active 态 26px，外加 .side-toc-lines 的 6px 左内边距，
+             所以 2 + 6 + 26 = 34 才是收起态的真实右缘。 */
+          wrap.style.left = Math.round(bRect.left + 2) + 'px';
+        } else {
+          var main = document.querySelector('.layout-main') || body;
+          wrap.style.left = Math.max(12, Math.round(main.getBoundingClientRect().left) - 46) + 'px';
+        }
       }
       place();
 
