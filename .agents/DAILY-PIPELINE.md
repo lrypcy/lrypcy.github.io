@@ -105,7 +105,7 @@ raw HTML 的 `<h2>` id 100% 稳定，且 CSS 的 `.post-body h2` 照样命中。
 | --- | --- | --- | --- |
 | 青稞 `qingkeai.online` | ✅ | Halo 列表 API + 正文全文。中文解读主力，每篇自带 arXiv / 代码 / 署名 | 否 |
 | HuggingFace Daily Papers | ✅ | 论文标题、摘要、AI 摘要、arXiv id、github 仓库、upvotes、关键词 | **是** |
-| arXiv API | ✅ | 9 条检索式：WAM / VLA+具身 / RL+机器人 / sim-to-real / **AI Infra（推理 + 服务化两条）/ 自动驾驶 / agentic / RLHF**。间歇性抽风，见 §8 | 否（走代理更稳） |
+| arXiv API | ✅ | 9 条检索式：WAM / VLA+具身 / RL+机器人 / sim-to-real / **AI Infra（推理 + 服务化两条）/ 自动驾驶 / agentic / RLHF**。间歇性抽风，见 §8 | **否，且必须直连** |
 | GitHub 仓库搜索 | ✅ | 按 push 时间筛活跃项目，带 star 数与 topics（7 组，含 Infra / 自驾 / agent） | **是** |
 | 量子位 `qbitai.com` | ✅ | 中文 AI 媒体，覆盖国内发布与产业动态 | **是** |
 
@@ -358,8 +358,10 @@ python3 tools/daily/fetch_all.py --date 2026-10-27 --days 2
   `[info] xxx：feed 正常，N 天窗口内无新条目` 与
   `[warn] xxx 返回的不是可解析的 feed（可能反爬 / 登录墙…）`。
   看到前者别去动源，看到后者才说明该源被挡了。
-- **arXiv 深夜容易被 reset**（`[Errno 54] Connection reset by peer` / SSL 握手超时），
-  08:00 跑一般没问题；真全军覆没就 `--only arxiv` 重试一次，HF 源已覆盖大部分论文。
+- **arXiv 走代理必挂**（2026-10-28 实测）：ClashX 代理在 `export.arxiv.org` 上反复
+  `[Errno 54] Connection reset by peer` / SSL 握手超时，9 条检索式能**整批返回 0 条**；
+  同一时刻绕开代理直连拿到 **85 条**。`src_arxiv` 已改为 `_get(..., proxy=False)`，
+  `src_github` 等仍走代理。**手册以前写「arXiv 走代理更稳」是反的，别再照它排查。**
 - **`pick_topics.py` 的 total 用九类命中分之和**，不是「取最高分类分」。
   改成只取最大值会让跨领域条目（具身 + RL）总分掉下阈值，被 `--min-score` 静默筛掉 ——
   分类是**打标**，不该顺手降低召回。

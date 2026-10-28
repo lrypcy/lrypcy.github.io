@@ -5,7 +5,7 @@
    中文 / 论文
      ✅ qingke     青稞社区（Halo API + 正文抓取）—— 中文解读主力
      ✅ hf         HuggingFace Daily Papers（arXiv id / 摘要 / github / upvotes）
-     ✅ arxiv      arXiv API（具身 / 世界模型 / RL / AI Infra / 自驾 / agentic）
+     ✅ arxiv      arXiv API（具身 / 世界模型 / RL / AI Infra / 自驾 / agentic）—— 走直连，见 _get
      ✅ github     GitHub 仓库搜索（按 push 时间找活跃项目）
    中文 AI 媒体
      ✅ qbitai     量子位
@@ -89,7 +89,25 @@ def _opener():
 OP = _opener()
 
 
-def _get(url: str, timeout: int = 25, retries: int = 3, headers: dict | None = None):
+_OP_DIRECT = None
+
+
+def _get(url: str, timeout: int = 25, retries: int = 3, headers: dict | None = None,
+         proxy: bool = True):
+    """proxy=False 走直连。
+
+    export.arxiv.org **必须直连**：本机 ClashX 代理会在它身上反复
+    `[Errno 54] Connection reset by peer` / SSL 握手超时，9 条检索式能整批挂掉；
+    绕开代理同一个瞬间就拿到 85 条（2026-10-28 实测）。
+    手册原来写「arXiv 走代理更稳」是反的，已一并改正。
+    """
+    global _OP_DIRECT
+    if proxy:
+        opener = OP
+    else:
+        if _OP_DIRECT is None:
+            _OP_DIRECT = urllib.request.build_opener()
+        opener = _OP_DIRECT
     h = {"User-Agent": UA, "Accept-Language": "zh-CN,zh;q=0.9"}
     if headers:
         h.update(headers)
@@ -97,7 +115,7 @@ def _get(url: str, timeout: int = 25, retries: int = 3, headers: dict | None = N
     for i in range(retries):
         try:
             req = urllib.request.Request(url, headers=h)
-            with OP.open(req, timeout=timeout) as r:
+            with opener.open(req, timeout=timeout) as r:
                 return r.read().decode("utf-8", "ignore")
         except Exception as e:  # noqa: BLE001
             last = e
@@ -259,7 +277,7 @@ def src_arxiv(days: int, per_query: int = 12) -> list[dict]:
         # export.arxiv.org 经常间歇性 Connection reset / 502（不是我们的错）。
         # 加重试次数 + 退避，仍失败则整源降级（HF 源已覆盖大部分论文）。
         try:
-            raw = _get(url, timeout=35, retries=4)
+            raw = _get(url, timeout=35, retries=4, proxy=False)   # arXiv 必须直连，见 _get 注释
         except Exception as e:  # noqa: BLE001
             print(f"  [warn] arXiv 检索失败（{q[:30]}…）：{e}", file=sys.stderr)
             continue
