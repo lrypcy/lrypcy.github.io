@@ -150,7 +150,7 @@ series:
     layer: 0
     order: 5
     prefixes: [megatron-]
-    desc: 14 篇。00 地基（代码地图与配置系统、一次迭代控制流）→ 01 进程组与通信/计算重叠 → 02 专家并行（进程组双表、token dispatch 全链路、负载均衡）→ 03–07 并行源码层（TP+SP / GTP / DP 与优化器三套实现 / PP 调度器 / CP 与长上下文）→ 08–10 优化工具箱（显存账本与重计算 / FP8 与 FP4 / 算子融合与 CUDA Graph）→ 11–13 延伸（原生 RL 与 Refit / Checkpoint 与容错 / Bridge 与导出）。承接 dist-train 系列的并行原理，只做源码层，补上 2026 新特性（GTP、MLA/DSA、MFSDP v2、Dynamic CP、full CUDA graph、原生 RL 栈）。实测与调优已外迁至性能剖析系列。
+    desc: 16 篇。00 地基（代码地图与配置系统、一次迭代控制流）→ 01 进程组与通信/计算重叠 → 02 专家并行（进程组双表、token dispatch 全链路、负载均衡）→ 03–07 并行源码层（TP+SP / GTP / DP 与优化器三套实现 / PP 调度器 / CP 与长上下文）→ 08–10 优化工具箱（显存账本与重计算 / FP8 与 FP4 / 算子融合与 CUDA Graph）→ 11–12 可靠性延伸（Refit / Resharding 的训练-推理权重搬运 / 确定性重跑与故障注入）→ 14–16 模型组装（ModuleSpec 与 layer stack / GPT-Llama 装配 / Hybrid 与 MoE 装配）。承接 dist-train 系列的并行原理，只做源码层，补上 2026 新特性（GTP、MLA/DSA、MFSDP v2、Dynamic CP、full CUDA graph、原生 RL 栈）。实测与调优已外迁至性能剖析系列。
 
   - id: perf-analysis
     name: 性能剖析：度量口径、训练栈归因与服务测量
@@ -198,7 +198,7 @@ series:
     layer: 1
     order: 2
     prefixes: [llm-quant-, ptq-, qat-]
-    desc: 31 篇。00–25 主线 + E1–E5 扩展篇：量化器数学地基 → PTQ 全家桶 → QAT/可学习 scale → KV Cache、混合精度、部署生态、1-bit 前沿与部署侧算子融合。
+    desc: 32 篇。00–25 主线 + E1–E5 扩展篇：量化器数学地基 → PTQ 全家桶 → QAT/可学习 scale → KV Cache、混合精度、部署生态、1-bit 前沿与部署侧算子融合。
 
   - id: mdp-grpo
     name: 从 MDP 到 GRPO
@@ -369,7 +369,7 @@ series:
     layer: 2
     order: 7
     prefixes: [flex-attention-]
-    desc: 1 篇长文。score_mod / mask_mod 的可编程边界、online softmax 为什么能吃下任意逐点修正、BlockMask 的两笔账、反向如何用 joint graph 自动生成、PagedAttention 与 FlexDecoding，以及 2026 年 FA4 / Apple Silicon / 确定性反向三条新边界。回答「五花八门的注意力变体能不能只写几行 Python」。
+    desc: 2 篇。01 编程模型：score_mod / mask_mod 的可编程边界、online softmax 为什么能吃下任意逐点修正、反向如何用 joint graph 自动生成、PagedAttention 与 FlexDecoding，以及三类不可表达的修正。02 BlockMask 工程：构造成本的 8192 MiB → 64 MiB 那笔账、确定性与 FlexDecoding 独立孤岛、`kv_num_blocks` 到「每块处理时间」的粒度换算，以及与 torch.compile 后端调度的衔接。两条线合起来回答「五花八门的注意力变体能不能只写几行 Python」与「写出来之后这笔开销到底花在哪」。
 
   - id: sampling
     name: PyTorch 采样实现深读

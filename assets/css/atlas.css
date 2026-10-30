@@ -76,7 +76,7 @@ body.home-atlas-page.no-scroll{overflow:hidden}
 .atlas .cov-note span{display:inline-flex;align-items:center;gap:7px}
 .atlas .cov-note b{color:#334155;font-family:var(--mono);font-weight:500}
 /* ---------- sticky toolbar ---------- */.atlas .topbar{position:sticky;top:0;z-index:50;backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);background:rgba(255,255,255,.92);border-bottom:1px solid var(--line);box-shadow:0 1px 6px rgba(30,40,60,.04)}
-.atlas .topbar-inner{max-width:1240px;margin:0 auto;padding:9px 24px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.atlas .topbar-inner{max-width:1240px;margin:0 auto;padding:9px 24px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:min(1240px,calc(100% - 48px))}
 .atlas .brand{display:flex;align-items:center;gap:8px;font:700 11.5px var(--mono);letter-spacing:.14em;color:#334155;white-space:nowrap;margin-right:4px}
 .atlas .brand i{width:7px;height:7px;border-radius:2px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:block}
 .atlas .search{position:relative;flex:1 1 260px;max-width:640px;min-width:200px}
@@ -94,6 +94,8 @@ body.home-atlas-page.no-scroll{overflow:hidden}
 .atlas .seg button.on{background:#fff;color:var(--primary-dark);box-shadow:0 1px 4px rgba(30,40,60,.12)}
 .atlas .btn{border:1px solid var(--line);background:#fff;color:#52657a;font-size:11.5px;height:34px;padding:0 11px;border-radius:8px;cursor:pointer;white-space:nowrap;transition:.18s;box-shadow:var(--shadow-sm)}
 .atlas .btn:hover{border-color:#b9cbe2;color:var(--primary-dark);background:var(--primary-soft)}
+.atlas #toggleAll,.atlas #reset{align-self:stretch}
+.atlas #toggleAll+.atlas #reset{margin-left:0}
 .atlas #resultCount{display:none;margin-left:2px;font:500 10.5px var(--mono);color:var(--primary-dark);white-space:nowrap;padding:5px 10px;border-radius:999px;background:var(--primary-soft);border:1px solid rgba(59,130,246,.16)}
 .atlas #resultCount.on{display:inline-flex;align-items:center}
 /* ---------- sections ---------- */.atlas .section{max-width:1240px;margin:0 auto;padding:60px 24px}

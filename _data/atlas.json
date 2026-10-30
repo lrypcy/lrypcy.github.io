@@ -3001,11 +3001,12 @@
         {
           "id": "frontier-agent",
           "name": "Agent 基础设施",
-          "coverage": 1,
+          "coverage": 2,
           "series": [
-            "agentic-rl"
+            "agentic-rl",
+            "agent-anatomy"
           ],
-          "desc": "工具调用、沙箱执行、记忆、检索与多 Agent 编排。",
+          "desc": "工具调用、沙箱执行、记忆与持久化、上下文压缩、检索与多 Agent 编排，以及 coding agent 落在磁盘上的那笔账。",
           "topics": [
             {
               "id": "frontier-agent-t0",
@@ -3019,16 +3020,26 @@
             },
             {
               "id": "frontier-agent-t2",
-              "name": "记忆",
-              "coverage": 0
+              "name": "记忆与持久化状态",
+              "coverage": 2
             },
             {
               "id": "frontier-agent-t3",
+              "name": "上下文压缩",
+              "coverage": 2
+            },
+            {
+              "id": "frontier-agent-t4",
+              "name": "本地存储与索引成本",
+              "coverage": 2
+            },
+            {
+              "id": "frontier-agent-t5",
               "name": "检索",
               "coverage": 0
             },
             {
-              "id": "frontier-agent-t4",
+              "id": "frontier-agent-t6",
               "name": "多 Agent 编排",
               "coverage": 0
             }
