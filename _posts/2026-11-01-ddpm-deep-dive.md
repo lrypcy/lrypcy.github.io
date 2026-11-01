@@ -35,27 +35,37 @@ next_url: /2026/10/20/flow-matching-00-principles/
 
 每一步加噪遵循：
 
-$$q(x_t\mid x_{t-1})=\mathcal N\big(x_t;\sqrt{1-\beta_t}\,x_{t-1},\ \beta_t I\big),\qquad \epsilon\sim\mathcal N(0,I)$$
+$$
+q(x_t\mid x_{t-1})=\mathcal N\big(x_t;\sqrt{1-\beta_t}\,x_{t-1},\ \beta_t I\big),\qquad \epsilon\sim\mathcal N(0,I)
+$$
 
 等价地写成采样形式：
 
-$$x_t=\sqrt{1-\beta_t}\,x_{t-1}+\sqrt{\beta_t}\,\epsilon$$
+$$
+x_t=\sqrt{1-\beta_t}\,x_{t-1}+\sqrt{\beta_t}\,\epsilon
+$$
 
 其中 $$\beta_t\in(0,1)$$ 是预设的方差序列（噪声调度），不参与学习。整个前向过程是一条马尔可夫链：
 
-$$q(x_{1:T}\mid x_0)=\prod_{t=1}^{T}q(x_t\mid x_{t-1})$$
+$$
+q(x_{1:T}\mid x_0)=\prod_{t=1}^{T}q(x_t\mid x_{t-1})
+$$
 
 ### 2.2 为什么是 $$\alpha_t=1-\beta_t$$
 
 $$\alpha_t$$ 不是独立参数，是给余量起的名字。把单步写开，进入方差的是系数的平方：
 
-$$\mathrm{Var}(x_t)=\alpha_t\,\mathrm{Var}(x_{t-1})+\beta_t,\qquad \alpha_t+\beta_t=1$$
+$$
+\mathrm{Var}(x_t)=\alpha_t\,\mathrm{Var}(x_{t-1})+\beta_t,\qquad \alpha_t+\beta_t=1
+$$
 
 这条递推里 $$\beta_t$$ 乘的是常数——它就是 $$\epsilon_t$$ 的方差，等于 1；系数 $$\alpha_t$$ 则是乘在上一时刻的方差上的。也就是说：**方差往前传递时是乘性衰减的，新注入的部分是加性的**。
 
 这里有一个必须交代的前提。把上面的递推一路展开得
 
-$$\mathrm{Var}(x_t)=\bar\alpha_t\,\mathrm{Var}(x_0)+(1-\bar\alpha_t)\cdot 1$$
+$$
+\mathrm{Var}(x_t)=\bar\alpha_t\,\mathrm{Var}(x_0)+(1-\bar\alpha_t)\cdot 1
+$$
 
 只有当 $$\mathrm{Var}(x_0)=1$$ 时它才简并成 $$\mathrm{Var}(x_t)=1$$；对一般的数据分布，总方差并不恒为 1。所以 $$\alpha_t+\beta_t=1$$ 的确切含义是**参数化层面的一条约束，不是“每一步之后总方差仍为 1”这个结论**：
 
@@ -78,11 +88,15 @@ $$\mathrm{Var}(x_t)=\bar\alpha_t\,\mathrm{Var}(x_0)+(1-\bar\alpha_t)\cdot 1$$
 
 **第一步：展开两层。** 把 $$x_{t-1}=\sqrt{\alpha_{t-1}}x_{t-2}+\sqrt{\beta_{t-1}}\epsilon_{t-1}$$ 代进单步：
 
-$$x_t=\sqrt{\alpha_t\alpha_{t-1}}\,x_{t-2}+\underbrace{\sqrt{\alpha_t\beta_{t-1}}\,\epsilon_{t-1}+\sqrt{\beta_t}\,\epsilon_t}_{\text{两项独立、都是中心高斯}}$$
+$$
+x_t=\sqrt{\alpha_t\alpha_{t-1}}\,x_{t-2}+\underbrace{\sqrt{\alpha_t\beta_{t-1}}\,\epsilon_{t-1}+\sqrt{\beta_t}\,\epsilon_t}_{\text{两项独立、都是中心高斯}}
+$$
 
 括号里两项为什么独立：$$\epsilon_{t-1}$$ 是上一步采的、$$\epsilon_t$$ 是这一步新采的，马尔可夫链的定义就是每一步重新注入一个与历史无关的噪声，所以两者独立；而 $$\sqrt{\alpha_t\beta_{t-1}}$$、$$\sqrt{\beta_t}$$ 都是确定的常数，线性组合的协方差里交叉项因此为 0。两项均值都是 0，和仍是中心高斯，方差直接相加：
 
-$$\alpha_t\beta_{t-1}+\beta_t=\alpha_t(1-\alpha_{t-1})+(1-\alpha_t)=1-\alpha_t\alpha_{t-1}$$
+$$
+\alpha_t\beta_{t-1}+\beta_t=\alpha_t(1-\alpha_{t-1})+(1-\alpha_t)=1-\alpha_t\alpha_{t-1}
+$$
 
 于是 $$x_t=\sqrt{\alpha_t\alpha_{t-1}}\,x_{t-2}+\sqrt{1-\alpha_t\alpha_{t-1}}\,\epsilon$$——与单步同构，只是 $$\bar\alpha$$ 变成两层连乘。
 
@@ -90,23 +104,33 @@ $$\alpha_t\beta_{t-1}+\beta_t=\alpha_t(1-\alpha_{t-1})+(1-\alpha_t)=1-\alpha_t\a
 
 **第二步：归纳一步。** 设 $$x_{t-1}=\sqrt{\bar\alpha_{t-1}}\,x_0+\sqrt{1-\bar\alpha_{t-1}}\,\epsilon'$$，代入：
 
-$$x_t=\sqrt{\alpha_t\bar\alpha_{t-1}}\,x_0+\sqrt{\alpha_t(1-\bar\alpha_{t-1})}\,\epsilon'+\sqrt{\beta_t}\,\epsilon_t$$
+$$
+x_t=\sqrt{\alpha_t\bar\alpha_{t-1}}\,x_0+\sqrt{\alpha_t(1-\bar\alpha_{t-1})}\,\epsilon'+\sqrt{\beta_t}\,\epsilon_t
+$$
 
 均值系数 $$\sqrt{\alpha_t\bar\alpha_{t-1}}=\sqrt{\bar\alpha_t}$$；方差
 
-$$\alpha_t(1-\bar\alpha_{t-1})+\beta_t=\alpha_t-\alpha_t\bar\alpha_{t-1}+1-\alpha_t=1-\bar\alpha_t$$
+$$
+\alpha_t(1-\bar\alpha_{t-1})+\beta_t=\alpha_t-\alpha_t\bar\alpha_{t-1}+1-\alpha_t=1-\bar\alpha_t
+$$
 
 两处用的都是同一个 $$\alpha_t+\beta_t=1$$。归纳成立，任意时刻的边际分布与一步采样式同时得到：
 
-$$q(x_t\mid x_0)=\mathcal N\big(x_t;\sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t)I\big)\ \Longleftrightarrow\ x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon$$
+$$
+q(x_t\mid x_0)=\mathcal N\big(x_t;\sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t)I\big)\ \Longleftrightarrow\ x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon
+$$
 
 **第三步：换个方向看 $$1-\bar\alpha_t$$ 到底是谁。** 上面是往后展开，也可以往前记账：第 $$s$$ 步注入的 $$\beta_s$$ 在之后每一步都要被 $$\alpha_u$$ 衰减一次，于是
 
-$$\mathrm{Var}_{\text{noise}}(x_t)=\sum_{s=1}^{t}\beta_s\prod_{u=s+1}^{t}\alpha_u$$
+$$
+\mathrm{Var}_{\text{noise}}(x_t)=\sum_{s=1}^{t}\beta_s\prod_{u=s+1}^{t}\alpha_u
+$$
 
 令 $$P_s=\prod_{u=s+1}^{t}\alpha_u$$，由 $$\beta_s=1-\alpha_s$$ 得 $$\beta_sP_s=P_s-P_{s-1}$$，求和就是望远镜：
 
-$$\sum_{s=1}^{t}\beta_sP_s=P_t-P_0=1-\prod_{s=1}^{t}\alpha_s=1-\bar\alpha_t$$
+$$
+\sum_{s=1}^{t}\beta_sP_s=P_t-P_0=1-\prod_{s=1}^{t}\alpha_s=1-\bar\alpha_t
+$$
 
 这解释了为什么闭式里出现的是 $$1-\bar\alpha_t$$ 而**不是**噪声预算之和 $$\sum_s\beta_s$$：$$\bar\alpha_t$$ 是信号还剩多少，$$1-\bar\alpha_t$$ 是噪声进来多少，两者恒和为 1。线性调度下 $$\sum_s\beta_s=10.05$$，按方差直接累加会远超 1——能恰好累到 1，是因为每一项都被后续的 $$\alpha$$ 打过折。
 
@@ -114,7 +138,9 @@ $$\sum_{s=1}^{t}\beta_sP_s=P_t-P_0=1-\prod_{s=1}^{t}\alpha_s=1-\bar\alpha_t$$
 
 取对数能把“$$\beta$$ 加性、$$\alpha$$ 乘性”看得更直白：
 
-$$\log\bar\alpha_T=\sum_{s=1}^{T}\log(1-\beta_s)\approx-\sum_{s}\beta_s-\frac{1}{2}\sum_{s}\beta_s^{2}$$
+$$
+\log\bar\alpha_T=\sum_{s=1}^{T}\log(1-\beta_s)\approx-\sum_{s}\beta_s-\frac{1}{2}\sum_{s}\beta_s^{2}
+$$
 
 线性调度下 $$\sum_s\beta_s=10.0500$$、$$\frac{1}{2}\sum_s\beta_s^2=0.0670$$，于是 $$\bar\alpha_T\approx e^{-10.117}=4.0386\times10^{-5}$$，与实测 $$4.0358\times10^{-5}$$ 相对差 $$6.8\times10^{-4}$$。单步的 $$\beta_T=0.02$$ 看着很小，是因为它只是 log 上的 0.02，而 1000 步加起来是 10.05。
 
@@ -159,11 +185,15 @@ $$\beta$$、$$\bar\alpha$$ 的索引差一位而 $$x$$ 不差，这一点最容�
 
 **“信噪比”在本文有确切口径。** 后文与配图反复出现 SNR 和 dB，这里先把它定死。把闭式 $$x_t=\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\epsilon$$ 拆成两项看：信号项的逐分量方差是 $$\bar\alpha_t\,\mathrm{Var}(x_0)$$，噪声项的方差是 $$1-\bar\alpha_t$$，两者之比就是
 
-$$\mathrm{SNR}(t)=\frac{\bar\alpha_t\,\mathrm{Var}(x_0)}{1-\bar\alpha_t}$$
+$$
+\mathrm{SNR}(t)=\frac{\bar\alpha_t\,\mathrm{Var}(x_0)}{1-\bar\alpha_t}
+$$
 
 在 §2.2 那个“$$x_0$$ 已归一化到单位方差”的前提下，它化简成最常用的形式：
 
-$$\mathrm{SNR}(t)=\frac{\bar\alpha_t}{1-\bar\alpha_t}$$
+$$
+\mathrm{SNR}(t)=\frac{\bar\alpha_t}{1-\bar\alpha_t}
+$$
 
 本文与配图里的 dB 值都是 $$10\log_{10}\mathrm{SNR}(t)$$。线性调度下 $$\bar\alpha_T=4.04\times10^{-5}$$，折合 $$-43.9$$ dB——与 §7.1 表里那一行对得上；$$\mathrm{SNR}=0$$ dB 正是信号方差与噪声方差相等的分界点，越过它之后噪声已经压过信号。
 
@@ -181,7 +211,9 @@ $$\bar\alpha_t$$ 单调递减，所以 $$\mathrm{SNR}(t)$$ 也单调递减，且
 
 $$t$$ 是标量，需要先映射成高维向量。DDPM 用的是 Transformer 那套正弦位置编码：
 
-$$\mathrm{TE}(t)=\big[\sin(\omega_1 t),\cos(\omega_1 t),\ldots,\sin(\omega_d t),\cos(\omega_d t)\big],\qquad \omega_k=\frac{1}{10000^{\,2k/d}}$$
+$$
+\mathrm{TE}(t)=\big[\sin(\omega_1 t),\cos(\omega_1 t),\ldots,\sin(\omega_d t),\cos(\omega_d t)\big],\qquad \omega_k=\frac{1}{10000^{\,2k/d}}
+$$
 
 它借的是傅里叶特征的路子：不同频率分量的周期从 $$1$$ 一直铺到 $$10000$$，低频率负责粗分辨、高频率负责细分，拼成一个向量后，相邻的整数步也能被区分开。三个常被引用的性质里，有两个要打折扣：
 
@@ -207,11 +239,15 @@ $$\mathrm{TE}(t)=\big[\sin(\omega_1 t),\cos(\omega_1 t),\ldots,\sin(\omega_d t),
 
 **先看清想要的目标是什么。** 生成模型的标准训练目标是让模型给训练数据分配高概率，也就是最大化对数似然：
 
-$$\max_\theta\ \mathbb E_{x_0\sim p_{\mathrm{data}}}\big[\log p_\theta(x_0)\big]$$
+$$
+\max_\theta\ \mathbb E_{x_0\sim p_{\mathrm{data}}}\big[\log p_\theta(x_0)\big]
+$$
 
 对 DDPM 而言，$$p_\theta(x_0)$$ 是模型在**整条反向链**上的边缘分布——要把所有中间噪声状态都积掉才拿得到：
 
-$$p_\theta(x_0)=\int p_\theta(x_{0:T})\,\mathrm dx_{1:T}=\int p(x_T)\prod_{t=1}^{T}p_\theta(x_{t-1}\mid x_t)\,\mathrm dx_{1:T}$$
+$$
+p_\theta(x_0)=\int p_\theta(x_{0:T})\,\mathrm dx_{1:T}=\int p(x_T)\prod_{t=1}^{T}p_\theta(x_{t-1}\mid x_t)\,\mathrm dx_{1:T}
+$$
 
 这个积分是 $$T\cdot d$$ 维的（$$d$$ 为数据维数，$$T=1000$$），它带来两个彼此独立的障碍：
 
@@ -222,13 +258,17 @@ $$p_\theta(x_0)=\int p_\theta(x_{0:T})\,\mathrm dx_{1:T}=\int p(x_T)\prod_{t=1}^
 
 **退一步：最大化它的一个下界。** 既然似然算不动，就去找一个**能算、且永远不超过似然**的量去最大化。关键动作是把“对 $$p_\theta$$ 积分”改写成“对某个可采样分布求期望”，用的正是前向链 $$q(x_{1:T}\mid x_0)$$：它完全由噪声调度指定、不含任何参数，既能自由采样，又不会把优化目标搅乱。
 
-$$\log p_\theta(x_0)=\log\mathbb E_q\Big[\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]\ \ge\ \mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]$$
+$$
+\log p_\theta(x_0)=\log\mathbb E_q\Big[\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]\ \ge\ \mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]
+$$
 
 第一行是**恒等式**：分子分母同乘 $$q(x_{1:T}\mid x_0)$$，把积分写成期望，这正是重要性采样。第二行是**不等号**，来自 Jensen：$$\log$$ 是凹函数，所以 $$\log\mathbb E[\cdot]\ge\mathbb E[\log\cdot]$$。
 
 代价很清楚——得到的是下界，不是似然本身。差多少？恰好是两条整链的 KL：
 
-$$\log p_\theta(x_0)-\underbrace{\mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]}_{\mathrm{ELBO}}=\mathrm{KL}\big(q(x_{1:T}\mid x_0)\,\Vert\,p_\theta(x_{1:T}\mid x_0)\big)\ \ge\ 0$$
+$$
+\log p_\theta(x_0)-\underbrace{\mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]}_{\mathrm{ELBO}}=\mathrm{KL}\big(q(x_{1:T}\mid x_0)\,\Vert\,p_\theta(x_{1:T}\mid x_0)\big)\ \ge\ 0
+$$
 
 这就是 [ELBO](/2026/10/13/vae-01-elbo-reparameterization-latent-space/)（evidence lower bound，即“变分下界”）这个缩写的来历——四个字要拆成两半看：$$q$$ 是人为挑的近似后验（**variational**），它给出的是一个下界（**lower bound**），$$q$$ 越接近真实反向链，界越紧。DDPM 在这里有一处特殊——$$q$$ 不是学出来的，而是被前向调度钉死的，所以界紧不紧取决于高斯前向过程与数据分布的匹配程度，**$$\theta$$ 再强也只能把界抬高，改不了界的紧度**。
 
@@ -238,47 +278,67 @@ $$\log p_\theta(x_0)-\underbrace{\mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(
 
 **第一步：写成对数差。** 记
 
-$$\mathrm{ELBO}=\mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]=\mathbb E_q\big[\log p_\theta(x_{0:T})-\log q(x_{1:T}\mid x_0)\big]$$
+$$
+\mathrm{ELBO}=\mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]=\mathbb E_q\big[\log p_\theta(x_{0:T})-\log q(x_{1:T}\mid x_0)\big]
+$$
 
 **第二步：两条链各自展开。** 乘积取对数变求和：
 
-$$\log p_\theta(x_{0:T})=\log p(x_T)+\sum_{t=1}^{T}\log p_\theta(x_{t-1}\mid x_t)$$
+$$
+\log p_\theta(x_{0:T})=\log p(x_T)+\sum_{t=1}^{T}\log p_\theta(x_{t-1}\mid x_t)
+$$
 
-$$\log q(x_{1:T}\mid x_0)=\sum_{t=1}^{T}\log q(x_t\mid x_{t-1})$$
+$$
+\log q(x_{1:T}\mid x_0)=\sum_{t=1}^{T}\log q(x_t\mid x_{t-1})
+$$
 
 注意两条链的步数是**一一对应**的：反向链第 $$t$$ 步从 $$x_t$$ 生成 $$x_{t-1}$$，前向链第 $$t$$ 步从 $$x_{t-1}$$ 走到 $$x_t$$，两边的下标恰好咬合。这是后面能逐项配对的前提。
 
 **第三步：把前向的每一项改写成“条件在 $$x_0$$ 上、中心在 $$x_{t-1}$$”的形式。** 为什么要改？因为分子里是 $$p_\theta(x_{t-1}\mid x_t)$$，要凑成一个关于 $$x_{t-1}$$ 的 KL，分母也必须是“给定 $$x_t$$ 时 $$x_{t-1}$$ 的分布”。而前向链给出的是 $$q(x_t\mid x_{t-1})$$，方向正好相反，所以要翻转：
 
-$$q(x_t\mid x_{t-1})=q(x_t\mid x_{t-1},x_0)=\frac{q(x_{t-1}\mid x_t,x_0)\,q(x_t\mid x_0)}{q(x_{t-1}\mid x_0)}$$
+$$
+q(x_t\mid x_{t-1})=q(x_t\mid x_{t-1},x_0)=\frac{q(x_{t-1}\mid x_t,x_0)\,q(x_t\mid x_0)}{q(x_{t-1}\mid x_0)}
+$$
 
 第一个等号用**马尔可夫性**：给定 $$x_{t-1}$$ 后，$$x_t$$ 与更早的历史（包括 $$x_0$$）无关，所以可以随手补上 $$x_0$$ 这个条件。第二个等号用**贝叶斯公式**，把 $$q(x_{t-1}\mid x_t,x_0)$$ 翻到分子上。取对数后：
 
-$$\log q(x_t\mid x_{t-1})=\log q(x_{t-1}\mid x_t,x_0)+\underbrace{\log q(x_t\mid x_0)-\log q(x_{t-1}\mid x_0)}_{\text{这两项在 }t\text{ 上逐项抵消}}$$
+$$
+\log q(x_t\mid x_{t-1})=\log q(x_{t-1}\mid x_t,x_0)+\underbrace{\log q(x_t\mid x_0)-\log q(x_{t-1}\mid x_0)}_{\text{这两项在 }t\text{ 上逐项抵消}}
+$$
 
 **第四步：对 $$t$$ 求和，中间项全部消掉。** 把上式按 $$t=1,\ldots,T$$ 加起来，下划线部分是一个望远镜和：
 
-$$\sum_{t=1}^{T}\big[\log q(x_t\mid x_0)-\log q(x_{t-1}\mid x_0)\big]=\log q(x_T\mid x_0)-\log q(x_0\mid x_0)=\log q(x_T\mid x_0)$$
+$$
+\sum_{t=1}^{T}\big[\log q(x_t\mid x_0)-\log q(x_{t-1}\mid x_0)\big]=\log q(x_T\mid x_0)-\log q(x_0\mid x_0)=\log q(x_T\mid x_0)
+$$
 
 中间每一个 $$\log q(x_s\mid x_0)$$ 都出现两次、符号相反，只剩首尾；末端的 $$q(x_0\mid x_0)=1$$（给定 $$x_0$$ 时它等于自己的概率是 1），对数为 0。于是整条前向链的联合对数密度只剩两项：
 
-$$\log q(x_{1:T}\mid x_0)=\sum_{t=1}^{T}\log q(x_{t-1}\mid x_t,x_0)+\log q(x_T\mid x_0)$$
+$$
+\log q(x_{1:T}\mid x_0)=\sum_{t=1}^{T}\log q(x_{t-1}\mid x_t,x_0)+\log q(x_T\mid x_0)
+$$
 
 **第五步：代回，按 $$t$$ 配对。** 把第二步和第四步的结果一起代进第一步：
 
-$$\mathrm{ELBO}=\mathbb E_q\Big[\log\frac{p(x_T)}{q(x_T\mid x_0)}\Big]+\sum_{t=1}^{T}\mathbb E_q\Big[\log\frac{p_\theta(x_{t-1}\mid x_t)}{q(x_{t-1}\mid x_t,x_0)}\Big]$$
+$$
+\mathrm{ELBO}=\mathbb E_q\Big[\log\frac{p(x_T)}{q(x_T\mid x_0)}\Big]+\sum_{t=1}^{T}\mathbb E_q\Big[\log\frac{p_\theta(x_{t-1}\mid x_t)}{q(x_{t-1}\mid x_t,x_0)}\Big]
+$$
 
 到这一步已经完成了一半：原来“对整条链的一个大期望”变成了“一个终端项 + $$T$$ 个逐步项”，每一项的分子分母都条件在同一个 $$x_t$$ 上、都在描述 $$x_{t-1}$$，这就是 KL 的形状。注意末端那项里没有 $$\theta$$，它只是望远镜剩下的尾巴。
 
 **第六步：$$t=1$$ 单独处理。** 求和里 $$t=1$$ 的那一项，分母是 $$q(x_0\mid x_1,x_0)$$——已经给定了 $$x_1$$ 再条件在 $$x_0$$ 上，$$x_0$$ 是确定量，这个分布退化成点质量，对数密度不再有意义。所以惯例是把这一项从求和里摘出来，不写成 KL，直接记作解码项：
 
-$$\mathbb E_q\log p_\theta(x_0\mid x_1)$$
+$$
+\mathbb E_q\log p_\theta(x_0\mid x_1)
+$$
 
 $$t=2,\ldots,T$$ 各项的分母 $$q(x_{t-1}\mid x_t,x_0)$$ 都是正常的连续高斯（下一小节给出闭式），可以写成 KL。
 
 **第七步：整理成三类。** 对 $$t\ge2$$，
 
-$$\mathbb E_q\Big[\log\frac{p_\theta(x_{t-1}\mid x_t)}{q(x_{t-1}\mid x_t,x_0)}\Big]=-D_{\mathrm{KL}}\big(q(x_{t-1}\mid x_t,x_0)\,\Vert\,p_\theta(x_{t-1}\mid x_t)\big)$$
+$$
+\mathbb E_q\Big[\log\frac{p_\theta(x_{t-1}\mid x_t)}{q(x_{t-1}\mid x_t,x_0)}\Big]=-D_{\mathrm{KL}}\big(q(x_{t-1}\mid x_t,x_0)\,\Vert\,p_\theta(x_{t-1}\mid x_t)\big)
+$$
 
 按 $$t$$ 把所有项分门别类：
 
@@ -290,11 +350,15 @@ $$\mathbb E_q\Big[\log\frac{p_\theta(x_{t-1}\mid x_t)}{q(x_{t-1}\mid x_t,x_0)}\B
 
 合起来就是：
 
-$$\mathrm{ELBO}=\mathbb E_q\log\frac{p(x_T)}{q(x_T\mid x_0)}+\sum_{t\ge2}\mathbb E_q\log\frac{p_\theta(x_{t-1}\mid x_t)}{q(x_{t-1}\mid x_t,x_0)}+\mathbb E_q\log p_\theta(x_0\mid x_1)$$
+$$
+\mathrm{ELBO}=\mathbb E_q\log\frac{p(x_T)}{q(x_T\mid x_0)}+\sum_{t\ge2}\mathbb E_q\log\frac{p_\theta(x_{t-1}\mid x_t)}{q(x_{t-1}\mid x_t,x_0)}+\mathbb E_q\log p_\theta(x_0\mid x_1)
+$$
 
 把符号翻过来就是最小化的写法：
 
-$$L_{\mathrm{vlb}}=\mathbb E\Big[\sum_{t>1}D_{\mathrm{KL}}\big(q(x_{t-1}\mid x_t,x_0)\,\Vert\,p_\theta(x_{t-1}\mid x_t)\big)-\log p_\theta(x_0\mid x_1)\Big]$$
+$$
+L_{\mathrm{vlb}}=\mathbb E\Big[\sum_{t>1}D_{\mathrm{KL}}\big(q(x_{t-1}\mid x_t,x_0)\,\Vert\,p_\theta(x_{t-1}\mid x_t)\big)-\log p_\theta(x_0\mid x_1)\Big]
+$$
 
 每一项都是两个高斯的 KL：真实后验 $$q(x_{t-1}\mid x_t,x_0)$$（闭式，下一小节给出）与模型 $$p_\theta(x_{t-1}\mid x_t)$$，两个高斯的 KL 有解析式，所以整个目标可以逐项算出来——这正是“拆成逐项”的目的。
 
@@ -304,35 +368,49 @@ $$L_{\mathrm{vlb}}=\mathbb E\Big[\sum_{t>1}D_{\mathrm{KL}}\big(q(x_{t-1}\mid x_t
 
 后验只在给定 $$x_0$$ 时才是可算的（否则要积分整条链）。用贝叶斯公式加马尔可夫性，它只涉及两个已知高斯：
 
-$$q(x_{t-1}\mid x_t,x_0)\ \propto\ q(x_t\mid x_{t-1})\,q(x_{t-1}\mid x_0)$$
+$$
+q(x_{t-1}\mid x_t,x_0)\ \propto\ q(x_t\mid x_{t-1})\,q(x_{t-1}\mid x_0)
+$$
 
-$$\propto\ \exp\Big(-\frac{\lVert x_t-\sqrt{\alpha_t}\,x_{t-1}\rVert^2}{2\beta_t}-\frac{\lVert x_{t-1}-\sqrt{\bar\alpha_{t-1}}\,x_0\rVert^2}{2(1-\bar\alpha_{t-1})}\Big)$$
+$$
+\propto\ \exp\Big(-\frac{\lVert x_t-\sqrt{\alpha_t}\,x_{t-1}\rVert^2}{2\beta_t}-\frac{\lVert x_{t-1}-\sqrt{\bar\alpha_{t-1}}\,x_0\rVert^2}{2(1-\bar\alpha_{t-1})}\Big)
+$$
 
 指数上是 $$x_{t-1}$$ 的二次型，所以结果必是高斯，两个参数各由一次加法得到。
 
 **精度相加**（两个高斯相乘，二次项系数相加）：
 
-$$\frac{1}{\tilde\beta_t}=\frac{\alpha_t}{\beta_t}+\frac{1}{1-\bar\alpha_{t-1}}\quad\Longrightarrow\quad \tilde\beta_t=\frac{\beta_t(1-\bar\alpha_{t-1})}{\alpha_t(1-\bar\alpha_{t-1})+\beta_t}=\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\beta_t$$
+$$
+\frac{1}{\tilde\beta_t}=\frac{\alpha_t}{\beta_t}+\frac{1}{1-\bar\alpha_{t-1}}\quad\Longrightarrow\quad \tilde\beta_t=\frac{\beta_t(1-\bar\alpha_{t-1})}{\alpha_t(1-\bar\alpha_{t-1})+\beta_t}=\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\beta_t
+$$
 
 分母 $$\alpha_t(1-\bar\alpha_{t-1})+\beta_t$$ 就是 §2.3 归纳一步里出现过的那一项，它等于 $$1-\bar\alpha_t$$——同一个恒等式在换了个地方起作用。
 
 **均值取精度加权**（两个高斯的均值按各自精度加权平均）：
 
-$$\tilde\mu_t=\tilde\beta_t\Big(\frac{\sqrt{\alpha_t}}{\beta_t}x_t+\frac{\sqrt{\bar\alpha_{t-1}}}{1-\bar\alpha_{t-1}}x_0\Big)=\frac{\sqrt{\bar\alpha_{t-1}}\,\beta_t}{1-\bar\alpha_t}x_0+\frac{\sqrt{\alpha_t}\,(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}x_t$$
+$$
+\tilde\mu_t=\tilde\beta_t\Big(\frac{\sqrt{\alpha_t}}{\beta_t}x_t+\frac{\sqrt{\bar\alpha_{t-1}}}{1-\bar\alpha_{t-1}}x_0\Big)=\frac{\sqrt{\bar\alpha_{t-1}}\,\beta_t}{1-\bar\alpha_t}x_0+\frac{\sqrt{\alpha_t}\,(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}x_t
+$$
 
 这就是下文反复用到的两个量：$$\tilde\mu_t$$ 是 §5.1 采样时模型要拟合的目标，$$\tilde\beta_t$$ 是 §5.3 讨论“最后一步为什么加噪”时那个 $$\sigma_t^2$$ 的 DDPM 取值。
 
 DDPM 的做法是：既然网络可以直接预测噪声 $$\epsilon$$，就用它把 $$\tilde\mu_t$$ 重参数化，再把目标换成预测噪声与真噪声之间的均方误差，并**丢掉 KL 带来的那组时间权重**：
 
-$$L_{\mathrm{simple}}=\mathbb E_{x_0,\,t,\,\epsilon}\Big\lVert\epsilon-\epsilon_\theta(x_t,t)\Big\rVert^2$$
+$$
+L_{\mathrm{simple}}=\mathbb E_{x_0,\,t,\,\epsilon}\Big\lVert\epsilon-\epsilon_\theta(x_t,t)\Big\rVert^2
+$$
 
 #### 丢掉的那组权重有多大
 
 $$L_{t-1}$$ 里随 $$t$$ 变化的只有 $$1/(2\tilde\beta_t)$$。把 $$\mu_\theta$$ 用 $$\epsilon_\theta$$ 写开（§5.1），两个均值之差就正比于两个噪声之差：
 
-$$\big\lVert\tilde\mu_t-\mu_\theta\big\rVert^2=\frac{\beta_t^{2}}{\alpha_t(1-\bar\alpha_t)}\big\lVert\epsilon-\epsilon_\theta\big\rVert^2$$
+$$
+\big\lVert\tilde\mu_t-\mu_\theta\big\rVert^2=\frac{\beta_t^{2}}{\alpha_t(1-\bar\alpha_t)}\big\lVert\epsilon-\epsilon_\theta\big\rVert^2
+$$
 
-$$\Longrightarrow\quad L_{t-1}=\frac{\beta_t^{2}}{2\tilde\beta_t\,\alpha_t(1-\bar\alpha_t)}\big\lVert\epsilon-\epsilon_\theta\big\rVert^2=\frac{\beta_t}{2\alpha_t(1-\bar\alpha_{t-1})}\big\lVert\epsilon-\epsilon_\theta\big\rVert^2$$
+$$
+\Longrightarrow\quad L_{t-1}=\frac{\beta_t^{2}}{2\tilde\beta_t\,\alpha_t(1-\bar\alpha_t)}\big\lVert\epsilon-\epsilon_\theta\big\rVert^2=\frac{\beta_t}{2\alpha_t(1-\bar\alpha_{t-1})}\big\lVert\epsilon-\epsilon_\theta\big\rVert^2
+$$
 
 这个系数在时间轴上跨了两个数量级（线性调度，脚本直接算出）：
 
@@ -364,15 +442,21 @@ $$L_{\mathrm{simple}}$$ 把它一律换成 1：相对 $$t=500$$，$$t=2$$ 那一
 
 学习到的反向转移是一个高斯：
 
-$$p_\theta(x_{t-1}\mid x_t)=\mathcal N\big(x_{t-1};\ \mu_\theta(x_t,t),\ \sigma_t^2 I\big)$$
+$$
+p_\theta(x_{t-1}\mid x_t)=\mathcal N\big(x_{t-1};\ \mu_\theta(x_t,t),\ \sigma_t^2 I\big)
+$$
 
 用 §4.1 的 $$\tilde\mu_t$$ 做模板、把其中的 $$x_0$$ 换成从当前预测反解出来的干净图像
 
-$$\hat x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\,\epsilon_\theta(x_t,t)}{\sqrt{\bar\alpha_t}}$$
+$$
+\hat x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\,\epsilon_\theta(x_t,t)}{\sqrt{\bar\alpha_t}}
+$$
 
 代入即得：
 
-$$\mu_\theta(x_t,t)=\frac{1}{\sqrt{\alpha_t}}\Big(x_t-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\,\epsilon_\theta(x_t,t)\Big)$$
+$$
+\mu_\theta(x_t,t)=\frac{1}{\sqrt{\alpha_t}}\Big(x_t-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\,\epsilon_\theta(x_t,t)\Big)
+$$
 
 完整采样循环（**这里用的是数组下标**，与 §2.5 的映射表对照：`t` 对应论文时间步 $$t+1$$）：
 
@@ -410,9 +494,13 @@ $$\sigma_t$$ 是**后验的标准差**，不是随手写的学习率：$$\tilde\
 
 DDIM 的关键观察是：**前向过程不必非要马尔可夫**。只要满足边际条件 $$q(x_t\mid x_0)=\mathcal N(\sqrt{\bar\alpha_t}x_0,(1-\bar\alpha_t)I)$$，前向链有无穷多种取法（不同的联合结构，同一个边际——正是 §2.4 第 3 点说的那件事）；换一种取法，反向采样就变成：
 
-$$x_{t-1}=\sqrt{\bar\alpha_{t-1}}\,\hat x_0+\sqrt{1-\bar\alpha_{t-1}-\sigma_t^2}\,\epsilon_\theta(x_t,t)+\sigma_t\epsilon_t$$
+$$
+x_{t-1}=\sqrt{\bar\alpha_{t-1}}\,\hat x_0+\sqrt{1-\bar\alpha_{t-1}-\sigma_t^2}\,\epsilon_\theta(x_t,t)+\sigma_t\epsilon_t
+$$
 
-$$\sigma_t^2=\eta\cdot\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\Big(1-\frac{\bar\alpha_t}{\bar\alpha_{t-1}}\Big)$$
+$$
+\sigma_t^2=\eta\cdot\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\Big(1-\frac{\bar\alpha_t}{\bar\alpha_{t-1}}\Big)
+$$
 
 其中 $$\hat x_0$$ 用 §5.1 的式子反解，$$\epsilon_t\sim\mathcal N(0,I)$$。参数行为：
 
@@ -490,7 +578,9 @@ DDPM 用的是带注意力机制的 U-Net：
 - **线性调度**（DDPM 原论文）：$$\beta_t$$ 从 $$10^{-4}$$ 线性增长到 $$0.02$$、$$T=1000$$。简单，但在接近纯噪声的区间上“消耗”了太多步数——它们对应的 SNR 已经极低，对最终质量贡献很小。
 - **余弦调度**（Improved DDPM）：直接对 $$\bar\alpha_t$$ 而不是 $$\beta_t$$ 做约束，
 
-  $$\bar\alpha_t=\frac{f(t)}{f(0)},\qquad f(t)=\cos^2\Big(\frac{t/T+s}{1+s}\cdot\frac{\pi}{2}\Big)$$
+$$
+\bar\alpha_t=\frac{f(t)}{f(0)},\qquad f(t)=\cos^2\Big(\frac{t/T+s}{1+s}\cdot\frac{\pi}{2}\Big)
+$$
 
   偏移 $$s=0.008$$ 用来防止 $$t$$ 很小时 $$\beta_t$$ 过小。它在中间段近似线性，两端刻意放缓，让采样珍贵的步数集中在对质量最敏感的中等噪声区间。
 
@@ -555,4 +645,3 @@ DDPM 的价值可以概括成三句话：
 4. **High-Resolution Image Synthesis with Latent Diffusion Models** — Rombach et al., CVPR 2022（arXiv:2112.10752）。<https://arxiv.org/abs/2112.10752>
 5. **DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps** — Lu et al., NeurIPS 2022（arXiv:2206.00927）。<https://arxiv.org/abs/2206.00927>
 6. **Consistency Models** — Song et al., ICML 2023（arXiv:2303.01469）。<https://arxiv.org/abs/2303.01469>
-

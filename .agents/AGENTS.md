@@ -40,7 +40,7 @@
 ## 4. 动笔前 / 改任何东西前
 
 1. 写新长文：先读 `.workbuddy/memory/topics/series-boundaries.md`（系列边界 + 已核正事实）
-2. 写公式：先读 user-level skill `kramdown-math-render-fix`
+2. 写公式：先读 user-level skill `kramdown-math-render-fix`；**行内与行间的写法区别**（行内 `$$…$$` 夹句中、行间三行式且前后空行、绝不用单 `$`）见 `WRITING.md` §5
 3. 写完：跑 `WRITING.md` §8 的六步校验，**全过才可提交**（TL;DR 有专项 `tools/check_tldr.py`）
 4. 改 `_data/knowledge_graph.yml` 或 `assets/js/kg-layout.js`：
    `node tools/kg_layout_check.mjs`（pre-commit 已挂，失败阻断提交）

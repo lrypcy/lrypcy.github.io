@@ -65,18 +65,32 @@ def strip_fenced_blocks(lines):
 
 
 def count_source_math(lines):
-    """统计源码里的行内/块级公式数。块级 = 整行只有一个 $$...$$。
+    """统计源码里的行内/块级公式数。
+
+    块级有两种写法，都要认：
+    - 单行 `$$...$$`（整行只有一个公式，历史写法）
+    - 三行式：`$$` 独占一行 → 公式内容 → `$$` 再独占一行（`WRITING.md` §5 的规范写法）
 
     注意：先剥掉引用块前缀（`> `、`>   `）。TL;DR 与提示块里独占一行的
     `$$...$$` 在 kramdown 里同样渲染成块级 `\\[...\\]`；不剥前缀会把它
     误算成行内，从而报出假的“行内公式没被转换”。
     """
     inline = block = 0
+    pending = False          # 三行式块内（已见到开头的单独 $$）
     for line in lines:
         s = line.strip()
         if not s or s.startswith("|"):
             continue
         stripped_line = re.sub(r"^(?:>\s*)+", "", s).strip()
+        if stripped_line == "$$":
+            if pending:
+                block += 1
+                pending = False
+            else:
+                pending = True
+            continue
+        if pending:
+            continue         # 三行式中间的公式内容行
         # 整行 $$ ... $$ → 块级
         m = re.fullmatch(r"\$\$(.+?)\$\$", stripped_line)
         if m:
