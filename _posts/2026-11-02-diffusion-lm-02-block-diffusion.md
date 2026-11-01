@@ -226,4 +226,4 @@ python block_diff_lab.py A B        # 只跑指定组
 ## 上一篇 / 下一篇
 
 - 上一篇：[扩散语言模型（01）：离散扩散的 ELBO——为什么「掩码 + 1/t 权重」就够用了](/2026/10/12/diffusion-lm-01-discrete-diffusion-elbo/)
-- 下一篇（回到连续域）：[扩散模型的少步生成：一致性模型到底把什么换成了步数](/2026/11/01/diffusion-few-step/)
+- 下一篇：[扩散模型的计算账本：视频为什么贵，贵在哪一条轴上](/2026/11/02/diffusion-video-token/)
