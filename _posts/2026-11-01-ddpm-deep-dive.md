@@ -230,7 +230,7 @@ $$\log p_\theta(x_0)=\log\mathbb E_q\Big[\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid 
 
 $$\log p_\theta(x_0)-\underbrace{\mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]}_{\mathrm{ELBO}}=\mathrm{KL}\big(q(x_{1:T}\mid x_0)\,\Vert\,p_\theta(x_{1:T}\mid x_0)\big)\ \ge\ 0$$
 
-这就把“变分下界”四个字拆开了：$$q$$ 是人为挑的近似后验（**variational**），它给出的是一个下界（**lower bound**），$$q$$ 越接近真实反向链，界越紧。DDPM 在这里有一处特殊——$$q$$ 不是学出来的，而是被前向调度钉死的，所以界紧不紧取决于高斯前向过程与数据分布的匹配程度，**$$\theta$$ 再强也只能把界抬高，改不了界的紧度**。
+这就是 [ELBO](/2026/10/13/vae-01-elbo-reparameterization-latent-space/)（evidence lower bound，即“变分下界”）这个缩写的来历——四个字要拆成两半看：$$q$$ 是人为挑的近似后验（**variational**），它给出的是一个下界（**lower bound**），$$q$$ 越接近真实反向链，界越紧。DDPM 在这里有一处特殊——$$q$$ 不是学出来的，而是被前向调度钉死的，所以界紧不紧取决于高斯前向过程与数据分布的匹配程度，**$$\theta$$ 再强也只能把界抬高，改不了界的紧度**。
 
 #### ELBO 是怎么拆成逐项 KL 的
 
