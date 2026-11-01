@@ -10,7 +10,7 @@ excerpt: "文本上的扩散不能照搬图像：离散 token 加不了高斯噪
 ---
 
 > **系列导航** ｜ 本系列承接 [Flow Matching 建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/) 里的离散域部分，把它展开成完整的一条线。
-> 上一篇：无（系列首篇）｜ 下一篇：[02 块扩散与 KV Cache](/2026/11/02/diffusion-lm-02-block-diffusion/)
+> 上一篇：无（系列首篇）｜ 下一篇：[02 块扩散——同时解几个 token，就丢掉多少互信息](/2026/11/02/diffusion-lm-02-block-diffusion/)
 
 > **TL;DR**
 >
@@ -356,7 +356,7 @@ loss = -(w * (token_logp * is_mask).sum(axis=1) / np.maximum(is_mask.sum(axis=1)
 
 1. `t` 必须**每条样本独立采样**；整批共用一个值会显著减少模型见到的掩码率多样性。
 2. 别忘了指示函数：未掩码位置的信息已经泄漏，算进去会污染损失。
-3. 架构上唯一必需的改动是**去掉 causal mask**（双向注意力）。这也是后续一切麻烦的起点——双向注意力与 KV cache 天生冲突，本系列下一篇就讲这件事怎么和解。
+3. 架构上唯一必需的改动是**去掉 causal mask**（双向注意力）。这也是后续一切麻烦的起点——双向注意力与 KV cache 天生冲突，本系列下一篇会把「一次并行解几个 token」和「缓存究竟能省哪一项」这两笔账分别算成闭式。
 
 ### 10.3 真实训练里还有四个坑
 
@@ -369,7 +369,7 @@ loss = -(w * (token_logp * is_mask).sum(axis=1) / np.maximum(is_mask.sum(axis=1)
 | 输出长度 | 朴素实现固定生成 $$L$$ 个 token | 让一部分训练样本长度随机取自 $$[1,L]$$，并把 `EOS` 也纳入掩码与损失，模型才能自己决定何时停 [5](https://arxiv.org/html/2502.09992) |
 | 掩码 token 的嵌入 | 训练初期 loss 异常、不稳定 |  masked token embedding 上加一点独立噪声可以抑制早期数值不稳定（厂商/二手来源，见 [LLaDA 2.0 技术报告](https://github.com/inclusionAI/LLaDA2.0)） |
 
-其中第三条最容易被忽视：变长生成不是"推理时截断"，而是训练时就要让模型见过不填满的序列。这是块扩散（本系列下一篇）要解决的核心问题之一。
+其中第三条最容易被忽视：变长生成不是"推理时截断"，而是训练时就要让模型见过不填满的序列。
 
 ---
 
@@ -381,7 +381,7 @@ loss = -(w * (token_logp * is_mask).sum(axis=1) / np.maximum(is_mask.sum(axis=1)
 - 掩码率必须随机化。固定 15% 在 20 万样本里一次都没见到全掩码上下文，$$t=1$$ 处退化成均匀分布。
 - 并行解码的代价来自 $$\tau$$-leaping 的条件独立假设，误差随每步提交数线性增长；提交顺序（confidence / semi-AR 优于 random）比步数本身更关键。
 
-下一篇进入块扩散：为什么双向注意力与 KV cache 冲突，块化怎么同时解决变长生成与缓存复用，以及 Fast-dLLM / dInfer / SGLang 这条工程线是怎么落地的。
+下一篇进入块扩散：块内双向、块间因果，一次解一整个块。它不问「工程上怎么加速」，而是先把两笔账算清——一次同时解几个 token，在结构上究竟丢掉了什么（答案恰好是同组 token 之间的条件 total correlation），以及 KV cache 抹掉的到底是哪一项成本。
 
 ---
 
@@ -401,4 +401,7 @@ loss = -(w * (token_logp * is_mask).sum(axis=1) / np.maximum(is_mask.sum(axis=1)
 
 > 🧪 **动手练习**：① 把 `elbo_masked_diffusion/run.py` 里的线性表 $$\alpha_t=1-t$$ 换成余弦表，重跑 C 组，看带 $$1/t$$ 的损失是否仍等于 NLL（预期：仍相等，因为目标对时间表形式不敏感，只依赖端点）；② 把 B 组的序列长度从 6 加到 8，观察固定 15% 方案的全掩码观测次数与 CE@1.00 如何变化；③ 在 `parallel_decoding_independence/run.py` 里把两个 token 的相关性从 0.9 降到 0.6，验证并行解码的相对误差是否随之缩小——这能直接给出“什么时候可以放心并行”的经验阈值。
 
-> **上一篇**：无（系列首篇）｜ **下一篇**：02 块扩散与 KV Cache（写作中）
+## 上一篇 / 下一篇
+
+- 上一篇：无（系列首篇）
+- 下一篇：[扩散语言模型（02）：块扩散——同时解几个 token，就丢掉多少互信息](/2026/11/02/diffusion-lm-02-block-diffusion/)
