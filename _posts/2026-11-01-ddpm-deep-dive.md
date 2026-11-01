@@ -161,6 +161,28 @@ $$\mathrm{TE}(t)=\big[\sin(\omega_1 t),\cos(\omega_1 t),\ldots,\sin(\omega_d t),
 
 $$L_{\mathrm{vlb}}=\mathbb E\Big[\sum_{t>1}D_{\mathrm{KL}}\big(q(x_{t-1}\mid x_t,x_0)\,\|\,p_\theta(x_{t-1}\mid x_t)\big)-\log p_\theta(x_0\mid x_1)\Big]$$
 
+#### ELBO 是怎么拆成逐项 KL 的
+
+真目标算不出来：$$\log p_\theta(x_0)=\log\int p_\theta(x_{0:T})\,\mathrm dx_{1:T}$$ 是 $$T\times d$$ 维积分，既没有闭式也没法直接求梯度。前向链 $$q(x_{1:T}\mid x_0)$$ 完全由调度指定、不含参数，正好拿来当提议分布——乘一个 $$q$$ 再除一个 $$q$$，再用一次 Jensen：
+
+$$\log p_\theta(x_0)=\log\mathbb E_q\Big[\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]\ \ge\ \mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]$$
+
+等号是重要性采样，不等号是 Jensen；两者之间的差正是两条整链的 KL，所以这个下界只会被 $$q$$ 与真实反向链的差距拖低——这就是“变分下界”四个字的全部含义。
+
+接下来的关键是把整链的差拆成逐项。分子分母都按链展开：
+
+$$p_\theta(x_{0:T})=p(x_T)\prod_{t=1}^{T}p_\theta(x_{t-1}\mid x_t),\qquad q(x_{1:T}\mid x_0)=\prod_{t=1}^{T}q(x_t\mid x_{t-1})$$
+
+再把每一条前向转移用贝叶斯改写成含 $$x_0$$ 的形式：
+
+$$q(x_t\mid x_{t-1})=q(x_{t-1}\mid x_t,x_0)\cdot\frac{q(x_t\mid x_0)}{q(x_{t-1}\mid x_0)}$$
+
+代进去求和，后面那个分式在 $$t$$ 上是望远镜：$$\sum_t\big[\log q(x_t\mid x_0)-\log q(x_{t-1}\mid x_0)\big]=\log q(x_T\mid x_0)$$。剩下的正好三项：
+
+$$\mathrm{ELBO}=\mathbb E_q\log\frac{p(x_T)}{q(x_T\mid x_0)}+\sum_{t\ge2}\mathbb E_q\log\frac{p_\theta(x_{t-1}\mid x_t)}{q(x_{t-1}\mid x_t,x_0)}+\mathbb E_q\log p_\theta(x_0\mid x_1)$$
+
+把符号翻过来就是最小化的写法：三项分别是起点项 $$L_T$$、去噪项 $$L_{t-1}$$（重复 $$T-1$$ 次）、解码项 $$L_0$$。开头那条 $$L_{\mathrm{vlb}}$$ 里看不到 $$L_T$$，因为它不含 $$\theta$$——$$p(x_T)$$ 是固定先验、$$q(x_T\mid x_0)$$ 由调度决定，整项是常数，对梯度没有贡献，实现里直接丢掉。
+
 #### 真实后验的两个参数
 
 后验只在给定 $$x_0$$ 时才是可算的（否则要积分整条链）。用贝叶斯公式加马尔可夫性，它只涉及两个已知高斯：
@@ -186,6 +208,22 @@ $$\tilde\mu_t=\tilde\beta_t\Big(\frac{\sqrt{\alpha_t}}{\beta_t}x_t+\frac{\sqrt{\
 DDPM 的做法是：既然网络可以直接预测噪声 $$\epsilon$$，就用它把 $$\tilde\mu_t$$ 重参数化，再把目标换成预测噪声与真噪声之间的均方误差，并**丢掉 KL 带来的那组时间权重**：
 
 $$L_{\mathrm{simple}}=\mathbb E_{x_0,\,t,\,\epsilon}\Big\lVert\epsilon-\epsilon_\theta(x_t,t)\Big\rVert^2$$
+
+#### 丢掉的那组权重有多大
+
+$$L_{t-1}$$ 里随 $$t$$ 变化的只有 $$1/(2\tilde\beta_t)$$。把 $$\mu_\theta$$ 用 $$\epsilon_\theta$$ 写开（§5.1），两个均值之差就正比于两个噪声之差：
+
+$$\big\lVert\tilde\mu_t-\mu_\theta\big\rVert^2=\frac{\beta_t^{2}}{\alpha_t(1-\bar\alpha_t)}\big\lVert\epsilon-\epsilon_\theta\big\rVert^2$$
+
+$$\Longrightarrow\quad L_{t-1}=\frac{\beta_t^{2}}{2\tilde\beta_t\,\alpha_t(1-\bar\alpha_t)}\big\lVert\epsilon-\epsilon_\theta\big\rVert^2=\frac{\beta_t}{2\alpha_t(1-\bar\alpha_{t-1})}\big\lVert\epsilon-\epsilon_\theta\big\rVert^2$$
+
+这个系数在时间轴上跨了两个数量级（线性调度，脚本直接算出）：
+
+| $$t$$ | 2 | 10 | 100 | 500 | 1000 |
+| --- | --- | --- | --- | --- | --- |
+| 系数 $$\beta_t\big/\big(2\alpha_t(1-\bar\alpha_{t-1})\big)$$ | 0.5997 | 0.0864 | 0.0103 | 0.0055 | 0.0102 |
+
+$$L_{\mathrm{simple}}$$ 把它一律换成 1：相对 $$t=500$$，$$t=2$$ 那一项被压低了 108.9 倍，等于把注意力的重心整体推向高噪声段。这是经验选择而不是推导结果——原论文报的是 FID 更好，代价随即可见：**换掉权重之后，目标不再对应任何一个似然下界**。
 
 这个简化是有代价的，必须写清楚：
 
@@ -371,7 +409,7 @@ DDPM 的价值可以概括成三句话：
 
 ## 十、实验复现
 
-文中所有实测数字来自一个纯 PyTorch、纯 CPU 的脚本：`ddpm_lab.py`（87 条断言，全量约 26 秒，torch 2.10.0 / float64），固定种子 `20261101`，放在 ipynbs 仓库的 [experiments/diffusion/ddpm-timestep](https://github.com/lrypcy/ipynbs/tree/a470680/experiments/diffusion/ddpm-timestep)（README 里有逐组结论，`results/stdout.txt` 是本机实跑的完整输出）。设置统一为 $$T=1000$$、$$\beta$$ 从 $$10^{-4}$$ 线性到 $$0.02$$、余弦偏移 $$s=0.008$$。
+文中所有实测数字来自一个纯 PyTorch、纯 CPU 的脚本：`ddpm_lab.py`（90 条断言，全量约 26 秒，torch 2.10.0 / float64），固定种子 `20261101`，放在 ipynbs 仓库的 [experiments/diffusion/ddpm-timestep](https://github.com/lrypcy/ipynbs/tree/fff07eb/experiments/diffusion/ddpm-timestep)（README 里有逐组结论，`results/stdout.txt` 是本机实跑的完整输出）。设置统一为 $$T=1000$$、$$\beta$$ 从 $$10^{-4}$$ 线性到 $$0.02$$、余弦偏移 $$s=0.008$$。
 
 选 torch 而不是 numpy 有两个理由：一是调度、$$q(x_t\mid x_0)$$ 与 DDIM 更新式在真实框架里就是逐元素张量运算，照 diffusers 的写法抄下来，读的人可以直接搬过去对照；二是 $$x_t$$ 的形状与真实训练代码一致，后续想把这个 toy 升级成真的 U-Net 不必重写数据管线。代价是纯 Python 的逐步递推比 numpy 版慢（12 秒 → 26 秒）。
 
