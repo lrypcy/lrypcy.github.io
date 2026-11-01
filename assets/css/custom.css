@@ -3357,3 +3357,54 @@ html.rail-off .rail-toggle { padding: 0; width: 26px; justify-content: center; }
   .news-cat, .daily-cat { font-size: 11px; padding: 4px 9px; }
   .daily-page .post-body h2 { margin-top: 34px; }
 }
+
+/* ========== 公式复制（assets/js/math-copy.js） ==========
+   点击公式复制 LaTeX：行内只给指针与浅底，行间另加右上角按钮。
+   按钮挂在 .math-copy-wrap 上，因为 mjx-container 自己 overflow-x: auto 会裁掉绝对定位子元素。 */
+mjx-container.math-copyable {
+  cursor: copy;
+  border-radius: 6px;
+  transition: background-color .15s ease;
+}
+mjx-container.math-copyable:hover { background-color: rgba(59, 130, 246, .07); }
+mjx-container.math-copyable.is-copied { background-color: rgba(34, 197, 94, .18); }
+mjx-container.math-copyable:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+
+.math-copy-wrap { position: relative; }
+.math-copy-wrap > mjx-container[display="true"] { margin: 14px 0; }
+
+.math-copy-btn {
+  position: absolute; top: 4px; right: 4px;
+  width: 26px; height: 26px; padding: 0;
+  display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--card-bg); color: var(--text-light);
+  cursor: pointer; opacity: 0; transform: translateY(-2px);
+  transition: opacity .15s ease, transform .15s ease, color .15s ease, border-color .15s ease;
+}
+.math-copy-wrap:hover .math-copy-btn,
+.math-copy-btn:focus-visible { opacity: 1; transform: translateY(0); }
+.math-copy-btn:hover { color: var(--primary); border-color: var(--primary-light); }
+.math-copy-btn:active { transform: translateY(0) scale(.94); }
+/* 触屏没有 hover，按钮常驻但淡一点，免得误以为挡公式 */
+@media (hover: none) { .math-copy-btn { opacity: .7; } }
+
+#math-copy-toast {
+  position: fixed; left: 50%; bottom: 32px; z-index: 80;
+  padding: 8px 16px; border-radius: 999px;
+  background: rgba(26, 35, 50, .92); color: #fff;
+  font-size: 13px; line-height: 1.4;
+  opacity: 0; pointer-events: none;
+  transform: translateX(-50%) translateY(10px);
+  transition: opacity .18s ease, transform .18s ease;
+}
+#math-copy-toast.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
+#math-copy-toast.is-bad { background: rgba(190, 45, 45, .94); }
+
+@media (prefers-color-scheme: dark) {
+  mjx-container.math-copyable:hover { background-color: rgba(125, 180, 255, .13); }
+  mjx-container.math-copyable.is-copied { background-color: rgba(34, 197, 94, .24); }
+  .math-copy-btn { background: #1f2438; border-color: #39414e; color: #b9c4d4; }
+  .math-copy-btn:hover { color: #93c5fd; border-color: #4b5b7a; }
+  #math-copy-toast { background: rgba(233, 238, 246, .95); color: #1a2332; }
+}
