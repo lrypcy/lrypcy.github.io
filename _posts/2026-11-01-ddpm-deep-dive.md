@@ -228,31 +228,77 @@ $$\log p_\theta(x_0)=\log\mathbb E_q\Big[\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid 
 
 代价很清楚——得到的是下界，不是似然本身。差多少？恰好是两条整链的 KL：
 
-$$\log p_\theta(x_0)-\underbrace{\mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]}_{\mathrm{ELBO}}=\mathrm{KL}\big(q(x_{1:T}\mid x_0)\,\|\,p_\theta(x_{1:T}\mid x_0)\big)\ \ge\ 0$$
+$$\log p_\theta(x_0)-\underbrace{\mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]}_{\mathrm{ELBO}}=\mathrm{KL}\big(q(x_{1:T}\mid x_0)\,\Vert\,p_\theta(x_{1:T}\mid x_0)\big)\ \ge\ 0$$
 
 这就把“变分下界”四个字拆开了：$$q$$ 是人为挑的近似后验（**variational**），它给出的是一个下界（**lower bound**），$$q$$ 越接近真实反向链，界越紧。DDPM 在这里有一处特殊——$$q$$ 不是学出来的，而是被前向调度钉死的，所以界紧不紧取决于高斯前向过程与数据分布的匹配程度，**$$\theta$$ 再强也只能把界抬高，改不了界的紧度**。
 
 #### ELBO 是怎么拆成逐项 KL 的
 
-上面那个期望仍是对整条链求的，逐条采样再求梯度依然昂贵。真正让它变成可训练损失的，是把整链的差拆成逐项。分子分母都按链展开：
+上面那个期望仍是对**整条链**求的，逐条采样再求梯度依然昂贵。真正让它变成可训练损失的，是把整链的差拆成逐项——拆完之后每一项只涉及相邻两个时刻，可以直接采样、也可以写成 KL。下面把过程走全。
 
-$$p_\theta(x_{0:T})=p(x_T)\prod_{t=1}^{T}p_\theta(x_{t-1}\mid x_t),\qquad q(x_{1:T}\mid x_0)=\prod_{t=1}^{T}q(x_t\mid x_{t-1})$$
+**第一步：写成对数差。** 记
 
-再把每一条前向转移用贝叶斯改写成含 $$x_0$$ 的形式：
+$$\mathrm{ELBO}=\mathbb E_q\Big[\log\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\Big]=\mathbb E_q\big[\log p_\theta(x_{0:T})-\log q(x_{1:T}\mid x_0)\big]$$
 
-$$q(x_t\mid x_{t-1})=q(x_{t-1}\mid x_t,x_0)\cdot\frac{q(x_t\mid x_0)}{q(x_{t-1}\mid x_0)}$$
+**第二步：两条链各自展开。** 乘积取对数变求和：
 
-代进去求和，后面那个分式在 $$t$$ 上是望远镜：$$\sum_t\big[\log q(x_t\mid x_0)-\log q(x_{t-1}\mid x_0)\big]=\log q(x_T\mid x_0)$$。剩下的正好三项：
+$$\log p_\theta(x_{0:T})=\log p(x_T)+\sum_{t=1}^{T}\log p_\theta(x_{t-1}\mid x_t)$$
+
+$$\log q(x_{1:T}\mid x_0)=\sum_{t=1}^{T}\log q(x_t\mid x_{t-1})$$
+
+注意两条链的步数是**一一对应**的：反向链第 $$t$$ 步从 $$x_t$$ 生成 $$x_{t-1}$$，前向链第 $$t$$ 步从 $$x_{t-1}$$ 走到 $$x_t$$，两边的下标恰好咬合。这是后面能逐项配对的前提。
+
+**第三步：把前向的每一项改写成“条件在 $$x_0$$ 上、中心在 $$x_{t-1}$$”的形式。** 为什么要改？因为分子里是 $$p_\theta(x_{t-1}\mid x_t)$$，要凑成一个关于 $$x_{t-1}$$ 的 KL，分母也必须是“给定 $$x_t$$ 时 $$x_{t-1}$$ 的分布”。而前向链给出的是 $$q(x_t\mid x_{t-1})$$，方向正好相反，所以要翻转：
+
+$$q(x_t\mid x_{t-1})=q(x_t\mid x_{t-1},x_0)=\frac{q(x_{t-1}\mid x_t,x_0)\,q(x_t\mid x_0)}{q(x_{t-1}\mid x_0)}$$
+
+第一个等号用**马尔可夫性**：给定 $$x_{t-1}$$ 后，$$x_t$$ 与更早的历史（包括 $$x_0$$）无关，所以可以随手补上 $$x_0$$ 这个条件。第二个等号用**贝叶斯公式**，把 $$q(x_{t-1}\mid x_t,x_0)$$ 翻到分子上。取对数后：
+
+$$\log q(x_t\mid x_{t-1})=\log q(x_{t-1}\mid x_t,x_0)+\underbrace{\log q(x_t\mid x_0)-\log q(x_{t-1}\mid x_0)}_{\text{这两项在 }t\text{ 上逐项抵消}}$$
+
+**第四步：对 $$t$$ 求和，中间项全部消掉。** 把上式按 $$t=1,\ldots,T$$ 加起来，下划线部分是一个望远镜和：
+
+$$\sum_{t=1}^{T}\big[\log q(x_t\mid x_0)-\log q(x_{t-1}\mid x_0)\big]=\log q(x_T\mid x_0)-\log q(x_0\mid x_0)=\log q(x_T\mid x_0)$$
+
+中间每一个 $$\log q(x_s\mid x_0)$$ 都出现两次、符号相反，只剩首尾；末端的 $$q(x_0\mid x_0)=1$$（给定 $$x_0$$ 时它等于自己的概率是 1），对数为 0。于是整条前向链的联合对数密度只剩两项：
+
+$$\log q(x_{1:T}\mid x_0)=\sum_{t=1}^{T}\log q(x_{t-1}\mid x_t,x_0)+\log q(x_T\mid x_0)$$
+
+**第五步：代回，按 $$t$$ 配对。** 把第二步和第四步的结果一起代进第一步：
+
+$$\mathrm{ELBO}=\mathbb E_q\Big[\log\frac{p(x_T)}{q(x_T\mid x_0)}\Big]+\sum_{t=1}^{T}\mathbb E_q\Big[\log\frac{p_\theta(x_{t-1}\mid x_t)}{q(x_{t-1}\mid x_t,x_0)}\Big]$$
+
+到这一步已经完成了一半：原来“对整条链的一个大期望”变成了“一个终端项 + $$T$$ 个逐步项”，每一项的分子分母都条件在同一个 $$x_t$$ 上、都在描述 $$x_{t-1}$$，这就是 KL 的形状。注意末端那项里没有 $$\theta$$，它只是望远镜剩下的尾巴。
+
+**第六步：$$t=1$$ 单独处理。** 求和里 $$t=1$$ 的那一项，分母是 $$q(x_0\mid x_1,x_0)$$——已经给定了 $$x_1$$ 再条件在 $$x_0$$ 上，$$x_0$$ 是确定量，这个分布退化成点质量，对数密度不再有意义。所以惯例是把这一项从求和里摘出来，不写成 KL，直接记作解码项：
+
+$$\mathbb E_q\log p_\theta(x_0\mid x_1)$$
+
+$$t=2,\ldots,T$$ 各项的分母 $$q(x_{t-1}\mid x_t,x_0)$$ 都是正常的连续高斯（下一小节给出闭式），可以写成 KL。
+
+**第七步：整理成三类。** 对 $$t\ge2$$，
+
+$$\mathbb E_q\Big[\log\frac{p_\theta(x_{t-1}\mid x_t)}{q(x_{t-1}\mid x_t,x_0)}\Big]=-D_{\mathrm{KL}}\big(q(x_{t-1}\mid x_t,x_0)\,\Vert\,p_\theta(x_{t-1}\mid x_t)\big)$$
+
+按 $$t$$ 把所有项分门别类：
+
+| 项 | 对应哪些 $$t$$ | 表达式 | 含义 |
+| --- | --- | --- | --- |
+| $$L_T$$ | 无（望远镜的尾巴） | $$\mathbb E_q\log\frac{p(x_T)}{q(x_T\mid x_0)}$$ | 终端分布与先验的差，不含 $$\theta$$ |
+| $$L_{t-1}$$ | $$t=2,\ldots,T$$ | $$-D_{\mathrm{KL}}\big(q\,\Vert\,p_\theta\big)$$ | 一步去噪的 KL，共 $$T-1$$ 项 |
+| $$L_0$$ | $$t=1$$ | $$\mathbb E_q\log p_\theta(x_0\mid x_1)$$ | 解码项，分母退化的那一项 |
+
+合起来就是：
 
 $$\mathrm{ELBO}=\mathbb E_q\log\frac{p(x_T)}{q(x_T\mid x_0)}+\sum_{t\ge2}\mathbb E_q\log\frac{p_\theta(x_{t-1}\mid x_t)}{q(x_{t-1}\mid x_t,x_0)}+\mathbb E_q\log p_\theta(x_0\mid x_1)$$
 
-把符号翻过来就是最小化的写法：三项分别是起点项 $$L_T$$、去噪项 $$L_{t-1}$$（重复 $$T-1$$ 次）、解码项 $$L_0$$：
+把符号翻过来就是最小化的写法：
 
-$$L_{\mathrm{vlb}}=\mathbb E\Big[\sum_{t>1}D_{\mathrm{KL}}\big(q(x_{t-1}\mid x_t,x_0)\,\|\,p_\theta(x_{t-1}\mid x_t)\big)-\log p_\theta(x_0\mid x_1)\Big]$$
+$$L_{\mathrm{vlb}}=\mathbb E\Big[\sum_{t>1}D_{\mathrm{KL}}\big(q(x_{t-1}\mid x_t,x_0)\,\Vert\,p_\theta(x_{t-1}\mid x_t)\big)-\log p_\theta(x_0\mid x_1)\Big]$$
 
-每一项都是两个高斯的 KL：真实后验 $$q(x_{t-1}\mid x_t,x_0)$$（闭式，下一小节给出）与模型 $$p_\theta(x_{t-1}\mid x_t)$$，两个高斯的 KL 有解析式，所以整个目标可以逐项算出来——这正是拆成逐项的意义。
+每一项都是两个高斯的 KL：真实后验 $$q(x_{t-1}\mid x_t,x_0)$$（闭式，下一小节给出）与模型 $$p_\theta(x_{t-1}\mid x_t)$$，两个高斯的 KL 有解析式，所以整个目标可以逐项算出来——这正是“拆成逐项”的目的。
 
-这条 $$L_{\mathrm{vlb}}$$ 里看不到 $$L_T$$，因为它不含 $$\theta$$：$$p(x_T)$$ 是固定先验、$$q(x_T\mid x_0)$$ 由调度决定，整项是常数，对梯度没有贡献，实现里直接丢掉。
+这条式子里的 $$L_T$$ 已经不见了，因为它不含 $$\theta$$：$$p(x_T)$$ 是固定先验、$$q(x_T\mid x_0)$$ 由调度决定，整项是常数，对梯度没有贡献，实现里直接丢掉。真正被优化的是剩下两块：$$T-1$$ 个逐步 KL，加一个解码项。
 
 #### 真实后验的两个参数
 
