@@ -6,6 +6,10 @@ categories:
 tags: [diffusion, consistency-model, distillation, few-step, ODE, sampling]
 layout: post
 mathjax: true
+prev_title: "扩散模型的后训练对齐"
+prev_url: /2026/11/01/diffusion-post-training/
+next_title: "扩散语言模型（01）：离散扩散的 ELBO"
+next_url: /2026/10/12/diffusion-lm-01-discrete-diffusion-elbo/
 ---
 
 > **系列导航** ｜ [扩散模型综述：算法与应用](/2026/08/24/diffusion-survey-algorithms-applications/) ｜ [DDPM 深度剖析：前向闭式、时间步与 DDIM 采样](/2026/11/01/ddpm-deep-dive/) ｜ [采样器数值分析：DDIM 之后](/2026/11/01/diffusion-sampler-ode/) ｜ [后训练对齐：奖励只给一次，信用怎么摊到每一步](/2026/11/01/diffusion-post-training/)
@@ -298,7 +302,3 @@ python few_step_lab.py A --figdir figs # 额外出图（需 matplotlib）
 5. Song, Sohl-Dickstein, Kingma, Kumar, Ermon, Poole. *Score-Based Generative Modeling through Stochastic Differential Equations.* [arXiv:2011.13456](https://arxiv.org/abs/2011.13456)
 6. Lu, Zhou, Bao, Chen, Li, Zhu. *DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps.* [arXiv:2206.00927](https://arxiv.org/abs/2206.00927)
 
-## 上一篇 / 下一篇
-
-- 上一篇：[扩散模型的后训练对齐：奖励只给一次，信用怎么摊到每一步](/2026/11/01/diffusion-post-training/)
-- 下一篇（换到离散域）：[扩散语言模型（01）：离散扩散的 ELBO](/2026/10/12/diffusion-lm-01-discrete-diffusion-elbo/)

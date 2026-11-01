@@ -6,6 +6,10 @@ categories:
 tags: [diffusion, sampler, DDIM, DPM-Solver, ODE, numerical-analysis]
 layout: post
 mathjax: true
+prev_title: "DDPM 深度剖析：前向闭式、时间步与 DDIM 采样"
+prev_url: /2026/11/01/ddpm-deep-dive/
+next_title: "扩散模型的后训练对齐"
+next_url: /2026/11/01/diffusion-post-training/
 ---
 
 > **系列导航** ｜ [扩散模型综述：算法与应用](/2026/08/24/diffusion-survey-algorithms-applications/) ｜ [DDPM 深度剖析：前向闭式、时间步与 DDIM 采样](/2026/11/01/ddpm-deep-dive/) ｜ [Score、扩散与 SDE](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [Flow Matching 原理篇](/2026/10/20/flow-matching-00-principles/)
@@ -340,7 +344,3 @@ python sampler_lab.py A --figdir figs # 额外出两张图
 4. Lu, Zhou, Bao, Chen, Li, Zhu. *DPM-Solver++: Fast Solver for Guided Sampling of Diffusion Probabilistic Models.* [arXiv:2211.01095](https://arxiv.org/abs/2211.01095)
 5. Ho, Jain, Abbeel. *Denoising Diffusion Probabilistic Models.* [arXiv:2006.11239](https://arxiv.org/abs/2006.11239)
 
-## 上一篇 / 下一篇
-
-- 上一篇：[DDPM 深度剖析：前向闭式、时间步与 DDIM 采样](/2026/11/01/ddpm-deep-dive/)
-- 下一篇：[扩散模型的后训练对齐：奖励只给一次，信用怎么摊到每一步](/2026/11/01/diffusion-post-training/)

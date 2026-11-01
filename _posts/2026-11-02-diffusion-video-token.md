@@ -7,6 +7,10 @@ tags: [diffusion, video-diffusion, attention, kv-cache, token-budget, scaling]
 layout: post
 mathjax: true
 excerpt: "把「视频扩散贵在时间轴」拆成四张独立的账：token 账本、训练账本、采样账本、预算账本。结论与流行说法相反——720p 上时间注意力只占全部注意力的 0.67%，贵的是每帧 3600 个空间 token；因果结构相对双向采样只省 1.92×（不是 n_t 倍）；KV cache 在 query-key 对数上一分不省，它省的是 K/V 投影的 50×；而 d ≥ 2 时采样一遍比训练一遍还贵。全部为整数计数与闭式，31 条断言逐项对到 1e-12。"
+prev_title: "扩散语言模型（02）：块扩散"
+prev_url: /2026/11/02/diffusion-lm-02-block-diffusion/
+next_title: "扩散模型综述（本系列暂告一段落）"
+next_url: /2026/08/24/diffusion-survey-algorithms-applications/
 ---
 
 > **系列导航** ｜ [扩散模型综述：算法与应用](/2026/08/24/diffusion-survey-algorithms-applications/) ｜ [DDPM 深度剖析](/2026/11/01/ddpm-deep-dive/) ｜ [采样器数值分析](/2026/11/01/diffusion-sampler-ode/) ｜ [后训练对齐](/2026/11/01/diffusion-post-training/) ｜ [少步生成](/2026/11/01/diffusion-few-step/) ｜ [块扩散](/2026/11/02/diffusion-lm-02-block-diffusion/)
@@ -315,7 +319,3 @@ README 里记下了三处不能省的细节：整除截断（0.2444 而不是 0.
 6. Kondratyuk, Yu, Gu, Lezama, Huang, Hornung, Adam, Akbari, Alon, Birodkar, et al. *VideoPoet: A Large Language Model for Zero-Shot Video Generation.* [arXiv:2312.14125](https://arxiv.org/abs/2312.14125)
 7. Shazeer. *Fast Transformer Decoding: One Write-Head is All You Need.* [arXiv:1911.02150](https://arxiv.org/abs/1911.02150)
 
-## 上一篇 / 下一篇
-
-- 上一篇：[扩散语言模型（02）：块扩散——同时解几个 token，就丢掉多少互信息](/2026/11/02/diffusion-lm-02-block-diffusion/)
-- 下一篇：本系列暂告一段落；回到全景可看 [扩散模型综述：算法与应用](/2026/08/24/diffusion-survey-algorithms-applications/)

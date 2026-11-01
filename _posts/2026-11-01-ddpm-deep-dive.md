@@ -6,6 +6,10 @@ categories:
 tags: [diffusion, DDPM, DDIM, noise-schedule, U-Net, sampling]
 layout: post
 mathjax: true
+prev_title: "扩散 Transformer（01）：Patchify 与 AdaLN-Zero"
+prev_url: /2026/10/14/dit-01-patchify-adaln-zero-token-budget/
+next_title: "从概率路径到 Flow Matching"
+next_url: /2026/10/20/flow-matching-00-principles/
 ---
 
 > **系列导航** ｜ [扩散模型综述：算法与应用](/2026/08/24/diffusion-survey-algorithms-applications/) ｜ [Score、扩散与 SDE](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [Flow Matching 原理篇](/2026/10/20/flow-matching-00-principles/) ｜ [扩散 Transformer 之一：Patchify、AdaLN-Zero 与 Token 预算](/2026/10/14/dit-01-patchify-adaln-zero-token-budget/)
@@ -483,7 +487,3 @@ DDPM 的价值可以概括成三句话：
 5. **DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps** — Lu et al., NeurIPS 2022（arXiv:2206.00927）。<https://arxiv.org/abs/2206.00927>
 6. **Consistency Models** — Song et al., ICML 2023（arXiv:2303.01469）。<https://arxiv.org/abs/2303.01469>
 
-## 上一篇 / 下一篇
-
-- 上一篇：[扩散 Transformer 之一：Patchify、AdaLN-Zero 与 Token 预算](/2026/10/14/dit-01-patchify-adaln-zero-token-budget/)
-- 下一篇：[Flow Matching 原理篇：从概率路径到一边解方程一边生成](/2026/10/20/flow-matching-00-principles/)

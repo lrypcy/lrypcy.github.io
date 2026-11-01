@@ -30,11 +30,37 @@ layout: default
 
     <footer class="post-footer">
       <div class="post-nav">
-        {% if page.previous %}
-        <div class="post-nav-prev"><a href="{{ page.previous.url }}" rel="prev">← {{ page.previous.title }}</a></div>
+        {% comment %}
+          上一篇 / 下一篇的取法，两级：
+          1. front matter 里声明了 prev_title / next_title，就用它（系列阅读顺序）；
+             只写 title 不写 url 时渲染成不可点的静态文字（如「无（系列首篇）」）。
+          2. 没声明才回落到 page.previous / page.next（全站按时间排序的相邻文章）。
+          这样系列内的阅读顺序与站点的时序导航不再各说一套。
+        {% endcomment %}
+        {% if page.prev_title %}
+          {% assign nav_prev_title = page.prev_title %}
+          {% assign nav_prev_url = page.prev_url %}
+        {% else %}
+          {% assign nav_prev_title = page.previous.title %}
+          {% assign nav_prev_url = page.previous.url %}
         {% endif %}
-        {% if page.next %}
-        <div class="post-nav-next"><a href="{{ page.next.url }}" rel="next">{{ page.next.title }} →</a></div>
+        {% if page.next_title %}
+          {% assign nav_next_title = page.next_title %}
+          {% assign nav_next_url = page.next_url %}
+        {% else %}
+          {% assign nav_next_title = page.next.title %}
+          {% assign nav_next_url = page.next.url %}
+        {% endif %}
+
+        {% if nav_prev_title %}
+        <div class="post-nav-prev">
+          {% if nav_prev_url %}<a href="{{ nav_prev_url }}" rel="prev">← {{ nav_prev_title }}</a>{% else %}<span class="post-nav-flat">← {{ nav_prev_title }}</span>{% endif %}
+        </div>
+        {% endif %}
+        {% if nav_next_title %}
+        <div class="post-nav-next">
+          {% if nav_next_url %}<a href="{{ nav_next_url }}" rel="next">{{ nav_next_title }} →</a>{% else %}<span class="post-nav-flat">{{ nav_next_title }} →</span>{% endif %}
+        </div>
         {% endif %}
       </div>
     </footer>

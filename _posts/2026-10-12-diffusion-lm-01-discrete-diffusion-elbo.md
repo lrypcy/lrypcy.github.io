@@ -7,10 +7,12 @@ tags: [diffusion-llm, discrete-diffusion, masked-diffusion, elbo, d3pm, ctmc, sc
 layout: post
 mathjax: true
 excerpt: "文本上的扩散不能照搬图像：离散 token 加不了高斯噪声，也没法定义 score。本文从 D3PM 的转移矩阵推到连续时间 CTMC，再把吸收态下的变分下界一步步化简成「带 1/t 权重的掩码交叉熵」，并用 numpy 实跑验证三件事：前向核/反向核的表达式、1/t 是损失成为 NLL 上界的必要条件（去掉它损失会掉到 NLL 之下 1.74）、以及固定 15% 掩码率训练的模型在 20 万样本里一次都没见到全掩码上下文。"
+prev_title: "无（系列首篇）"
+next_title: "扩散语言模型（02）：块扩散"
+next_url: /2026/11/02/diffusion-lm-02-block-diffusion/
 ---
 
 > **系列导航** ｜ 本系列承接 [Flow Matching 建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/) 里的离散域部分，把它展开成完整的一条线。
-> 上一篇：无（系列首篇）｜ 下一篇：[02 块扩散——同时解几个 token，就丢掉多少互信息](/2026/11/02/diffusion-lm-02-block-diffusion/)
 
 > **TL;DR**
 >
@@ -401,7 +403,3 @@ loss = -(w * (token_logp * is_mask).sum(axis=1) / np.maximum(is_mask.sum(axis=1)
 
 > 🧪 **动手练习**：① 把 `elbo_masked_diffusion/run.py` 里的线性表 $$\alpha_t=1-t$$ 换成余弦表，重跑 C 组，看带 $$1/t$$ 的损失是否仍等于 NLL（预期：仍相等，因为目标对时间表形式不敏感，只依赖端点）；② 把 B 组的序列长度从 6 加到 8，观察固定 15% 方案的全掩码观测次数与 CE@1.00 如何变化；③ 在 `parallel_decoding_independence/run.py` 里把两个 token 的相关性从 0.9 降到 0.6，验证并行解码的相对误差是否随之缩小——这能直接给出“什么时候可以放心并行”的经验阈值。
 
-## 上一篇 / 下一篇
-
-- 上一篇：无（系列首篇）
-- 下一篇：[扩散语言模型（02）：块扩散——同时解几个 token，就丢掉多少互信息](/2026/11/02/diffusion-lm-02-block-diffusion/)

@@ -7,6 +7,10 @@ tags: [diffusion-llm, block-diffusion, masked-diffusion, total-correlation, kv-c
 layout: post
 mathjax: true
 excerpt: "块扩散（block diffusion）把「块内双向、块间因果」拼在一起，一次解一个块。本文把这件事的两笔账都算成闭式：可表达性的损失恰好等于同组 token 之间的条件 total correlation（数值对到 1e-14），而 KV 缓存的收益只是一项前缀重算的差；并给出固定调用次数下成本比 B(L+B)/2L² 的精确值与逐位验证。"
+prev_title: "扩散语言模型（01）：离散扩散的 ELBO"
+prev_url: /2026/10/12/diffusion-lm-01-discrete-diffusion-elbo/
+next_title: "扩散模型的计算账本：视频为什么贵"
+next_url: /2026/11/02/diffusion-video-token/
 ---
 
 > **系列导航** ｜ [离散扩散的 ELBO](/2026/10/12/diffusion-lm-01-discrete-diffusion-elbo/) ｜ [扩散模型综述](/2026/08/24/diffusion-survey-algorithms-applications/) ｜ [扩散模型的少步生成](/2026/11/01/diffusion-few-step/)
@@ -223,7 +227,3 @@ python block_diff_lab.py A B        # 只跑指定组
 4. Gat, Remez, Shaul, Kreuk, Chen, Synnaeve, Adi, Lipman. *Discrete Denoising Diffusion Models (D3PM).* [arXiv:2107.03006](https://arxiv.org/abs/2107.03006)
 5. Ho, Jain, Abbeel. *Denoising Diffusion Probabilistic Models.* [arXiv:2006.11239](https://arxiv.org/abs/2006.11239)
 
-## 上一篇 / 下一篇
-
-- 上一篇：[扩散语言模型（01）：离散扩散的 ELBO——为什么「掩码 + 1/t 权重」就够用了](/2026/10/12/diffusion-lm-01-discrete-diffusion-elbo/)
-- 下一篇：[扩散模型的计算账本：视频为什么贵，贵在哪一条轴上](/2026/11/02/diffusion-video-token/)

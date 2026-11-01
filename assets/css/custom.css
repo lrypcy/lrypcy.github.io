@@ -894,12 +894,20 @@ html.rail-off .rail-head-title { display: none; }
 }
 .post-tags .post-tag:hover { background: var(--primary); color: #fff; }
 .post-nav { display: flex; justify-content: space-between; gap: 16px; margin-top: 22px; }
+.post-nav-prev, .post-nav-next { flex: 1 1 0; min-width: 0; }
+.post-nav-next { text-align: right; }
 .post-nav-prev a, .post-nav-next a {
   display: inline-block; padding: 8px 16px; border-radius: 10px;
   background: var(--card-bg); border: 1px solid var(--border);
   color: var(--text); text-decoration: none; font-size: 13.5px; transition: all 0.2s;
+  max-width: 100%; overflow-wrap: anywhere;
 }
 .post-nav-prev a:hover, .post-nav-next a:hover { border-color: var(--primary); color: var(--primary); }
+.post-nav-flat {
+  display: inline-block; padding: 8px 16px; border-radius: 10px;
+  border: 1px dashed var(--border); color: var(--text-light);
+  font-size: 13.5px; max-width: 100%; overflow-wrap: anywhere;
+}
 
 /* ========== 正文排版微调 ========== */
 .post-body {

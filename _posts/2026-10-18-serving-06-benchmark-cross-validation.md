@@ -405,7 +405,7 @@ companion 实验 `prefix-hitrate-ttft-model`（纯 CPU、确定性输出）：
 - 组 2：吞吐直线模型对 v0.4 cache-aware LB 两点的反解；
   两种斜率的量纲对照。
 
-## 上一篇 / 下一篇
+## 相关阅读
 
 [《推理引擎（05）：PD 分离与 KV 传输》](/2026/10/18/serving-05-pd-disaggregation-kv-transfer/)；
 前缀复用的粒度代价见

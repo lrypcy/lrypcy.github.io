@@ -557,7 +557,7 @@ companion 实验 `pd-disaggregation-transfer-cost`（纯 CPU、确定性输出�
   四模型 × 四链路 $$BW^{\ast}$$ 表；单请求 KV 体量。
 - 组 2：lease + heartbeat 状态机四场景（健康 / 崩溃 / 过载 / 旧设计对照）。
 
-## 上一篇 / 下一篇
+## 相关阅读
 
 [《推理引擎（04）：支持矩阵（下）》](/2026/10/18/serving-04-support-matrix-api/)；
 调度与批处理见[《推理引擎（02）》](/2026/10/18/serving-02-scheduling-and-batching/)；

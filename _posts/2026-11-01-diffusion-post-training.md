@@ -6,6 +6,10 @@ categories:
 tags: [diffusion, RLHF, DRaFT, ReFL, DPO, credit-assignment, fine-tuning]
 layout: post
 mathjax: true
+prev_title: "扩散模型采样器：把反向过程写成 ODE"
+prev_url: /2026/11/01/diffusion-sampler-ode/
+next_title: "扩散模型的少步生成：一致性模型"
+next_url: /2026/11/01/diffusion-few-step/
 ---
 
 > **系列导航** ｜ [扩散模型综述：算法与应用](/2026/08/24/diffusion-survey-algorithms-applications/) ｜ [DDPM 深度剖析](/2026/11/01/ddpm-deep-dive/) ｜ [扩散模型采样器：把反向过程写成 ODE](/2026/11/01/diffusion-sampler-ode/) ｜ [Flow Matching 原理篇](/2026/10/20/flow-matching-00-principles/) ｜ [RL 信用分配](/2026/09/19/rl-credit-assignment-settlement/)
@@ -247,7 +251,3 @@ python post_train_lab.py A --figdir figs # 额外出两张图
 4. Rafailov, Sharma, Mitchell, Ermon, Manning, Finn. *Direct Preference Optimization: Your Language Model is Secretly a Reward Model.* [arXiv:2305.18290](https://arxiv.org/abs/2305.18290)
 5. Ho, Jain, Abbeel. *Denoising Diffusion Probabilistic Models.* [arXiv:2006.11239](https://arxiv.org/abs/2006.11239)
 
-## 上一篇 / 下一篇
-
-- 上一篇：[扩散模型采样器：把反向过程写成 ODE 之后，为什么 DDIM 还不够](/2026/11/01/diffusion-sampler-ode/)
-- 下一篇：[扩散模型的少步生成：一致性模型到底把什么换成了步数](/2026/11/01/diffusion-few-step/)

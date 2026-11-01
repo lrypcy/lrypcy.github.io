@@ -6,6 +6,10 @@ categories:
 tags: [flow-matching, diffusion, probability-path, continuity-equation, score-matching, cfg, rectified-flow, sde, fokker-planck]
 layout: post
 mathjax: true
+prev_title: "变分自编码器（01）：ELBO、重参数化与潜空间"
+prev_url: /2026/10/13/vae-01-elbo-reparameterization-latent-space/
+next_title: "扩散 Transformer（01）：Patchify 与 AdaLN-Zero"
+next_url: /2026/10/14/dit-01-patchify-adaln-zero-token-budget/
 ---
 
 > **系列导航** ｜ [建模之一：概率路径与边际向量场（数值核验存档）](/2026/08/22/flow-matching-01-algorithm-evolution/) ｜ [建模之二：score、扩散与 SDE](/2026/08/22/flow-matching-02-score-diffusion-sde/) ｜ [建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/) ｜ [应用篇：SD3 到蛋白质设计](/2026/08/22/flow-matching-04-applications/) ｜ [扩散模型综述](/2026/08/24/diffusion-survey-algorithms-applications/)
@@ -1730,7 +1734,3 @@ $$
     纯 numpy、纯 CPU，输出已固化，不必自己跑。
     notebook：[fm_principles.ipynb](https://github.com/lrypcy/ipynbs/blob/0373dc6bc687065693a1ff7b2416b39231d4cab7/experiments/flow_matching/fm-principles/fm_principles.ipynb)；输出：[results/stdout.txt](https://github.com/lrypcy/ipynbs/blob/0373dc6bc687065693a1ff7b2416b39231d4cab7/experiments/flow_matching/fm-principles/results/stdout.txt)。
 
-## 上一篇 / 下一篇
-
-- 上一篇：[变分自编码器之一：ELBO、重参数化与潜空间](/2026/10/13/vae-01-elbo-reparameterization-latent-space/)
-- 下一篇：[扩散 Transformer 之一：架构与规模化](/2026/10/14/dit-01-patchify-adaln-zero-token-budget/)
