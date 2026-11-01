@@ -31,7 +31,13 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
-          bundler-cache: true
+
+      # Gemfile.lock 是在 macOS(arm64) 上锁的，只有 arm64-darwin 一个平台。
+      # 不先补 x86_64-linux，runner 上 bundle install 会因为平台不匹配重解析。
+      - name: Install gems
+        run: |
+          bundle lock --add-platform x86_64-linux
+          bundle install --jobs 4
 
       - name: Build site
         env:
