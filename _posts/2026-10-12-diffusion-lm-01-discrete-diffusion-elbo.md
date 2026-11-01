@@ -10,7 +10,7 @@ excerpt: "文本上的扩散不能照搬图像：离散 token 加不了高斯噪
 ---
 
 > **系列导航** ｜ 本系列承接 [Flow Matching 建模之三：条件生成、离散域与潜空间](/2026/08/22/flow-matching-03-guidance-discrete-latent/) 里的离散域部分，把它展开成完整的一条线。
-> 上一篇：无（系列首篇）｜ 下一篇：02 块扩散与 KV Cache（写作中）
+> 上一篇：无（系列首篇）｜ 下一篇：[02 块扩散与 KV Cache](/2026/11/02/diffusion-lm-02-block-diffusion/)
 
 > **TL;DR**
 >
