@@ -324,7 +324,7 @@ Lookahead Decoding 与 Jacobi 迭代常被当作投机解码的「近亲」，�
 
 ### 6.3 什么时候其它路线更值
 
-- **输出很短（$$<$ 50 token）**：decode 占比低，投机收益被 prefill 稀释，
+- **输出很短（$<50$ token）**：decode 占比低，投机收益被 prefill 稀释，
   前缀缓存与更激进的批调度更值；
 - **超长上下文（128K+）且 batch 大**：瓶颈在 KV 加载带宽，
   检索式 KV 草稿（TriForce）或 KV 压缩比预测下一个 token 更根本；

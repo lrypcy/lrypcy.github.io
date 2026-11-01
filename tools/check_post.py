@@ -64,12 +64,38 @@ def strip_fenced_blocks(lines):
     return out, stripped
 
 
+# 行内 $...$ —— 与 _plugins/inline_dollar_math.rb 里的 INLINE 必须保持一致
+DOLLAR_INLINE = re.compile(r"(?<![\\$\w])\$(?!\s)([^$\n]+?)(?<!\s)\$(?![\d\w])")
+
+
+def convert_inline_dollars(text):
+    """把行内 `$...$` 包成 `$$...$$`，等价于站点的 pre_render 插件。
+
+    站点靠 `_plugins/inline_dollar_math.rb` 在 kramdown 之前做这件事；本地渲染跑的是
+    裸 kramdown（没有插件），不做这一步就会把「源码里的 `$...$`」误判成「没被转换的
+    行内公式」。改了插件的正则，这里要同步改。
+
+    围栏代码块在本函数之前已经被剥离；行内代码在这里保护。
+    """
+    store = []
+
+    def stash(m):
+        store.append(m.group(0))
+        return "\ue000%d\ue000" % (len(store) - 1)
+
+    t = re.sub(r"`[^`\n]+`", stash, text)
+    t = DOLLAR_INLINE.sub(lambda m: "$$" + m.group(1) + "$$", t)
+    return re.sub(r"\ue000(\d+)\ue000", lambda m: store[int(m.group(1))], t)
+
+
 def count_source_math(lines):
     """统计源码里的行内/块级公式数。
 
     块级有两种写法，都要认：
     - 单行 `$$...$$`（整行只有一个公式，历史写法）
     - 三行式：`$$` 独占一行 → 公式内容 → `$$` 再独占一行（`WRITING.md` §5 的规范写法）
+
+    行内也有两种：句中的 `$$...$$`（历史）与 `$...$`（现行规范，见 `WRITING.md` §5）。
 
     注意：先剥掉引用块前缀（`> `、`>   `）。TL;DR 与提示块里独占一行的
     `$$...$$` 在 kramdown 里同样渲染成块级 `\\[...\\]`；不剥前缀会把它
@@ -96,8 +122,14 @@ def count_source_math(lines):
         if m:
             block += 1
             continue
-        # 其余按行内计
+        # 其余按行内计。两种写法都要认：
+        #   - 历史写法：句中的 `$$...$$`
+        #   - 现行规范：`$...$`（_plugins/inline_dollar_math.rb 会在 kramdown 之前
+        #     把它包成 `$$...$$`，渲染结果相同）
+        rest = re.sub(r"\$\$.+?\$\$", "", stripped_line)
         inline += len(re.findall(r"\$\$.+?\$\$", stripped_line))
+        inline += len(re.findall(
+            r"(?<![\\$\w])\$(?!\s)[^$\n]+?(?<!\s)\$(?![\d\w])", rest))
     return inline, block
 
 
@@ -151,7 +183,9 @@ def main():
                 break
 
     clean_lines, stripped = strip_fenced_blocks(lines)
-    clean_src = "\n".join(clean_lines)
+    # 复刻站点的 pre_render 转换，让本地裸 kramdown 看到与线上同一份输入
+    clean_src = convert_inline_dollars("\n".join(clean_lines))
+    clean_lines = clean_src.split("\n")
 
     print("=" * 66)
     print(f"文件: {args.path}  ({len(lines)} 行)")

@@ -8,7 +8,7 @@
 1. 可疑 Unicode —— 非 ASCII、非 CJK、不在符号白名单里的字符 (伪 Unicode / 混入其他文字)
 2. 已知伪词黑名单命中
 3. 低频长英文词 —— 全文只出现 1 次且长度 > --min-len, 需人工核对是否是伪词
-4. 疑似单 $ 行内公式 —— kramdown 只保护 $$...$$, 单 $ 会被 Markdown 二次解析
+4. 未配对的 $ —— 行内 $...$ 是本项目规范写法, 怕的是一行里落单的 $, 它会跨行借用后面的 $把正文吞进公式
 
 退出码 0 表示第 1/2/4 项干净 (第 3 项永远需要人工过目)。
 """
@@ -73,7 +73,14 @@ def check_lowfreq(text, min_len):
 
 
 def check_single_dollar(lines):
-    """找疑似单 $ 行内公式。代码块（``` 围栏）内部跳过——shell 提示符会误报。"""
+    """检查行内 `$…$` 是否配对。
+
+    `$…$` 是本项目的行内公式写法（`_plugins/inline_dollar_math.rb` 在 kramdown 之前
+    把它包成 `$$…$$`）。这里不再把「出现单 $」当问题，只抓真正会坏的那种：
+    **一行里去成对的 `$` 剩下奇数个** —— 它会跨行借用后面的 `$`，把正文吞进公式。
+
+    代码块（``` 围栏）、行内代码、已经成对的 `$…$`、行间 `$$` 全部排除后再数。
+    """
     hits = []
     in_code = False
     for i, line in enumerate(lines, 1):
@@ -82,8 +89,12 @@ def check_single_dollar(lines):
             continue
         if in_code:
             continue
-        stripped = re.sub(r"`[^`]*`", "", line)  # 去掉行内代码
-        if re.search(r"(?<!\$)\$(?!\$)", stripped):
+        stripped = re.sub(r"`[^`]*`", "", line)      # 去掉行内代码
+        rest = re.sub(r"\$\$[^$]*\$\$", "", stripped)  # 去掉行间 / 行内成对的 $$
+        rest = re.sub(r"(?<![\\$\w])\$(?!\s)[^$\n]+?(?<!\s)\$(?![\d\w])", "", rest)  # 成对的单 $
+        rest = rest.replace("\\$", "")               # 转义的 \$
+        rest = rest.replace("$$", "")                # 三行式的单独 $$ 分界行
+        if "$" in rest:
             hits.append((i, line.strip()[:80]))
     return hits
 
@@ -158,11 +169,11 @@ def scan(path, min_len, skip_lowfreq):
     dollars = check_single_dollar(lines)
     if dollars:
         dirty = True
-        print("\n[4] 疑似单 $ 行内公式:")
+        print("\n[4] 未配对的 $ (该行 $ 个数为奇数):")
         for lineno, content in dollars:
             print("    L%-4d %s" % (lineno, content))
     else:
-        print("\n[4] 单 $ 公式: 无")
+        print("\n[4] 未配对的 $: 无")
 
     print("")
     return dirty

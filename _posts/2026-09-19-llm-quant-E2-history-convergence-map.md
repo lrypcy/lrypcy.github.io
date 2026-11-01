@@ -27,7 +27,7 @@ mathjax: true
 
 | 缩写 | 全称 | 含义 |
 |---|---|---|
-| W$b$A$b'$ | Weight-$b$-bit / Activation-$b'$-bit | 例：W4A16 = 权重 INT4、激活 BF16 |
+| W-$b$-A-$b'$ | Weight-$b$-bit / Activation-$b'$-bit | 例：W4A16 = 权重 INT4、激活 BF16 |
 | STE | Straight-Through Estimator | 直通估计器，令 $\partial \hat{w}/\partial w = 1$ |
 | PTQ / QAT | Post-Training / Quantization-Aware Training | 训练后量化 / 量化感知训练 |
 | MXFP | Microscaling Floating Point | OCP 标准的块浮点，块内共享 E8M0 尺度 |

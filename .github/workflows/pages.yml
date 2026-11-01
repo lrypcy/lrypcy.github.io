@@ -1,0 +1,53 @@
+name: Build & deploy (Jekyll)
+
+# 为什么要自己写这个工作流、而不用 GitHub Pages 的「Deploy from a branch」：
+# legacy 分支构建跑在 safe mode，会静默忽略 _plugins/，行内 $...$ 的转换钩子
+# (_plugins/inline_dollar_math.rb) 不会执行。这里显式跑 jekyll build（不带 --safe），
+# 插件才生效。
+#
+# 一次性设置：仓库 Settings → Pages → Source 选 “GitHub Actions”。
+# 在此之前的推送仍由 legacy 构建出站，本工作流会在 deploy 步骤报错，站点不受影响。
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Build site
+        env:
+          JEKYLL_ENV: production
+        run: bundle exec jekyll build --trace
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
