@@ -1,5 +1,5 @@
 ---
-title: "DDPM 深度剖析：从理论到实践"
+title: "DDPM 深度剖析：前向闭式、时间步与 DDIM 采样"
 date: 2026-11-01 17:30:00 +0800
 categories:
   - 生成模型
@@ -298,7 +298,7 @@ DDPM 的价值可以概括成三句话：
 
 ## 十、实验复现
 
-文中所有实测数字来自一个纯 numpy、纯 CPU 的脚本：`ddpm_lab.py`（83 条断言，全量约 12 秒），固定种子 `20261101`，放在 ipynbs 仓库的 [experiments/diffusion/ddpm-timestep](https://github.com/lrypcy/ipynbs/tree/6377465/experiments/diffusion/ddpm-timestep)（README 里有逐组结论，`results/stdout.txt` 是本机实跑的完整输出）。设置统一为 $$T=1000$$、$$\beta$$ 从 $$10^{-4}$$ 线性到 $$0.02$$、余弦偏移 $$s=0.008$$。
+文中所有实测数字来自一个纯 numpy、纯 CPU 的脚本：`ddpm_lab.py`（83 条断言，全量约 12 秒），固定种子 `20261101`，放在 ipynbs 仓库的 [experiments/diffusion/ddpm-timestep](https://github.com/lrypcy/ipynbs/tree/269f645/experiments/diffusion/ddpm-timestep)（README 里有逐组结论，`results/stdout.txt` 是本机实跑的完整输出）。设置统一为 $$T=1000$$、$$\beta$$ 从 $$10^{-4}$$ 线性到 $$0.02$$、余弦偏移 $$s=0.008$$。
 
 一处必须说明的实验设计：给 $$\epsilon_\theta$$ 注入的误差取 $$\rho\,W x_t$$（$$W$$ 是固定的随机线性算子），**依赖当前状态**。若改成每步注入与 $$x_t$$ 无关的白噪声，$$\hat x_0$$ 会被反解成与历史无关的量，轨迹每步都在重置，最终只由最后一段决定——那样测出来的「步数越多越准」是玩具本身的假象，$$\eta$$ 也会完全失效。
 

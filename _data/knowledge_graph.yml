@@ -351,7 +351,7 @@ series:
     category: 深度学习
     node: false
     prefixes: [diffusion-survey, ddpm-]
-    desc: 从噪声到数据：Diffusion 算法发展与应用全景；含 DDPM 深度剖析（前向闭式、简化目标与时间步 / 调度 / 采样器）。
+    desc: 从噪声到数据：Diffusion 算法发展与应用全景；含《DDPM 深度剖析：前向闭式、时间步与 DDIM 采样》，配套时间步 / 调度 / 采样器的 numpy 核验实验。
 
   - id: diffusion-lm
     name: 扩散语言模型（dLLM）
