@@ -41,23 +41,78 @@ $$x_t=\sqrt{1-\beta_t}\,x_{t-1}+\sqrt{\beta_t}\,\epsilon$$
 
 $$q(x_{1:T}\mid x_0)=\prod_{t=1}^{T}q(x_t\mid x_{t-1})$$
 
-### 2.2 闭式：DDPM 效率的基石
+### 2.2 为什么是 $$\alpha_t=1-\beta_t$$
 
-令 $$\alpha_t=1-\beta_t$$、$$\bar\alpha_t=\prod_{s=1}^{t}\alpha_s$$，反复代入并利用两个独立高斯之和仍是高斯（方差直接相加），可以得到任意时刻的边际分布：
+$$\alpha_t$$ 不是独立参数，是给余量起的名字。把单步写开，进入方差的是系数的平方：
 
-$$q(x_t\mid x_0)=\mathcal N\big(x_t;\sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t)I\big)$$
+$$\mathrm{Var}(x_t)=\alpha_t\,\mathrm{Var}(x_{t-1})+\beta_t\cdot 1,\qquad \alpha_t+\beta_t=1$$
 
-也就是一步到位的采样式：
+$$\beta_t$$ 是调度里唯一自由、可解释的量——它就是这一步注入的噪声方差；$$\alpha_t$$ 是余额：噪声拿走 $$\beta_t$$，信号就还剩 $$1-\beta_t$$。这条恒等式是整个前向过程的定义性约束，也是“方差守恒（variance preserving，VP）”这个说法的来处。
 
-$$x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon,\qquad \epsilon\sim\mathcal N(0,I)$$
+两个容易看岔的地方：
 
-这条式子是整个算法的关键。训练时在 $$1,\ldots,T$$ 上均匀采一个 $$t$$、再采一个标准高斯的 $$\epsilon$$，就能直接合成任意噪声强度的样本 $$(x_t,t,\epsilon)$$，**不需要真的执行 $$t$$ 次前向传播**。这把一个 $$T$$ 步的序列化过程变成了可随机访问的数据集，训练复杂度与 $$T$$ 解耦。
+- **$$\beta_t$$ 不进根号、$$\alpha_t$$ 进根号不是笔误**。$$\beta_t$$ 本身就是方差，直接填进分布；$$\alpha_t$$ 是方差的**份额**，而系数作用在样本上，所以进均值时要开方取 $$\sqrt{\alpha_t}$$。
+- **这个取法等于宣布走 VP 路线**。换成 score-based 常用的 VE 参数化，根本没有 $$\alpha$$：$$x_t=x_0+\sigma_t\epsilon$$，方差随 $$\sigma_t$$ 发散，噪声靠加而不是靠“扣掉多少”。两条路线在 SDE 层面可以互相重参数化，但离散公式长得完全不同。
 
-这条式子是可核验的。对一个固定的 $$x_0$$，一边按单步马尔可夫链真的推 $$t$$ 次、另一边直接用闭式，两边 20 万条样本的均值与方差应当逐点相合——实测 $$t=1,10,100,500,1000$$ 上均值最大偏差 $$5.4\times10^{-3}$$、方差最大偏差 $$1.1\times10^{-3}$$，全部落在蒙特卡洛误差量级内。
+### 2.3 从单步到闭式：三步推导
 
-为了让 $$x_T$$ 确实接近标准高斯，调度需要满足 $$\bar\alpha_T\approx 0$$。线性调度（$$\beta$$ 从 $$10^{-4}$$ 到 $$0.02$$、$$T=1000$$）下实测 $$\bar\alpha_{1000}=4.04\times10^{-5}$$：信号能量只剩万分之四，把 $$x_T$$ 当作标准高斯采样是安全的。
+目标是消掉中间状态，直接拿到 $$q(x_t\mid x_0)$$。全程只用一件工具：**两个独立高斯之和仍是高斯，方差直接相加**。
 
-### 2.3 时间步到底指的是什么
+**第一步：展开两层。** 把 $$x_{t-1}=\sqrt{\alpha_{t-1}}x_{t-2}+\sqrt{\beta_{t-1}}\epsilon_{t-1}$$ 代进单步：
+
+$$x_t=\sqrt{\alpha_t\alpha_{t-1}}\,x_{t-2}+\underbrace{\sqrt{\alpha_t\beta_{t-1}}\,\epsilon_{t-1}+\sqrt{\beta_t}\,\epsilon_t}_{\text{两项独立、都是中心高斯}}$$
+
+括号里两项独立、均值都是 0，所以和仍是中心高斯，方差相加：
+
+$$\alpha_t\beta_{t-1}+\beta_t=\alpha_t(1-\alpha_{t-1})+(1-\alpha_t)=1-\alpha_t\alpha_{t-1}$$
+
+于是 $$x_t=\sqrt{\alpha_t\alpha_{t-1}}\,x_{t-2}+\sqrt{1-\alpha_t\alpha_{t-1}}\,\epsilon$$——与单步同构，只是 $$\bar\alpha$$ 变成两层连乘。
+
+**第二步：归纳一步。** 设 $$x_{t-1}=\sqrt{\bar\alpha_{t-1}}\,x_0+\sqrt{1-\bar\alpha_{t-1}}\,\epsilon'$$，代入：
+
+$$x_t=\sqrt{\alpha_t\bar\alpha_{t-1}}\,x_0+\sqrt{\alpha_t(1-\bar\alpha_{t-1})}\,\epsilon'+\sqrt{\beta_t}\,\epsilon_t$$
+
+均值系数 $$\sqrt{\alpha_t\bar\alpha_{t-1}}=\sqrt{\bar\alpha_t}$$；方差
+
+$$\alpha_t(1-\bar\alpha_{t-1})+\beta_t=\alpha_t-\alpha_t\bar\alpha_{t-1}+1-\alpha_t=1-\bar\alpha_t$$
+
+两处用的都是同一个 $$\alpha_t+\beta_t=1$$。归纳成立，任意时刻的边际分布与一步采样式同时得到：
+
+$$q(x_t\mid x_0)=\mathcal N\big(x_t;\sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t)I\big)\ \Longleftrightarrow\ x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\epsilon$$
+
+**第三步：换个方向看 $$1-\bar\alpha_t$$ 到底是谁。** 上面是往后展开，也可以往前记账：第 $$s$$ 步注入的 $$\beta_s$$ 在之后每一步都要被 $$\alpha_u$$ 衰减一次，于是
+
+$$\mathrm{Var}_{\text{noise}}(x_t)=\sum_{s=1}^{t}\beta_s\prod_{u=s+1}^{t}\alpha_u$$
+
+令 $$P_s=\prod_{u=s+1}^{t}\alpha_u$$，由 $$\beta_s=1-\alpha_s$$ 得 $$\beta_sP_s=P_s-P_{s-1}$$，求和就是望远镜：
+
+$$\sum_{s=1}^{t}\beta_sP_s=P_t-P_0=1-\prod_{s=1}^{t}\alpha_s=1-\bar\alpha_t$$
+
+这解释了为什么闭式里出现的是 $$1-\bar\alpha_t$$ 而**不是**噪声预算之和 $$\sum_s\beta_s$$：$$\bar\alpha_t$$ 是信号还剩多少，$$1-\bar\alpha_t$$ 是噪声进来多少，两者恒和为 1。线性调度下 $$\sum_s\beta_s=10.05$$，按方差直接累加会远超 1——能恰好累到 1，是因为每一项都被后续的 $$\alpha$$ 打过折。
+
+三步都是可核验的代数恒等式，脚本里逐条对账：两层展开误差 $$1.4\times10^{-16}$$、归纳一步 $$2.2\times10^{-16}$$、望远镜求和 $$1.3\times10^{-15}$$，全在 float64 的舍入量级。
+
+取对数能把“$$\beta$$ 加性、$$\alpha$$ 乘性”看得更直白：
+
+$$\log\bar\alpha_T=\sum_{s=1}^{T}\log(1-\beta_s)\approx-\sum_{s}\beta_s-\frac{1}{2}\sum_{s}\beta_s^{2}$$
+
+线性调度下 $$\sum_s\beta_s=10.0500$$、$$\frac{1}{2}\sum_s\beta_s^2=0.0670$$，于是 $$\bar\alpha_T\approx e^{-10.117}=4.0386\times10^{-5}$$，与实测 $$4.0358\times10^{-5}$$ 相对差 $$6.8\times10^{-4}$$。单步的 $$\beta_T=0.02$$ 看着很小，是因为它只是 log 上的 0.02，而 1000 步加起来是 10.05。
+
+$$\bar\alpha_T\approx 0$$ 正是调度要满足的条件。线性调度下 $$\bar\alpha_T=4.04\times10^{-5}$$，信号能量只剩十万分之四，此时把 $$x_T$$ 当作标准高斯采样才是安全的。
+
+### 2.4 为什么 $$t$$ 个噪声能合成一个
+
+上面把 $$t$$ 项噪声合成了一个 $$\epsilon$$，这一步必须是**严格相等**而不是“推得够多就近似”。理由只有一句：线性组合加独立中心高斯，结果仍是中心高斯，分布只由方差决定；而各个 $$\epsilon_s$$ 同分布且独立，所以合并出来的那一个与 $$\mathcal N(0,I)$$ 同分布。
+
+这条“分布意义上的相等”带来三个后果，前两个是整个算法能跑起来的前提：
+
+1. **训练可随机访问**。在 $$1,\ldots,T$$ 上均匀采一个 $$t$$、再采一个 $$\epsilon$$，就能直接合成任意噪声强度的样本 $$(x_t,t,\epsilon)$$，**不需要真的执行 $$t$$ 次前向传播**。$$T$$ 步的序列化过程变成一个可随机访问的数据集，训练复杂度与 $$T$$ 解耦。
+2. **样本之间完全独立**。没有序列、没有状态，不同样本、不同 batch 的 $$t$$ 互不相干，可以直接堆成 batch。
+3. **但联合结构没被保留**。拿到 $$x_t$$ 无法反推 $$x_{t-1}$$：边缘已知不等于联合已知。所以后验 $$q(x_{t-1}\mid x_t,x_0)$$ 还得从马尔可夫结构单独推一遍，§4.1 里那组 $$\tilde\mu_t$$、$$\tilde\beta_t$$ 就是另一次独立推导，不是这条闭式的推论。
+
+分布层面的核验：对一个固定的 $$x_0$$，一边按单步马尔可夫链真的推 $$t$$ 次、另一边直接用闭式，两边各 20 万条样本，均值与方差应当逐点相合——实测 $$t=1,10,100,500,1000$$ 上均值最大偏差 $$5.4\times10^{-3}$$、方差最大偏差 $$1.1\times10^{-3}$$，全部落在蒙特卡洛误差量级内。
+
+### 2.5 时间步到底指的是什么
 
 这是理解 DDPM 最容易出错的地方：**$$t$$ 不是神经网络的层编号，而是输入图像的噪声水平**。同一个 U-Net 在不同的 $$t$$ 上被反复调用：
 
@@ -106,9 +161,27 @@ $$\mathrm{TE}(t)=\big[\sin(\omega_1 t),\cos(\omega_1 t),\ldots,\sin(\omega_d t),
 
 $$L_{\mathrm{vlb}}=\mathbb E\Big[\sum_{t>1}D_{\mathrm{KL}}\big(q(x_{t-1}\mid x_t,x_0)\,\|\,p_\theta(x_{t-1}\mid x_t)\big)-\log p_\theta(x_0\mid x_1)\Big]$$
 
-其中真实后验的均值为：
+#### 真实后验的两个参数
 
-$$\tilde\mu_t(x_t,x_0)=\frac{\sqrt{\bar\alpha_{t-1}}\,\beta_t}{1-\bar\alpha_t}x_0+\frac{\sqrt{\alpha_t}\,(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}x_t$$
+后验只在给定 $$x_0$$ 时才是可算的（否则要积分整条链）。用贝叶斯公式加马尔可夫性，它只涉及两个已知高斯：
+
+$$q(x_{t-1}\mid x_t,x_0)\ \propto\ q(x_t\mid x_{t-1})\,q(x_{t-1}\mid x_0)$$
+
+$$\propto\ \exp\Big(-\frac{\lVert x_t-\sqrt{\alpha_t}\,x_{t-1}\rVert^2}{2\beta_t}-\frac{\lVert x_{t-1}-\sqrt{\bar\alpha_{t-1}}\,x_0\rVert^2}{2(1-\bar\alpha_{t-1})}\Big)$$
+
+指数上是 $$x_{t-1}$$ 的二次型，所以结果必是高斯，两个参数各由一次加法得到。
+
+**精度相加**（两个高斯相乘，二次项系数相加）：
+
+$$\frac{1}{\tilde\beta_t}=\frac{\alpha_t}{\beta_t}+\frac{1}{1-\bar\alpha_{t-1}}\quad\Longrightarrow\quad \tilde\beta_t=\frac{\beta_t(1-\bar\alpha_{t-1})}{\alpha_t(1-\bar\alpha_{t-1})+\beta_t}=\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\beta_t$$
+
+分母 $$\alpha_t(1-\bar\alpha_{t-1})+\beta_t$$ 就是 §2.3 归纳一步里出现过的那一项，它等于 $$1-\bar\alpha_t$$——同一个恒等式在换了个地方起作用。
+
+**均值取精度加权**（两个高斯的均值按各自精度加权平均）：
+
+$$\tilde\mu_t=\tilde\beta_t\Big(\frac{\sqrt{\alpha_t}}{\beta_t}x_t+\frac{\sqrt{\bar\alpha_{t-1}}}{1-\bar\alpha_{t-1}}x_0\Big)=\frac{\sqrt{\bar\alpha_{t-1}}\,\beta_t}{1-\bar\alpha_t}x_0+\frac{\sqrt{\alpha_t}\,(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}x_t$$
+
+这就是下文反复用到的两个量：$$\tilde\mu_t$$ 是 §5.1 采样时模型要拟合的目标，$$\tilde\beta_t$$ 是 §5.3 讨论“最后一步为什么加噪”时那个 $$\sigma_t^2$$ 的 DDPM 取值。
 
 DDPM 的做法是：既然网络可以直接预测噪声 $$\epsilon$$，就用它把 $$\tilde\mu_t$$ 重参数化，再把目标换成预测噪声与真噪声之间的均方误差，并**丢掉 KL 带来的那组时间权重**：
 
@@ -125,7 +198,7 @@ $$L_{\mathrm{simple}}=\mathbb E_{x_0,\,t,\,\epsilon}\Big\lVert\epsilon-\epsilon_
 
 1. 采数据 $$x_0\sim p_{\mathrm{data}}$$；
 2. 均匀采时间步 $$t\sim\mathcal U\{1,\ldots,T\}$$，采噪声 $$\epsilon\sim\mathcal N(0,I)$$；
-3. 用 §2.2 的闭式合成本步的带噪样本 $$x_t$$；
+3. 用 §2.3 的闭式合成本步的带噪样本 $$x_t$$；
 4. 前向 $$\hat\epsilon=\epsilon_\theta(x_t,t)$$，对 $$\lVert\epsilon-\hat\epsilon\rVert^2$$ 求梯度。
 
 注意这里没有任何序列：不同样本、不同 batch 的 $$t$$ 完全独立。
@@ -138,7 +211,7 @@ $$L_{\mathrm{simple}}=\mathbb E_{x_0,\,t,\,\epsilon}\Big\lVert\epsilon-\epsilon_
 
 $$p_\theta(x_{t-1}\mid x_t)=\mathcal N\big(x_{t-1};\ \mu_\theta(x_t,t),\ \sigma_t^2 I\big)$$
 
-用上述 $$\tilde\mu_t$$ 做模板、把其中的 $$x_0$$ 换成从当前预测反解出来的干净图像
+用 §4.1 的 $$\tilde\mu_t$$ 做模板、把其中的 $$x_0$$ 换成从当前预测反解出来的干净图像
 
 $$\hat x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\,\epsilon_\theta(x_t,t)}{\sqrt{\bar\alpha_t}}$$
 
@@ -166,7 +239,7 @@ $$\tilde\mu_t$$、$$\mu_\theta$$、$$\hat x_0$$ 这三组系数在论文和各�
 
 ### 5.3 最后一步为什么不加随机项
 
-$$\sigma_t$$ 是**后验的标准差**，不是随手写的学习率：$$\tilde\beta_t=\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\beta_t$$，DDPM 的另一条做法是用网络把它学出来（learned variance）。线性调度下它的绝对值是单调下降的，但**相对目标尺度反而越来越显著**：$$\sigma_t/\sqrt{1-\bar\alpha_{t-1}}$$ 从 $$t=1000$$ 的 14.1% 缓慢降到 $$t=250$$ 的 10.3%，再升到 $$t=10$$ 的 38.4%、$$t=2$$ 的 73.9%（第一步 $$\sigma_1=\sqrt{\beta_1}=0.01$$，与目标尺度本身等量级）。最后一里地里图像已经基本成型，此时灌进去的噪声相对占比最大——这就是代码里最后一步令 $$z=0$$ 的原因。
+$$\sigma_t$$ 是**后验的标准差**，不是随手写的学习率：$$\tilde\beta_t=\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\beta_t$$（§4.1 配出来的那一项），DDPM 的另一条做法是用网络把它学出来（learned variance）。线性调度下它的绝对值是单调下降的，但**相对目标尺度反而越来越显著**：$$\sigma_t/\sqrt{1-\bar\alpha_{t-1}}$$ 从 $$t=1000$$ 的 14.1% 缓慢降到 $$t=250$$ 的 10.3%，再升到 $$t=10$$ 的 38.4%、$$t=2$$ 的 73.9%（第一步 $$\sigma_1=\sqrt{\beta_1}=0.01$$，与目标尺度本身等量级）。最后一里地里图像已经基本成型，此时灌进去的噪声相对占比最大——这就是代码里最后一步令 $$z=0$$ 的原因。
 
 ### 5.4 DDIM：把随机过程换成确定性 ODE
 
@@ -298,9 +371,9 @@ DDPM 的价值可以概括成三句话：
 
 ## 十、实验复现
 
-文中所有实测数字来自一个纯 PyTorch、纯 CPU 的脚本：`ddpm_lab.py`（83 条断言，全量约 30 秒，torch 2.10.0 / float64），固定种子 `20261101`，放在 ipynbs 仓库的 [experiments/diffusion/ddpm-timestep](https://github.com/lrypcy/ipynbs/tree/1517b2e/experiments/diffusion/ddpm-timestep)（README 里有逐组结论，`results/stdout.txt` 是本机实跑的完整输出）。设置统一为 $$T=1000$$、$$\beta$$ 从 $$10^{-4}$$ 线性到 $$0.02$$、余弦偏移 $$s=0.008$$。
+文中所有实测数字来自一个纯 PyTorch、纯 CPU 的脚本：`ddpm_lab.py`（87 条断言，全量约 26 秒，torch 2.10.0 / float64），固定种子 `20261101`，放在 ipynbs 仓库的 [experiments/diffusion/ddpm-timestep](https://github.com/lrypcy/ipynbs/tree/a470680/experiments/diffusion/ddpm-timestep)（README 里有逐组结论，`results/stdout.txt` 是本机实跑的完整输出）。设置统一为 $$T=1000$$、$$\beta$$ 从 $$10^{-4}$$ 线性到 $$0.02$$、余弦偏移 $$s=0.008$$。
 
-选 torch 而不是 numpy 有两个理由：一是调度、$$q(x_t\mid x_0)$$ 与 DDIM 更新式在真实框架里就是逐元素张量运算，照 diffusers 的写法抄下来，读的人可以直接搬过去对照；二是 $$x_t$$ 的形状与真实训练代码一致，后续想把这个 toy 升级成真的 U-Net 不必重写数据管线。代价是纯 Python 的逐步递推比 numpy 版慢（12 秒 → 30 秒）。
+选 torch 而不是 numpy 有两个理由：一是调度、$$q(x_t\mid x_0)$$ 与 DDIM 更新式在真实框架里就是逐元素张量运算，照 diffusers 的写法抄下来，读的人可以直接搬过去对照；二是 $$x_t$$ 的形状与真实训练代码一致，后续想把这个 toy 升级成真的 U-Net 不必重写数据管线。代价是纯 Python 的逐步递推比 numpy 版慢（12 秒 → 26 秒）。
 
 还有一处精度开关要写清楚：脚本显式开了 `torch.set_default_dtype(torch.float64)`。默认 float32 下三种后验均值之间的差异会浮到 $$10^{-7}$$ 量级（float32 的机器精度约 1.2e-7），那时再说「它们就是同一个向量」就不严谨了——这类代数恒等式的核验必须在 float64 下做。
 
