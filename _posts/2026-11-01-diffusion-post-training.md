@@ -246,3 +246,8 @@ python post_train_lab.py A --figdir figs # 额外出两张图
 3. Wallace, Dang, Rafailov, Zhou, Lou, Ermon. *Diffusion Model Alignment Using Direct Preference Optimization.* [arXiv:2311.12908](https://arxiv.org/abs/2311.12908)
 4. Rafailov, Sharma, Mitchell, Ermon, Manning, Finn. *Direct Preference Optimization: Your Language Model is Secretly a Reward Model.* [arXiv:2305.18290](https://arxiv.org/abs/2305.18290)
 5. Ho, Jain, Abbeel. *Denoising Diffusion Probabilistic Models.* [arXiv:2006.11239](https://arxiv.org/abs/2006.11239)
+
+## 上一篇 / 下一篇
+
+- 上一篇：[扩散模型采样器：把反向过程写成 ODE 之后，为什么 DDIM 还不够](/2026/11/01/diffusion-sampler-ode/)
+- 下一篇：[扩散模型的少步生成：一致性模型到底把什么换成了步数](/2026/11/01/diffusion-few-step/)

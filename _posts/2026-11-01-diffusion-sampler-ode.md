@@ -339,3 +339,8 @@ python sampler_lab.py A --figdir figs # 额外出两张图
 3. Lu, Zhou, Bao, Chen, Li, Zhu. *DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps.* [arXiv:2206.00927](https://arxiv.org/abs/2206.00927)
 4. Lu, Zhou, Bao, Chen, Li, Zhu. *DPM-Solver++: Fast Solver for Guided Sampling of Diffusion Probabilistic Models.* [arXiv:2211.01095](https://arxiv.org/abs/2211.01095)
 5. Ho, Jain, Abbeel. *Denoising Diffusion Probabilistic Models.* [arXiv:2006.11239](https://arxiv.org/abs/2006.11239)
+
+## 上一篇 / 下一篇
+
+- 上一篇：[DDPM 深度剖析：前向闭式、时间步与 DDIM 采样](/2026/11/01/ddpm-deep-dive/)
+- 下一篇：[扩散模型的后训练对齐：奖励只给一次，信用怎么摊到每一步](/2026/11/01/diffusion-post-training/)
