@@ -38,6 +38,14 @@ $$
 
 注意 FAST 那一列的绝对值：**每只机械臂每个块差不多 30 个 token，几乎不随频率变**。分箱那一列是频率的线性函数，FAST 那一列是频率的近似常数。这一列数字背后是整篇文章要讲的东西。
 
+论文 Figure 2 把这件事直接画了出来：左半是整条流水线（高频数据 → DCT → 量化 → BPE → 自回归 VLA），右半是两种分词方案随控制频率变化的得分曲线——分箱在 20 Hz 时已经塌到接近 0，FAST 还在往上走。
+
+![FAST 论文 Figure 2（CC BY 4.0，原图未改动）：左侧为 FAST 分词流水线，高频机器人数据依次经过 DCT、量化、BPE 压缩成 token 序列后送入自回归 VLA；右侧为不同控制频率下 FAST 与 OpenVLA 式分箱方案的得分对比，频率越高差距越大](/assets/img/pi-vla/fast_paper_fig2.png)
+
+*图源：Pertsch et al., FAST: Efficient Action Tokenization for Vision-Language-Action Models，[arXiv:2501.09747](https://arxiv.org/abs/2501.09747) Figure 2，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未改动。*
+
+右半那两条曲线值得单独看一眼：分箱方案的得分是**先升后降**，在 10 Hz 之后掉到 0——不是“变慢”而是“彻底学不出来”。这就是第 5 节要讲的“分箱在高带宽下失效”的现象层证据：token 数涨上去之后，自回归的每一步都在做越来越琐碎的预测，误差沿着序列累积。FAST 那条曲线单调上升，因为它把 token 数钉在了带宽上。
+
 ![同一个 7 维 50 步动作块的两种分词：上图是分箱——7 行 × 50 列共 350 个小格，每格一个 token，颜色是该时刻该维的动作值；下图是 FAST——同一段动作经 DCT、量化、BPE 后只剩 39 个 token（同批平均 44 个），排成一行](/assets/img/pi-vla/fast_token_stream.svg)
 
 上图里每一个小方格都是模型要吐的一个符号：横着数 50 列是时间，竖着数 7 行是维度，一共 350 个。要注意的是这张图的**形状**是被锁死的——不管动作有多简单，格子数只由 $$7\times 50$$ 决定。下图是同一段动作走完 FAST 之后的样子：39 个 token 排成一行，比上图的**一行**还短。多出来的 311 个 token 不是信息，是编码冗余。

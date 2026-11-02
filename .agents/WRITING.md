@@ -40,17 +40,59 @@ Deep-Dive 默认**单篇长文直进 `_posts/`**，不拆篇。
 Mermaid 只在**纯拓扑、且真的不需要任何尺寸信息**时才用（例如状态机、依赖关系）。
 即便用了，也要按下面的约束自验语法。
 
-**引用他人图**：只在**官方明确可再用**（CC 授权或官方声明）时用，**必须下载到 `assets/img/`**
-不外链，并在图注或文末写明来源与许可。
+**引用他人图**：先查许可，再决定「搬」还是「链」。
+
+- **arXiv 页面的 License 字段是唯一判据**（`curl -sL https://arxiv.org/abs/<id> | grep -oE '(arxiv.org/licenses|creativecommons.org/licenses)/[^"]*'`）。
+  - `creativecommons.org/licenses/by/4.0` → **可以下载放进 `assets/img/`**，
+    条件是署名 + 许可链接 + 声明是否改动（见下）。
+  - `arxiv.org/licenses/nonexclusive-distrib/1.0/` → **只是授予 arXiv 分发权，不是给公众的授权**。
+    此时图仍然归作者，只能**链接指过去**（写「见论文 Figure X」+ arXiv 链接），不能搬。
+- 公司官网 / 博客（如 pi.website）没有明示许可的，**一律按不可搬处理**。开源仓库里的图看仓库
+  LICENSE（Apache-2.0 仓库里的图可用，但要保留 NOTICE）。
+
+**搬图时的署名格式**（CC BY 4.0 的三要素：署名、许可、改动声明），图下单独一行斜体：
+
+```markdown
+*图源：Pertsch et al., FAST: Efficient Action Tokenization …，[arXiv:2501.09747](https://arxiv.org/abs/2501.09747)
+Figure 2，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未改动。*
+```
 
 **三条红线：**
 
 - **不外链他人图片**（`![...](https://...)` 指向别人的服务器）：链接会断、防盗链会让图消失，
   还会把读者 IP 泄露给第三方。arXiv / 论文站点的图尤其不要直接外链。
-- **不搬运论文原图**：论文图版权归作者。要引用就写成「见论文 Figure X」并给链接；
+- **许可不明就不搬论文原图**：要引用就写成「见论文 Figure X」并给链接；
   想让读者看到形状，就自己画一张**同构**的图，并注明「数据是本文合成探针，非论文原图」。
 - **图里的数字必须和正文一致**：配图脚本是实验的一部分，数字要和 `results/stdout.txt`
   对得上；正文引用的论文数字另标出处，不要和自己的实验数字混在一张表里。
+
+**π 系列各篇的许可登记（2026-11-03 查，改稿前若隔得久请重查）**
+
+| 篇 | arXiv | 许可 | 能搬的架构图 |
+| --- | --- | --- | --- |
+| 01 π0 | 2410.24164 | nonexclusive ❌ | 无，只能链（或自己画） |
+| 02 FAST | 2501.09747 | **CC BY 4.0** ✅ | Fig.2 `teaser.png`（流水线 + 频率对比），已用 |
+| 03 KI | 2505.23705 | nonexclusive ❌ | 无 |
+| 04 Hi Robot | 2502.19417 | nonexclusive ❌ | 无 |
+| 05 π0.5 | 2504.16054 | nonexclusive ❌ | 无 |
+| 06 RTC | 2506.07339 | **CC BY 4.0** ✅ | Fig.3 `diagram.svg`（时序/引导权重）、Fig.4 `hard_vs_soft.svg`（硬掩码 vs 软掩码）、Fig.2 `bifurcation.svg` |
+| 07 RECAP / π*0.6 | 2511.14759 | nonexclusive ❌ | 无 |
+| 08 RLT | 2604.23073 | nonexclusive ❌ | 无 |
+| 09 MEM | 2603.03596 | **CC BY 4.0** ✅ | Fig.1 `system_overview.png`（系统总览）、Fig.3 `video_encoderv5.png`（视频编码器） |
+| 10 π0.7 | 未见 arXiv | — | 无（只有官网博客页） |
+
+取图地址：`https://arxiv.org/html/<id>v<n>/<文件名>`（HTML 版把图拆成了单独文件，
+比从 PDF 里抠干净得多；`v<n>` 要写当前版本号）。
+
+本机**没有 rsvg-convert / inkscape / cairosvg**，`.svg` 又不能直接送进看图工具，
+要先用一个 HTML 壳包住再用无头 Chrome 截图（必须 `--headless=new`，裸 `--headless` 静默返回空文件）：
+
+```bash
+printf '<html><body style="margin:0"><img src="x.svg" style="width:1100px"></body></html>' > /tmp/_w.html
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --no-sandbox \
+  --user-data-dir=/tmp/chrome-prof --virtual-time-budget=6000 \
+  --screenshot=/tmp/x.png --window-size=1150,520 file:///tmp/_w.html
+```
 
 **画 SVG 的两条硬约束**（都踩过）：
 
