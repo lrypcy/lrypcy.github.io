@@ -311,6 +311,15 @@ series:
     prefixes: [world-model]
     desc: 1 篇长文。从 Dreamer V4 到 Cosmos Policy / DreamZero 的 2025–2026 完整地图。
 
+  - id: pi-vla
+    name: π 系列具身模型
+    short: π 系列
+    category: 具身智能
+    layer: 2
+    order: 11
+    prefixes: [pi-vla-]
+    desc: 10 篇。按问题而非时间线拆 π0 到 π0.7：动作表示（flow matching / FAST / 知识隔离）→ 长程分解（Hi Robot / π0.5）→ 实时执行（RTC）→ 经验学习（RECAP / RLT）→ 记忆与可引导条件（MEM / π0.7）。每篇一个算法、一份 CPU 实验。
+
   - id: transcendental
     name: 超越函数与 softmax 的硬件实现
     short: 超越函数
@@ -427,6 +436,8 @@ links:
   - { from: agentic-rl, to: rl-estimation, label: 长程 rollout 的 credit assignment 最难 }
   - { from: mdp-grpo,  to: wam,        label: WAM 用 RL 训练动作模型 }
   - { from: embodied,  to: wam,        label: 世界模型驱动具身决策 }
+  - { from: embodied,  to: pi-vla,     label: π 系列是 VLA 路线最完整的一条工程化样本 }
+  - { from: flow,      to: pi-vla,     label: 条件流匹配是 π0 动作生成的训练目标 }
   - { from: flow,      to: wam,        label: 生成式世界模型（Cosmos / DreamZero） }
   - { from: flow,      to: diffusion-lm, label: 连续域的概率路径走向离散域的掩码扩散 }
   - { from: vae,       to: flow,         label: 连续 VAE 的潜空间是扩散与 Flow 生成的场所 }
