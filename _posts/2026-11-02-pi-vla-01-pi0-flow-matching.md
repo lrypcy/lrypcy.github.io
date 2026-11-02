@@ -194,7 +194,16 @@ $$
 
 实践上就是三步：采一批真实动作块、采一批高斯噪声、在随机的 $$\tau$$ 上线性插值，然后让网络回归两者之差。没有对抗、没有重要性采样、没有 log-likelihood。
 
-有个跨本体的细节藏在一个 `axis` 里。开源实现的损失是 `jnp.mean(jnp.square(v_t - u_t), axis=-1)`——对动作维度**求平均**而不是求和。原因很实际：不同本体的动作维度差很多（从 6 维的单臂到 18 到 19 维的移动操作），求和会让高维本体在总损失里占更大份额，等于给数据混合偷偷加了一个与维度成正比的权重。求平均把每个样本拉回等权。这个选择不影响单本体训练，但直接影响混训时的有效配比，而跨本体正是 π0 的核心卖点。
+有个跨本体的细节藏在一个 `axis` 里。JAX 参考实现的损失是 `jnp.mean(jnp.square(v_t - u_t), axis=-1)`——对动作维度**求平均**而不是求和。原因很实际：不同本体的动作维度差很多（从 6 维的单臂到 18 到 19 维的移动操作），求和会让高维本体在总损失里占更大份额，等于给数据混合偷偷加了一个与维度成正比的权重。求平均把每个样本拉回等权。这个选择不影响单本体训练，但直接影响混训时的有效配比，而跨本体正是 π0 的核心卖点。
+
+openpi 同时维护两套实现，这一行在两套里的写法不同、结果相同，值得单独记一笔：
+
+| 路径 | 文件 | 写法 | 归约发生地 |
+| --- | --- | --- | --- |
+| JAX（官方主线） | `src/openpi/models/pi0.py` | `jnp.mean(jnp.square(v_t - u_t), axis=-1)` | 模型内，输出形状 (b,)；`scripts/train.py` 再 `jnp.mean` |
+| PyTorch（官方移植） | `src/openpi/models_pytorch/pi0_pytorch.py` | `F.mse_loss(u_t, v_t, reduction="none")` | 模型外，输出 (b, H, d)；`scripts/train_pytorch.py` 里 `loss = losses.mean()` |
+
+两边的差别只是“先对动作维平均再对 batch 平均”和“一次全平均”。因为动作已被 `PadStatesAndActions` 零填充到固定的 `action_dim=32`、`action_horizon=50` 也固定，每个样本的元素个数相同，所以两种归约**数值完全等价**。但填充有一个副作用：7 维本体的那 25 个填充维也被算进分母，每条真实维的梯度权重是 $$1/32$$ 而不是 $$1/7$$。这不是 bug（所有本体同等缩放，相对配比不变），但改 `action_dim` 就等于改有效学习率，调参时要连着看。
 
 这里有一个必须交代清楚的问题：**训练时用条件速度 $$\mathbf{u}$$，推理时没有 $$\mathbf{A}_t$$ 可看，网络学到的是什么？** 答案是边际速度场——对所有能走到同一个 $$\mathbf{A}_t^\tau$$ 的数据点取条件期望。下一节把它算出来。
 
@@ -415,7 +424,7 @@ prefix 按每相机 256 个 patch（SigLIP，224/14=16，$$16^2$$）+ 约 30 个
 | $$\epsilon$$ | `noise` | 标准高斯 |
 | $$\mathbf{u}=\epsilon-\mathbf{A}_t$$ | `u_t = noise - actions` | 与论文同号 |
 | $$v_\theta$$ | `v_t` | 只取后缀最后 H 个 token |
-| $$L^\tau$$ | `mean(square(v_t-u_t), axis=-1)` | 对动作维求平均 |
+| $$L^\tau$$ | JAX `mean(square(v_t-u_t), axis=-1)`；torch `mse_loss(..., reduction="none")` 后由训练脚本 `.mean()` | 对动作维求平均，见 §5 |
 | 10 步 Euler | `dt=-1/num_steps`，`while time >= -dt/2` | 从 1 积到 0 |
 
 训练步就四件事，采样步就三件事：
@@ -442,10 +451,21 @@ return x
 第一次读这份实现时，有三个地方容易卡住，都是“看起来无关紧要、实际上决定对不对”的细节：
 
 1. **循环条件 `time >= -dt/2` 不是“多跑一步”**。`dt=-0.1`、从 `time=1.0` 出发，条件写成 `>= 0.05` 而不是 `>= 0`，是为了让 0.0999… 这种浮点残差也能通过最后一次判断。跑完 t 序列是 1.0 → 0.9 → … → 0.1 → 0.0，正好 10 步。
-2. **`suffix_out[:, -action_horizon:]` 那个切片不能省**。suffix 里第一个 token 是本体状态（π0 不是 π0.5，后者用 adaRMS 把状态并进了时间调制），直接取整个 suffix 会多出一行，形状对不上动作维度。
+2. **`suffix_out[:, -action_horizon:]` 那个切片不能省**。π0 的 suffix 是“1 个状态 token + H 个动作 token”，不切就多出一行，形状对不上动作维度。到了 π0.5 模式这行切片仍然在，但已经切不到东西——那时状态被离散成文本进了 prefix，suffix 只剩 H 个动作 token。
 3. **损失是 `mean(..., axis=-1)` 而不是 `sum`**。这一条在第 5 节说过，但它在代码里只是一行、很容易被当成风格问题改掉，改完混训的权重就悄悄变了，而且 loss 曲线看不出异常。
 
-这三个都属于“抄代码抄不错、但改代码会改错”的类型。后面几篇会继续遇到同类的东西——KI 的 `sg` 作用在哪张矩阵上、RTC 的 mask 是实数而不是布尔，都是这种一眼看不出分量的细节。
+三个都属于“抄代码抄不错、但改代码会改错”的类型。后面几篇会继续遇到同类的东西——KI 的 `sg` 作用在哪张矩阵上、RTC 的 mask 是实数而不是布尔，都是这种一眼看不出分量的细节。
+
+最后补一句两套实现的对照。上面所有行号引的是 JAX 版（`src/openpi/models/pi0.py`），PyTorch 移植版（`src/openpi/models_pytorch/pi0_pytorch.py`）逐项对得上，只是文件组织不同：
+
+| 环节 | JAX | PyTorch |
+| --- | --- | --- |
+| 三块掩码 | `pi0.py` L19-L44 | `make_att_2d_masks` L52-L81，同一个 cumsum 技巧 |
+| 后缀嵌入与时间注入 | L150-L186 | `embed_suffix` L238-L315 |
+| 训练前向 | L189-L215 | `forward` L317-L374 |
+| 十步采样 | L217-L279 | `sample_actions` L377-L420 + `denoise_step` L422 起 |
+
+真正不同的只有两处，都是框架机制而非算法：JAX 用 `jax.lax.while_loop` 把整个去噪循环编进计算图，PyTorch 用 Python `while` 配 `use_cache=True`；损失归约位置见 §5 那张表。至于 π0.5 的 adaRMS 分支，两套实现都有——`Pi0Config(pi05=True)` 一开，`embed_suffix` 走另一条路，而且做的第一件事是**不再插入单独的状态 token**（状态被离散成文本塞进 prefix）。这个分叉是第 05 篇的入口。
 
 下一篇拆 FAST：同样是解决“动作怎么表示”，它走的是完全相反的方向——不学连续分布，而是先用 DCT 把动作块压成 30 到 60 个 token，再让自回归模型去预测。两条路的取舍不在精度，在**训练速度与推理延迟怎么分配**。
 
@@ -453,9 +473,16 @@ return x
 
 - π0 论文：*$$\pi_0$$: A Vision-Language-Action Flow Model for General Robot Control*，[arXiv:2410.24164](https://arxiv.org/abs/2410.24164)
 - 官方博客：[π0: Our First Generalist Policy](https://www.pi.website/blog/pi0)（2024-10-31）
-- 开源实现：`Physical-Intelligence/openpi`，commit [`215abfb`](https://github.com/Physical-Intelligence/openpi/tree/215abfb217dbac7d5f1273282331b9b1866c0479)
-  - 掩码：`src/openpi/models/pi0.py` [L19-L44](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0.py#L19-L44)
-  - 后缀与三块掩码：`src/openpi/models/pi0.py` [L150-L186](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0.py#L150-L186)
-  - 训练目标与时间采样：`src/openpi/models/pi0.py` [L189-L215](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0.py#L189-L215)
-  - 十步采样与 KV cache：`src/openpi/models/pi0.py` [L217-L279](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0.py#L217-L279)
+- 开源实现：`Physical-Intelligence/openpi`，commit [`215abfb`](https://github.com/Physical-Intelligence/openpi/tree/215abfb217dbac7d5f1273282331b9b1866c0479)。仓库里同时有 JAX 与 PyTorch 两套实现，本篇正文的代码片段与行号以 JAX 版为准，§5 与 §12 给了两套的逐项对照。
+  - JAX：`src/openpi/models/pi0.py`
+    - 掩码：`src/openpi/models/pi0.py` [L19-L44](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0.py#L19-L44)
+    - 后缀与三块掩码：`src/openpi/models/pi0.py` [L150-L186](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0.py#L150-L186)
+    - 训练目标与时间采样：`src/openpi/models/pi0.py` [L189-L215](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0.py#L189-L215)
+    - 十步采样与 KV cache：`src/openpi/models/pi0.py` [L217-L279](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0.py#L217-L279)
+  - PyTorch：`src/openpi/models_pytorch/pi0_pytorch.py`
+    - 掩码：`pi0_pytorch.py` [L52-L81](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models_pytorch/pi0_pytorch.py#L52-L81)
+    - 后缀与时间注入：`pi0_pytorch.py` [L238-L315](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models_pytorch/pi0_pytorch.py#L238-L315)
+    - 训练前向与 loss：`pi0_pytorch.py` [L317-L374](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models_pytorch/pi0_pytorch.py#L317-L374)，归约在 `scripts/train_pytorch.py` [L529-L536](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/scripts/train_pytorch.py#L529-L536)
+    - 十步采样与 KV cache：`pi0_pytorch.py` [L377-L420](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models_pytorch/pi0_pytorch.py#L377-L420)
+  - 动作零填充到固定维度：`src/openpi/transforms.py` [L328-L337](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/transforms.py#L328-L337)、`pad_to_dim` [L423-L430](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/transforms.py#L423-L430)
 - 配套实验：`ipynbs` 的 [`experiments/pi-vla/pi0-flow-matching/`](https://github.com/lrypcy/ipynbs/tree/d358500/experiments/pi-vla/pi0-flow-matching)，commit `d358500`，30 条断言
