@@ -13,7 +13,7 @@ mathjax: true
 > **TL;DR**
 >
 > * **核心问题与结论**：π0 式的流匹配 action expert 是随机初始化的，梯度顺着注意力的 K / V 回流进预训练 VLM，把语言跟随能力冲掉。KI 只在这条通路上加 stop-gradient，另用 FAST 离散动作 token 给主干留一条学习信号（[arXiv:2505.23705](https://arxiv.org/abs/2505.23705) §5.2）。
-> * **关键证据**：断梯度只压两个矩阵——论文式 (5)(6) 的 $$K_b$$、$$V_b$$；$$Q_b$$ 与输出投影不用管，掩码已让主干行读不到 action token。合成探针上断梯度后 $$\alpha\in\lbrace1,8,32\rbrace$$ 的主干参数**逐位相同**，不断梯度时 joint 探针 $$R^2$$ 从 0.562 跳到 0.733（[本仓实验](https://github.com/lrypcy/ipynbs/tree/797c712/experiments/pi-vla/knowledge-insulation)，42 条断言）。
+> * **关键证据**：断梯度只压两个矩阵——论文式 (5)(6) 的 $$K_b$$、$$V_b$$；$$Q_b$$ 与输出投影不用管，掩码已让主干行读不到 action token。合成探针上断梯度后 $$\alpha\in\lbrace1,8,32\rbrace$$ 的主干参数**逐位相同**，不断梯度时 joint 探针 $$R^2$$ 从 0.562 跳到 0.733（[本仓实验](https://github.com/lrypcy/ipynbs/tree/6d3ec92/experiments/pi-vla/knowledge-insulation)，42 条断言）。
 > * **适用边界与代价**：训练算力贵约 20%（论文 §7），换 π0 需 7.5 倍步数追平；**冻住主干不可行**（论文 Fig.4(a)、Fig.8 接近 0%）。合成探针上 KI 把语言跟随从 0.36 保到 0.80，代价是同步数下主干里的动作信息更少（$$R^2$$ 0.326 vs naive 0.730）。
 > * **系列定位**：解决「加动作模块不毁主干」，不解决长程任务怎么分解（04 Hi Robot）与推理延迟（06 RTC）。
 
@@ -210,7 +210,7 @@ $$
 
 论文给的是真实机器人上的成绩，本节的实验不重算那些，只验机制：一个 32 维主干、注意力 K/V 瓶颈秩 8、4 个物体 + 指令的语言任务、5 步动作块的玩具，纯 numpy 手写前向与反向（反向必须手写——$$\mathrm{sg}$$ 在前向里是恒等映射，有限差分测的是「如果不断梯度会是多少」，测不出「梯度恒为 0」这件事）。
 
-设定上是刻意对齐论文的：语言标签只依赖被选中物体的当次外观扰动，动作块依赖整幅场景在 $$\mathbf{U}$$ 上的 3 个读数，且 $$\mathbf{U}$$ 与语言任务需要的方向正交——这样「主干里装不装得下动作信息」才是一个真的瓶颈。全部 42 条断言与完整输出在 [`experiments/pi-vla/knowledge-insulation/`](https://github.com/lrypcy/ipynbs/tree/797c712/experiments/pi-vla/knowledge-insulation)。
+设定上是刻意对齐论文的：语言标签只依赖被选中物体的当次外观扰动，动作块依赖整幅场景在 $$\mathbf{U}$$ 上的 3 个读数，且 $$\mathbf{U}$$ 与语言任务需要的方向正交——这样「主干里装不装得下动作信息」才是一个真的瓶颈。全部 42 条断言与完整输出在 [`experiments/pi-vla/knowledge-insulation/`](https://github.com/lrypcy/ipynbs/tree/6d3ec92/experiments/pi-vla/knowledge-insulation)。
 
 ### 8.1 一个绕不开的构造问题：$$x_t$$ 里本来就带着 $$a$$
 
@@ -376,7 +376,7 @@ k_sg = jnp.concatenate([jax.lax.stop_gradient(k_b), k_a], axis=1)
   - 掩码的 cumsum 构造：`src/openpi/models/pi0.py` [L19-L44](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0.py#L19-L44)
   - π0 的损失（只有流匹配 MSE）：`pi0.py` [L189-L214](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0.py#L189-L214)
   - 时间采样与加噪：`pi0.py` [L196-L200](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0.py#L196-L200)
-- 配套实验：[`experiments/pi-vla/knowledge-insulation/`](https://github.com/lrypcy/ipynbs/tree/797c712/experiments/pi-vla/knowledge-insulation)，commit `797c712`，42 条断言，纯 numpy。本文 4 张配图全部由该目录下的 `ki_figures.py` 生成（SVG），数字与 `results/stdout.txt` 逐字对应；**图上的数字是合成探针的结果，不是论文原图**。论文式 (5)(6) 的结构图是按论文公式重画的。
+- 配套实验：[`experiments/pi-vla/knowledge-insulation/`](https://github.com/lrypcy/ipynbs/tree/6d3ec92/experiments/pi-vla/knowledge-insulation)，commit `6d3ec92`，42 条断言，纯 numpy。本文 4 张配图全部由该目录下的 `ki_figures.py` 生成（SVG），数字与 `results/stdout.txt` 逐字对应；**图上的数字是合成探针的结果，不是论文原图**。论文式 (5)(6) 的结构图是按论文公式重画的。
 
 > **下一篇**：π 系列具身模型（04）：Hi Robot —— 长程指令怎么拆成子任务。
 >
