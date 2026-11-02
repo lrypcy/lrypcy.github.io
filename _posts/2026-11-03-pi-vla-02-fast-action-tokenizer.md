@@ -384,6 +384,6 @@ openpi 把三种 tokenizer 放在同一个文件里，正好可以直接对照�
   - 配置：`pi0_fast.py` [L77-L89](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models/pi0_fast.py#L77-L89)
 - 配套实验：`ipynbs` 的 [`experiments/pi-vla/fast-action-tokenizer/`](https://github.com/lrypcy/ipynbs/tree/6a2c379/experiments/pi-vla/fast-action-tokenizer)，commit `6a2c379`，46 条断言。正文里 5 张配图全部由该目录下的 `fast_tokenizer_figures.py` 生成（SVG），数据是合成探针，不是论文原图；论文表 I 的数字在 §1 直接引用并标注了出处。
 
-> **下一篇**：π 系列具身模型（03）：KI —— 自回归微调为什么把语言能力冲掉，讲 stop_gradient 该压在哪张矩阵上。
+> **下一篇**：[π 系列具身模型（03）：KI —— 把流匹配的梯度挡在 VLM 之外](/2026/11/03/pi-vla-03-knowledge-insulation/)
 >
 > **上一篇**：[π 系列具身模型（01）：π0 —— 连续动作如何接进 VLM](/2026/11/02/pi-vla-01-pi0-flow-matching/)
