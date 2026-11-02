@@ -486,3 +486,7 @@ return x
     - 十步采样与 KV cache：`pi0_pytorch.py` [L377-L420](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/models_pytorch/pi0_pytorch.py#L377-L420)
   - 动作零填充到固定维度：`src/openpi/transforms.py` [L328-L337](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/transforms.py#L328-L337)、`pad_to_dim` [L423-L430](https://github.com/Physical-Intelligence/openpi/blob/215abfb217dbac7d5f1273282331b9b1866c0479/src/openpi/transforms.py#L423-L430)
 - 配套实验：`ipynbs` 的 [`experiments/pi-vla/pi0-flow-matching/`](https://github.com/lrypcy/ipynbs/tree/d358500/experiments/pi-vla/pi0-flow-matching)，commit `d358500`，30 条断言
+
+> **下一篇**：[π 系列具身模型（02）：FAST —— 把动作块压成 token](/2026/11/03/pi-vla-02-fast-action-tokenizer/)
+>
+> **上一篇**：无（系列首篇）
