@@ -116,28 +116,9 @@ $$
 
 两套权重只在 self-attention 层交互，其余各算各的。这个设计在论文里被类比成“两个专家的混合”：图像和语言 token 路由到主干，本体状态和动作 token 路由到 action expert。由于交互只发生在 attention，两个专家的 width 和 mlp_dim **不必相同**——这正是 action expert 能被缩到 1024 宽的原因。
 
-```mermaid
-flowchart LR
-    subgraph PRE["prefix：PaliGemma 3B（VLM 预训练权重）"]
-        direction TB
-        IMG["图像 × 2 到 3 路<br/>SigLIP → 每相机 256 个 patch"] --> LLM
-        LANG["语言指令 token"] --> LLM
-        LLM["Gemma 2B<br/>width 2048，depth 18"]
-    end
-    subgraph SUF["suffix：action expert ~300M"]
-        direction TB
-        ST["本体状态 1 个 token"] --> MLP
-        ACT["加噪动作块 H=50 个 token"] --> MLP
-        TIME["流时间的正弦编码"] --> MLP
-        MLP["逐 token 拼接后过 MLP<br/>width 1024（π0.5 改 adaRMS）"]
-    end
-    LLM -->|"联合 self-attention<br/>prefix 内部双向，不回看动作 token"| MLP
-    MLP --> PROJ["action_out_proj<br/>取 suffix 最后 H 个 token"]
-    PROJ --> VT["预测速度场 v"]
-    VT --> LOSS["训练：MSE 逼近 ε 减 A_t<br/>推理：从 t=1 积分到 t=0"]
-```
+![π0 的网络结构：左侧 prefix（PaliGemma 3B，width 2048）与右侧 suffix（action expert 约 300M，width 1024）各持一套权重，唯一的交互点是中间那层联合 self-attention；注意力之后两路各走各的 MLP，最终由 action_out_proj 取 suffix 末 50 个 token 输出速度场](/assets/img/pi-vla/pi0_architecture.svg)
 
-这张图里有三条信息值得单独看：**中间那条箭头**是两个专家唯一的交互点——只在 self-attention 上，两边的 MLP 各算各的，所以 width 可以一个是 2048、一个是 1024；**箭头是单向的**（掩码禁止 prefix 回看动作 token），这正是 prefix 的表示与动作无关、因而能被缓存的图证，第 9 节会把这笔账算成 token·次；**时间是从 suffix 下侧进去的**，每个动作 token 一份而不是全局调制——这条决定了它能和 KV cache 共存（AdaLN 的全局调制做不到）。
+这张图里有三条信息值得单独看：**中间那层联合 self-attention**是两个专家唯一的交互点——只在 attention 上碰头，下面的 MLP 各算各的，所以 width 可以一个是 2048、一个是 1024；**这个交互是单向的**（掩码禁止 prefix 回看动作 token），这正是 prefix 的表示与动作无关、因而能被缓存的图证，第 9 节会把这笔账算成 token·次；**流时间是混在 suffix 里进来的**，每个动作 token 一份而不是全局调制——这条决定了它能和 KV cache 共存（AdaLN 的全局调制做不到）。
 
 这里要分清它和标准 MoE 的差别：**路由是硬编码的**，按 token 的类型分，不存在学习出来的 router，也没有负载均衡损失。标准 MoE 里 router 要给每个 token 算一组专家权重、再加辅助损失防止塌缩；π0 的结构里这些统统没有，因为“这个 token 是图像还是动作”是已知的，不需要猜。代价是专家数被锁死在 2，且不能按输入动态分配算力。收益是训练稳定——MoE 最难调的两件事（路由塌缩、专家不均衡）在这套结构里根本不出现。
 
@@ -378,20 +359,9 @@ $$
 
 第 4 节说过 prefix 的表示不依赖动作。这条性质在推理时直接兑现成一次缓存复用：第一个去噪步之前，把 prefix 前向一次、把 K/V 存下来；之后十个去噪步只前向 action expert 的 51 个 token（1 个状态 + 50 个动作），attention 对着缓存里的 prefix K/V 做。openpi 的 `sample_actions` 就是这个结构。
 
-```mermaid
-flowchart TD
-    OBS["观测：图像 + 语言 + 本体状态"] --> PRE["prefix 前向一次<br/>542 到 798 个 token"]
-    PRE --> KV[("缓存 prefix 的 K 与 V")]
-    NOISE["x ← 标准高斯<br/>t ← 1"] --> LOOP
-    KV --> LOOP{"t ≥ 0.05 ?"}
-    LOOP -->|"是"| STEP["suffix 前向一次：state + x + t<br/>只算 51 个 token，attention 读缓存"]
-    STEP --> UPD["x ← x − 0.1 · v_t<br/>t ← t − 0.1"]
-    UPD --> LOOP
-    LOOP -->|"否"| OUT["输出 1 秒动作块"]
-    PRE -.->|"只做一次"| OUT
-```
+![π0 十步推理的时间线：prefix 只前向一次并把 K/V 缓存下来，之后十步只前向 suffix 的 51 个 token，每步都是同一个 action expert；token·次因此从 5930 压到 1103（2 相机，5.38×）](/assets/img/pi-vla/pi0_inference_loop.svg)
 
-循环里唯一被重复计算的是**最下边那条回路**，上面的 prefix 前向只走一次。这也解释了第 3 节那个“为什么把 action expert 做小”的问题：回路里的每一步都要过一遍 action expert，而主干只在开头出现一次。
+图里真正被重复十次的是**中间那一排小方块**，左边的 prefix 前向只走一次。这也解释了第 3 节那个“为什么把 action expert 做小”的问题：十步里的每一步都要过一遍 action expert，而主干只在开头出现一次。
 
 数值上这两条路必须等价。实验 E 用小规模多头注意力验证：cache 复用与全序列前向的输出差值 **0.000e+00**（逐位相同，因为计算路径一致）。为了证明这个测试不是“测了个寂寞”，加了一个负对照——只把 prefix 的 V 顺序打乱，输出偏差 1.472。顺带一个该记住的性质：**K 和 V 同步置换是等变的**，attention 输出不变，所以负对照必须打破配对。
 
