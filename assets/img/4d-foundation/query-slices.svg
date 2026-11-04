@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 380" width="680" height="380" role="img" font-family="PingFang SC, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="680" height="380" fill="#ffffff"/>
+  <text x="340" y="22" font-size="12.5" font-weight="700" text-anchor="middle" fill="#111827">查询空间的三个时间轴，五个任务各占一条线或一个面</text>
+
+  <!-- cube edges -->
+  <g stroke="#94a3b8" stroke-width="1.3" fill="none">
+    <line x1="90" y1="300" x2="280" y2="260"/>
+    <line x1="90" y1="300" x2="90" y2="130"/>
+    <line x1="90" y1="300" x2="185" y2="345"/>
+    <line x1="280" y1="260" x2="280" y2="90"/>
+    <line x1="280" y1="260" x2="375" y2="305"/>
+    <line x1="90" y1="130" x2="280" y2="90"/>
+    <line x1="90" y1="130" x2="185" y2="175"/>
+    <line x1="185" y1="345" x2="375" y2="305"/>
+    <line x1="185" y1="345" x2="185" y2="175"/>
+    <line x1="280" y1="90" x2="375" y2="135"/>
+    <line x1="375" y1="305" x2="375" y2="135"/>
+    <line x1="185" y1="175" x2="375" y2="135"/>
+  </g>
+
+  <!-- slice: point track  A -> G -->
+  <line x1="90" y1="300" x2="185" y2="175" stroke="#7c3aed" stroke-width="4" stroke-linecap="round"/>
+  <!-- slice: extrinsics  A -> D -->
+  <line x1="90" y1="300" x2="185" y2="345" stroke="#d97706" stroke-width="4" stroke-linecap="round"/>
+  <!-- slice: point cloud  A -> E -->
+  <line x1="90" y1="300" x2="280" y2="90" stroke="#2563eb" stroke-width="4" stroke-linecap="round"/>
+  <!-- slice: depth / intrinsics  A -> H -->
+  <line x1="90" y1="300" x2="375" y2="135" stroke="#059669" stroke-width="4" stroke-linecap="round" stroke-dasharray="9 5"/>
+
+  <circle cx="90" cy="300" r="5" fill="#111827"/>
+  <text x="76" y="317" font-size="10" text-anchor="end" fill="#475569">原点</text>
+
+  <!-- axis labels -->
+  <text x="289" y="276" font-size="11" font-weight="700" fill="#111827">t_src</text>
+  <text x="82" y="120" font-size="11" font-weight="700" text-anchor="end" fill="#111827">t_tgt</text>
+  <text x="198" y="338" font-size="11" font-weight="700" fill="#111827">t_cam</text>
+
+  <!-- in-cube slice labels: white halo keeps them readable over the lines -->
+  <g font-size="10.5" stroke="#ffffff" stroke-width="3.5" paint-order="stroke" stroke-linejoin="round">
+    <text x="205" y="158" fill="#2563eb">点云</text>
+    <text x="196" y="236" fill="#7c3aed">点轨迹</text>
+    <text x="248" y="222" fill="#059669">深度图 / 内参</text>
+    <text x="122" y="336" fill="#d97706">外参</text>
+  </g>
+
+  <line x1="398" y1="42" x2="398" y2="348" stroke="#e2e8f0" stroke-width="1"/>
+
+  <!-- legend -->
+  <text x="412" y="52" font-size="11" font-weight="700" fill="#111827">同一函数 P = D(q, F)，只改切片</text>
+
+  <rect x="412" y="70" width="12" height="12" rx="3" fill="#7c3aed"/>
+  <text x="432" y="80" font-size="11" font-weight="700" fill="#111827">点轨迹</text>
+  <text x="432" y="97" font-size="10" fill="#475569">t_src 固定；t_tgt = t_cam = 1…T</text>
+
+  <rect x="412" y="118" width="12" height="12" rx="3" fill="#2563eb"/>
+  <text x="432" y="128" font-size="11" font-weight="700" fill="#111827">点云</text>
+  <text x="432" y="145" font-size="10" fill="#475569">t_src = t_tgt = 1…T；t_cam 固定</text>
+
+  <rect x="412" y="166" width="12" height="12" rx="3" fill="#059669"/>
+  <text x="432" y="176" font-size="11" font-weight="700" fill="#111827">深度图</text>
+  <text x="432" y="193" font-size="10" fill="#475569">t_src = t_tgt = t_cam = t；只取 Z</text>
+
+  <rect x="412" y="214" width="12" height="12" rx="3" fill="#d97706"/>
+  <text x="432" y="224" font-size="11" font-weight="700" fill="#111827">外参</text>
+  <text x="432" y="241" font-size="10" fill="#475569">t_src = t_tgt = i；t_cam = j</text>
+
+  <rect x="412" y="262" width="12" height="12" rx="3" fill="#0891b2"/>
+  <text x="432" y="272" font-size="11" font-weight="700" fill="#111827">内参</text>
+  <text x="432" y="289" font-size="10" fill="#475569">同深度图那条对角线，u, v 取粗网格</text>
+
+  <rect x="412" y="306" width="248" height="40" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="424" y="322" font-size="10" fill="#475569">内参与外参用的是粗网格 (h, w)，</text>
+  <text x="424" y="337" font-size="10" fill="#475569">目的是省查询数，不是另一套模型。</text>
+
+  <text x="340" y="372" font-size="11" text-anchor="middle" fill="#111827">三条轴少一根，上面就至少有一条线画不出来 —— 这就是 §4.5 的答案</text>
+</svg>

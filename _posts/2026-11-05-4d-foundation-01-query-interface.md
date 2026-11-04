@@ -16,7 +16,7 @@ prev_url: /2026/09/05/world-model-world-action-model/
 > **TL;DR**
 >
 > * **核心问题与结论**：单目视频里「相机静止＋物体运动」与「相机运动＋物体静止」在 2D 投影上不可区分，所以 4D 重建缺的从来不是时间维，而是第三个约束。D4RT 的答案是把它做成一个函数 $P=\mathcal D(q,F)$，$q=(u,v,t_{\mathrm{src}},t_{\mathrm{tgt}},t_{\mathrm{cam}})$ 中三个时间索引互相独立，深度／点云／轨迹／位姿退化为对这个五元组的不同切片（§2、§4）。
-> * **关键证据**：编码器约 1B（ViT-g、40 层）而解码器只有 144M（8 层），容量比约 7:1；D4RT 论文报告 query 之间一旦允许互相注意，性能显著下降——每个 query 必须冷启动把几何从冻结的 $F$ 里读全（§4、§5，Table 11）。
+> * **关键证据**：编码器约 1B（ViT-g、40 层）而解码器只有 144M（8 层），容量比约 7:1；论文 §2.2 报告让 query 之间做自注意力会大幅掉点——每个 query 必须冷启动把几何从冻结的 $F$ 里读全（§5.2）。
 > * **适用边界与代价**：200+ FPS 指位姿估计吞吐，不是稠密重建；ADT 一格它的 AJ 是 0.240，低于 SpatialTrackerV2 的 0.260（Table 4），「新 SOTA」不等于每格都赢。D4RT 未放代码与权重、训练集含私有数据（§6、§9）。
 > * **系列定位**：接住 WAM 留空的几何底座，往下通向「可渲染的 4D 资产」（4D-LRM、NeoVerse）与具身感知的输入层（§7、§10）。
 
@@ -68,30 +68,32 @@ $$
 
 把 2023 到 2026 的这条线按发表时间读，会读成一串方法名；按「删掉了什么前提」读，只有四步。
 
-**第一代：删掉相机参数（DUSt3R，2023-12）。** 回归点图而不是深度：对每张图输出 $X_i\in\mathbb{R}^{H\times W\times 3}$，即每个像素在**自己视图坐标系**下的 3D 坐标。两张图的点图之间存在一个刚体变换，用全局对齐解出来就得到相对位姿。相机内参从「输入」变成了「不必存在的输入」。代价是成对：$N$ 张图要 $O(N^2)$ 次前向，再跑一次全局优化把所有成对结果拼起来。
+**第一代：删掉相机参数（[DUSt3R](https://arxiv.org/abs/2312.14132)，2023-12）。** 回归点图而不是深度：对每张图输出 $X_i\in\mathbb{R}^{H\times W\times 3}$，即每个像素在**自己视图坐标系**下的 3D 坐标。两张图的点图之间存在一个刚体变换，用全局对齐解出来就得到相对位姿。相机内参从「输入」变成了「不必存在的输入」。代价是成对：$N$ 张图要 $O(N^2)$ 次前向，再跑一次全局优化把所有成对结果拼起来。
 
-**第二代：删掉成对与后处理优化（VGGT，2025-03）。** 一次吃 1 到 200 帧，24 层里每层同时含一个帧内自注意力和一个全局自注意力，四个头同时输出相机、深度、点图与跟踪特征。它把「成对拼图」换成「一次全局注意力」：十帧输入的位姿估计从 DUSt3R 的约 7 秒降到约 0.2 秒，精度反而更高（VGGT Table 1，AUC@30 从 67.7 到 85.3）。代价有两个：全局注意力对帧数二次，且第一帧被钉成参考系。
+**第二代：删掉成对与后处理优化（[VGGT](https://arxiv.org/abs/2503.11651)，2025-03）。** 一次吃 1 到 200 帧，24 层里每层同时含一个帧内自注意力和一个全局自注意力，四个头同时输出相机、深度、点图与跟踪特征。它把「成对拼图」换成「一次全局注意力」：十帧输入的位姿估计从 DUSt3R 的约 7 秒降到约 0.2 秒，精度反而更高（VGGT Table 1，AUC@30 从 67.7 到 85.3）。代价有两个：全局注意力对帧数二次，且第一帧被钉成参考系。
 
-**第三代：删掉固定参考视图（π³，2025-07；DA3，2025-11）。** VGGT 把第一帧钉死当世界原点，这个归纳偏置在参考帧质量差时会连锁失效。π³ 用完全置换等变的架构，直接预测仿射不变位姿与尺度不变局部点图，不要参考帧；DA3 再往前走一步，把多任务头也删了——一个普通 DINO 编码器加一个统一的「深度射线」预测目标，在自建基准上相机位姿精度比 VGGT 高 44.3%、几何精度高 25.1%，且只用公开学术数据集训练。
+**第三代：删掉固定参考视图（[π³](https://arxiv.org/abs/2507.13347)，2025-07；[DA3](https://arxiv.org/abs/2511.10647)，2025-11）。** VGGT 把第一帧钉死当世界原点，这个归纳偏置在参考帧质量差时会连锁失效。π³ 用完全置换等变的架构，直接预测仿射不变位姿与尺度不变局部点图，不要参考帧；DA3 再往前走一步，把多任务头也删了——一个普通 DINO 编码器加一个统一的「深度射线」预测目标，在自建基准上相机位姿精度比 VGGT 高 44.3%、几何精度高 25.1%，且只用公开学术数据集训练。
 
-**第四代：删掉逐帧稠密解码（D4RT，2025-12）。** 前三代无论怎么改，输出形状都是稠密的：每帧一张深度图、一张点图、一组跟踪特征。D4RT 把输出从「张量」换成「函数」——编码一次得到全局表征 $F$，之后按需查询任意时空点的 3D 位置。
+**第四代：删掉逐帧稠密解码（[D4RT](https://arxiv.org/abs/2512.08924)，2025-12）。** 前三代无论怎么改，输出形状都是稠密的：每帧一张深度图、一张点图、一组跟踪特征。D4RT 把输出从「张量」换成「函数」——编码一次得到全局表征 $F$，之后按需查询任意时空点的 3D 位置。
 
-**还没走完的第五步：删掉时序（ARROW，2026-10）。** D4RT 的查询索引 $t_{\mathrm{src}},t_{\mathrm{tgt}},t_{\mathrm{cam}}$ 隐含「输入是一段有序视频」。ARROW 把这三个整数换成由图像内容导出的 identity token，于是多路视频、不同时间拍的照片集、无序图像集合都能进同一个查询接口。
+**还没走完的第五步：删掉时序（[ARROW](https://arxiv.org/abs/2610.01314)，2026-10）。** D4RT 的查询索引 $t_{\mathrm{src}},t_{\mathrm{tgt}},t_{\mathrm{cam}}$ 隐含「输入是一段有序视频」。ARROW 把这三个整数换成由图像内容导出的 identity token，于是多路视频、不同时间拍的照片集、无序图像集合都能进同一个查询接口。
 
 ![四代信息流对比：稠密计算发生在哪一步](/assets/img/4d-foundation/lineage.svg)
 
+*图 1｜读图顺序：沿每栏自上而下，找第一个被标成稠密的方块，再看底部那行成本。数字取自 [VGGT](https://arxiv.org/abs/2503.11651) Table 9 与 [D4RT](https://arxiv.org/abs/2512.08924) 主实验配置。*
+
 上图三栏分别是成对回归、一次前向、编码加查询三种形态。左栏的稠密计算落在解码与优化；中栏落在 200 帧规模的全局注意力；右栏的编码是一次性的固定成本，解码成本只跟查询数量成正比。**「稠密计算搬到哪里」比「用了什么 backbone」更能解释三代的性能差**。
 
-一条容易忽略的旁证：VGGT 在静态的 ScanNet 上相机 ATE 是 0.016（D4RT 论文 Table 6 里最好之一），在强动态、快速模糊的 Sintel 上掉到 0.168，比 MegaSaM 的 0.074 差一倍以上。同一个模型在两套数据上的落差，就是「静态先验」的价格被单独量了一次。
+一条容易忽略的旁证：VGGT 在静态的 ScanNet 上相机 ATE 是 0.016，与 D4RT 的 0.014 只差 0.002（[D4RT](https://arxiv.org/abs/2512.08924) Table 6），在强动态、快速模糊的 Sintel 上掉到 0.168，比 MegaSaM 的 0.074 差一倍以上。同一个模型在两套数据上的落差，就是「静态先验」的价格被单独量了一次。
 
 **旁支：四条没走查询接口的路。** 主线之外还有几类做法，它们不是被淘汰的方案，而是在别的约束下更划算：
 
 | 路线 | 代表 | 做法 | 什么时候更划算 |
 |:---|:---|:---|:---|
-| 鲁棒优化式 SfM | MegaSaM | 不学动力学，靠鲁棒优化在含运动物体的视频上直接解相机与深度 | 离线、精度优先、允许每段视频跑几分钟 |
-| 逐帧点图 + 跨帧对齐 | MonST3R | 把 DUSt3R 微调成对动态场景直接出逐帧点图，再统一对齐 | 想要一个不绑视频先验的通用几何前端 |
-| 2D 跟踪 + 深度反投影 | SpatialTrackerV2 | 先做 2D 长程跟踪，再把每帧像素沿深度投到 3D | 已有可靠深度源，且更信任 2D 对应的鲁棒性 |
-| 感知与重建合流 | Foundation4D | 多相机驾驶视频上同时出几何、3D 检测、语义占据与高斯 | 下游要的是「物体级」而不是「点级」的输出 |
+| 鲁棒优化式 SfM | [MegaSaM](https://arxiv.org/abs/2412.04463) | 不学动力学，靠鲁棒优化在含运动物体的视频上直接解相机与深度 | 离线、精度优先、允许每段视频跑几分钟 |
+| 逐帧点图 + 跨帧对齐 | [MonST3R](https://arxiv.org/abs/2410.03825) | 把 DUSt3R 微调成对动态场景直接出逐帧点图，再统一对齐 | 想要一个不绑视频先验的通用几何前端 |
+| 2D 跟踪 + 深度反投影 | [SpatialTrackerV2](https://arxiv.org/abs/2507.12462) | 先做 2D 长程跟踪，再把每帧像素沿深度投到 3D | 已有可靠深度源，且更信任 2D 对应的鲁棒性 |
+| 感知与重建合流 | [Foundation4D](https://arxiv.org/abs/2610.30340) | 多相机驾驶视频上同时出几何、3D 检测、语义占据与高斯 | 下游要的是「物体级」而不是「点级」的输出 |
 
 这张表解释了 §6 里那个反例为什么会出现：ADT 一格赢的是 SpatialTrackerV2。组合式路线没有把「几何」压进一个共享表征，各段可以各自选最稳的实现，在强畸变、弱纹理的画面里这反而成了优势。端到端方法的价值要到「任务多、查询形态杂、要一个统一接口」时才兑现——这是本文对那条数据的一个读法，论文本身没有给出归因。
 
@@ -99,9 +101,9 @@ $$
 
 VGGT 和 DA3 相邻半年、目标相同，结论却相反。
 
-VGGT 走**过完备**：同时预测相机、深度、点图、跟踪特征四个互相冗余的量。它的 Table 6 显示，四项全训时点图 Chamfer 最低（0.709），砍掉任一项都变差，其中「加相机损失」带来的改善最大（0.834 → 0.727）。冗余在这里是正则——逼共享表征把几何学全。
+VGGT 走**过完备**：同时预测相机、深度、点图、跟踪特征四个互相冗余的量，四个头在[一次前向里全部落地](https://github.com/facebookresearch/vggt/blob/a288dd0f14786c93483e45524328726ab7b1b4ce/vggt/models/vggt.py#L22-L27)。它的 Table 6 显示，四项全训时点图 Chamfer 最低（0.709），砍掉任一项都变差，其中「加相机损失」带来的改善最大（0.834 → 0.727）。冗余在这里是正则——逼共享表征把几何学全。
 
-DA3 走**极简**：一个普通 DINO 编码器，一个统一的「深度射线」预测目标，不做多任务。它在自建基准上比 VGGT 的相机位姿精度高 44.3%。
+DA3 走**极简**：一个普通 DINO 编码器，一个统一的「深度射线」预测目标，不做多任务；[`_process_ray_pose_estimation`](https://github.com/ByteDance-Seed/depth-anything-3/blob/3d835ec1a5802d64a8b8b15f817a1ab54809bfe4/src/depth_anything_3/model/da3.py#L181-L204) 就是从这个统一目标里反解位姿的地方。它在自建基准上比 VGGT 的相机位姿精度高 44.3%。
 
 两者不矛盾，前提不同。过完备的作用是**在表征能力不足时补足监督密度**；一旦编码器本身够强、训练数据更大更干净，多任务就退化成浪费容量。判断自己该走哪边，看的是「你的数据够不够把几何直接喂进去」，而不是「任务多是不是更好」。
 
@@ -109,7 +111,7 @@ DA3 走**极简**：一个普通 DINO 编码器，一个统一的「深度射线
 
 最直觉的修补是：既然缺运动，就在 VGGT 上再挂一个 3D 跟踪头。这条路走不通，原因不在工程，在输出空间的形状。
 
-VGGT 的跟踪模块是 CoTracker2 式的：给一个查询点，输出它在所有帧的 **2D** 对应。要变成 3D 轨迹，得把它和每帧的点图相乘——而这一步隐含一个等式：
+VGGT 的[跟踪头](https://github.com/facebookresearch/vggt/blob/a288dd0f14786c93483e45524328726ab7b1b4ce/vggt/heads/track_head.py#L72-L104)是 CoTracker2 式的：给一个查询点，输出它在所有帧的 **2D** 对应，返回的是 `track` / `vis` / `conf` 三个张量，没有 3D 坐标。要变成 3D 轨迹，得把它和每帧的点图相乘——而这一步隐含一个等式：
 
 $$
 X^{(i)} = g_i^{-1}\,g_j\,X^{(j)}
@@ -125,7 +127,7 @@ $$
 
 ### 4.1 编码器：一次，且只一次
 
-编码器沿用 VGGT 的骨架：ViT-g、40 层、约 1B 参数，时空 patch 取 $2\times 16\times 16$（两帧拼一个 patch），层内交替做帧内自注意力与全局自注意力。输入视频先缩到固定方形分辨率，原始长宽比单独编码成一个 token 混进序列。输出是全局场景表征 $F=\mathcal{E}(V)\in\mathbb{R}^{N\times C}$，在第二阶段**冻结**。
+编码器沿用 VGGT 的骨架：ViT-g、40 层、约 1B 参数，时空 patch 取 $2\times 16\times 16$（两帧拼一个 patch），层内交替做帧内自注意力与全局自注意力（[VGGT 的 `Aggregator.forward`](https://github.com/facebookresearch/vggt/blob/a288dd0f14786c93483e45524328726ab7b1b4ce/vggt/models/aggregator.py#L240-L266) 里 `frame` 与 `global` 两类 block 轮流出现，是这个骨架最容易读的一段）。输入视频先缩到固定方形分辨率，原始长宽比单独编码成一个 token 混进序列。输出是全局场景表征 $F=\mathcal{E}(V)\in\mathbb{R}^{N\times C}$，在第二阶段**冻结**。
 
 用论文配置做一次算术：48 帧、$256\times 256$ 输入、patch $2\times 16\times 16$，token 数为
 
@@ -159,25 +161,69 @@ $$
 
 第三项看着像补丁，实际是承重的：去掉它，Sintel 上的深度 AbsRel 从 0.302 退到 0.366，相机 ATE 从 0.091 退到 0.173（Table 7）。纯坐标加时间不足以定位一个具体的表面点——同一个 $(u,v,t)$ 在遮挡边界上可能对应前景也可能对应背景，$9\times 9$ 的邻域是唯一能区分这两者的信息。
 
-![D4RT 的容量分配：为什么 query 之间不许交互](/assets/img/4d-foundation/capacity.svg)
+D4RT 本身没有官方代码，但[ARROW 的 `QueryEmbedding`](https://github.com/ifradlin/arrow/blob/e0e1a76a1681bbdc88a9fa7f0231ffb68c261cc7/src/arrow/models/query_embed.py#L24-L42)把这套拼法完整开源了：`forward` 里三项相加——局部 RGB patch、傅里叶编码的 $(u,v)$、三个时间／身份嵌入查表；[`fourier_encode_uv`](https://github.com/ifradlin/arrow/blob/e0e1a76a1681bbdc88a9fa7f0231ffb68c261cc7/src/arrow/models/query_embed.py#L44-L61) 与 [`_sample_rgb_patches`](https://github.com/ifradlin/arrow/blob/e0e1a76a1681bbdc88a9fa7f0231ffb68c261cc7/src/arrow/models/query_embed.py#L72-L111) 分别是前两项的落点。想对照源码读 §4.3 的查询接口，这份是目前最贴近的公开实现。
 
-### 4.3 一个函数，四种切片
+### 4.3 一个函数，五种切片
 
-把 $q$ 的五个分量按固定或遍历分开，四个任务全部落地：
+把 $q$ 的五个分量按「固定 / 遍历 / 彼此相等」三种关系分开，五个任务全部落地。下表按 [D4RT 论文 Table 1](https://arxiv.org/abs/2512.08924) 逐格抄录——**「谁和谁相等」是表里最关键的信息**，它决定了这条切片落在查询空间的哪条线或哪个面上。
 
-| 任务 | $u,v$ | $t_{\mathrm{src}}$ | $t_{\mathrm{tgt}}$ | $t_{\mathrm{cam}}$ | 说明 |
+| 任务 | $u,v$ | $t_{\mathrm{src}}$ | $t_{\mathrm{tgt}}$ | $t_{\mathrm{cam}}$ | 输出怎么用 |
 |:---|:---|:---|:---|:---|:---|
-| 点轨迹 | 固定 | 固定 | $1\ldots T$ | $1\ldots T$ | 同一像素，全时段 |
-| 点云 | 全图 | $1\ldots T$ | 固定 | 固定 | 所有帧的点都投到同一参考系 |
-| 深度图 | 全图 | 固定 | $=t_{\mathrm{src}}$ | $=t_{\mathrm{src}}$ | 取输出的 $Z$ 分量 |
-| 外参 | 网格 | 固定 | $1\ldots T$ | $1\ldots T$ | 两组查询做 Umeyama |
-| 内参 | 网格 | 逐帧 | — | — | 针孔反解焦距取中位数 |
+| 点轨迹 | 固定 | 固定 | $1\ldots T$（$=t_{\mathrm{cam}}$） | $1\ldots T$（$=t_{\mathrm{tgt}}$） | 同一像素的全时段 3D 轨迹 |
+| 点云 | $1\ldots W,\ 1\ldots H$ | $1\ldots T$（$=t_{\mathrm{tgt}}$） | $1\ldots T$（$=t_{\mathrm{src}}$） | 固定 | 所有帧的点直接落在同一参考系 |
+| 深度图 | $1\ldots W,\ 1\ldots H$ | $1\ldots T$ | $=t_{\mathrm{src}}$ | $=t_{\mathrm{src}}$ | 只取输出 $P$ 的 $Z$ 分量 |
+| 外参 | 粗网格 $1\ldots h,\ 1\ldots w$ | 固定 $i$ | $=t_{\mathrm{src}}$ | $1\ldots T$ | 两组 3D 点做 Umeyama |
+| 内参 | 粗网格 $1\ldots h,\ 1\ldots w$ | $1\ldots T$ | $=t_{\mathrm{src}}$ | $=t_{\mathrm{src}}$ | 针孔反解焦距取中位数 |
 
-表里内参那两格留空：原表只列到 $t_{\mathrm{src}}$，解内参只需要同一帧的点落在该帧自己的坐标系里，另两个索引不参与。
+外参与内参用粗网格 $(h,w)$ 而不是全图像素，为的是省查询数，不是另一套模型。深度图与内参走的是同一条对角线（三个索引相等），区别只在 $u,v$ 的采样密度和拿输出做什么。
+
+![查询空间里的五种切片：三条时间轴，五条线或面](/assets/img/4d-foundation/query-slices.svg)
+
+*图 2｜三个时间索引张成一个三维格点，五个任务就是其中的线或面。绿色虚线是主对角线 $t_{\mathrm{src}}=t_{\mathrm{tgt}}=t_{\mathrm{cam}}$，深度图与内参都落在上面。*
+
+举一个具体的查询。设视频 48 帧、$256\times 256$，取
+
+$$
+q=(120,\ 84,\ 7,\ 19,\ 7)
+$$
+
+它问的是：**第 7 帧上像素 $(120,84)$ 对应的那个物理点，到第 19 帧时在哪，答案用第 7 帧的相机坐标系写**。三个时间索引各管一件事：$t_{\mathrm{src}}$ 决定「从哪一帧取这个点」（局部 RGB patch 也从这帧取），$t_{\mathrm{tgt}}$ 决定「问它哪个时刻的位置」，$t_{\mathrm{cam}}$ 决定「答案写在哪个坐标系」。
+
+同一个物理位置，把 $t_{\mathrm{cam}}$ 从 7 改成 19，三维坐标整个换掉，但点在空间里没动。外参估计用的正是这件事：对粗网格上的一批点 $k$ 发两组查询
+
+$$
+\mathbf{q}_{i,k}=(u_k,v_k,i,i,i),\qquad \mathbf{q}_{j,k}=(u_k,v_k,i,i,j)
+$$
+
+两组输出是**同一批 3D 点写在不同参考系里**，求它们之间的刚体变换就是帧 $i$ 到帧 $j$ 的相对位姿（Umeyama，一次 $3\times 3$ 的 SVD）。位姿不是被预测的，是被解出来的——这也是 §6 里 200+ FPS 的来源。
+
+内参同理：对每帧 $i$ 取 $t_{\mathrm{src}}=t_{\mathrm{tgt}}=t_{\mathrm{cam}}=i$，把输出的 $P=(p_x,p_y,p_z)$ 代进针孔方程（坐标归一化到 $[0,1]$、主点取 $(0.5,0.5)$）
+
+$$
+f_x=\frac{p_z\,(u-0.5)}{p_x},\qquad f_y=\frac{p_z\,(v-0.5)}{p_y}
+$$
+
+再对一批点取中位数；带畸变的镜头要在这之后补一次非线性精化。
+
+把切片规则写成代码，五元组接口就只剩一个查询生成器（不含模型本身）：
+
+```python
+def queries(task, T, H, W, step=16, t_src=0, t_cam=0):
+    grid = [(u, v) for v in range(0, H, step) for u in range(0, W, step)]
+    if task == "depth":       # t_src = t_tgt = t_cam = t
+        return [(u, v, t, t, t) for t in range(T) for u, v in grid]
+    if task == "pointcloud":  # t_src = t_tgt = t, t_cam 固定
+        return [(u, v, t, t, t_cam) for t in range(T) for u, v in grid]
+    if task == "track":       # t_src 固定, t_tgt = t_cam = t
+        return [(u, v, t_src, t, t) for t in range(T) for u, v in grid]
+    if task == "extrinsics":  # t_src = t_tgt = i 固定, t_cam = j 遍历
+        return [(u, v, t_src, t_src, j) for j in range(T) for u, v in grid]
+    raise ValueError(task)
+
+assert len(queries("depth", 48, 256, 256)) == 48 * 16 * 16
+```
 
 点云这一行值得单独说。它不是「先算深度、再算位姿、再反投影」——它直接把每个像素投到同一个参考帧，**相机位姿完全不出现在这条路径上**。成对方法必须先估相对位姿再做坐标变换，误差在变换里滚一遍；查询式把这一步省掉了，代价是每个 query 都得自己知道「我该落在哪个系」。
-
-外参与内参则是从点云反解出来的副产品。相对位姿靠两组 3D 点做 Umeyama（$3\times 3$ 的 SVD），内参靠针孔方程对一批点各解一次焦距再取中位数。位姿不是被预测的，是被解出来的——这也是 §6 里 200+ FPS 的来源：解一个 $3\times 3$ 的 SVD 比跑一个位姿头便宜得多。
 
 ### 4.4 训练：2048 个查询，500k 步
 
@@ -191,15 +237,17 @@ $$
 
 损失里最容易被忽略的是归一化方式：目标点和预测点各自按平均深度归一化，再过一次 $\mathrm{sign}(x)\log(1+\lvert x\rvert)$。这一步把远点的权重压下去，等价于承认「远景的绝对误差没有意义」。少了它，模型会把容量全花在把远处天空压平。
 
-0.4 的强制同帧概率是个小设计，作用在推理侧：它保证 $t_{\mathrm{tgt}}=t_{\mathrm{cam}}$ 这一片切片（正是深度图那一片）在训练中拿到足够多的样本，而不是被随机采样的稀疏覆盖。
+0.4 的强制相等概率是个小设计，作用在推理侧：它保证 $t_{\mathrm{tgt}}=t_{\mathrm{cam}}$ 这条切片（点轨迹走的就是它，深度图是上面再叠一个 $t_{\mathrm{src}}=t_{\mathrm{tgt}}$ 的子集）在训练中拿到足够多的样本，而不是被三个独立均匀采样稀疏覆盖。论文给的理由只有一句 “to improve downstream performance”。
 
 ### 4.5 为什么必须是三个索引
 
-把三个时间索引里任意两个合并，会立刻丢掉一个任务：
+图 2 里那三条轴少任意一根，就至少有一条线画不出来。逐一看三种合并各自会丢掉什么，比记一句「时空解耦」有用：
 
-- **合并 $t_{\mathrm{tgt}}$ 与 $t_{\mathrm{cam}}$**：能出深度、能出点云，但拿不到「第 3 帧的点在第 10 帧的坐标系下在哪」，也就是拿不到自由的 3D 轨迹。训练时以 0.4 概率强制这个等式，是让这一片切片样本足够——它是训练分布上的偏置，不是架构上的等式。
-- **合并 $t_{\mathrm{src}}$ 与 $t_{\mathrm{tgt}}$**：深度图确实是它的特例，但跨时刻的对应全部消失，「同一点在动」这件事再也表达不出来。
-- **合并 $t_{\mathrm{src}}$ 与 $t_{\mathrm{cam}}$**：外参估计需要的「同一批 3D 点、两个不同参考系」这个构造直接做不出来——§4.3 外参那一行全靠它。
+- **合并 $t_{\mathrm{src}}$ 与 $t_{\mathrm{tgt}}$**（永远问「这个点现在在哪」）：深度图确实是它的特例，但点轨迹要求 $t_{\mathrm{src}}$ 钉死、$t_{\mathrm{tgt}}$ 从 $1$ 走到 $T$，跨时刻的对应全部消失，「同一个点在动」再也表达不出来。
+- **合并 $t_{\mathrm{tgt}}$ 与 $t_{\mathrm{cam}}$**（答案只能写在被问时刻的相机系）：点轨迹还能做，Table 1 里恰好就是这么设的；但外参那对查询 $(u,v,i,i,i)$ 与 $(u,v,i,i,j)$ 里，$t_{\mathrm{tgt}}$ 固定为 $i$、$t_{\mathrm{cam}}$ 从 $i$ 变到 $j$——必须能只换参考系而不动被问的时刻。两者一合并，两组查询塌成一组，Umeyama 无从做起，位姿就没了。
+- **合并 $t_{\mathrm{src}}$ 与 $t_{\mathrm{cam}}$**（答案只能写在源帧自己的系）：点云要求 $t_{\mathrm{cam}}$ 固定成共享参考帧、$t_{\mathrm{src}}$ 遍历 $1\ldots T$，一合并，所有帧的点各写在自己的系里，点云拼不起来。§4.3 说「相机位姿完全不出现在这条路径上」，前提正是这一格能独立固定。
+
+注意「合并」和「相等」不是一回事：Table 1 里大量切片让两个索引取相等的值，那是**任务选择的切片**；架构上三者仍必须各自独立，训练时以 0.4 概率强制 $t_{\mathrm{tgt}}=t_{\mathrm{cam}}$ 只是分布上的偏置，不是把两个变量焊死。
 
 三个索引全独立，代价是查询空间从一维涨到三维：$T^3$ 种组合里绝大多数没有真值。这解释了 §4.4 里那个 2048——**不是采不起，是没那么多真值可采**。稀疏查询在这里不是效率手段，是数据现实逼出来的采样策略。
 
@@ -215,7 +263,7 @@ D4RT 的训练数据是三类的混合：室内真实扫描（ScanNet）、自�
 
 三类缺的东西正好互补，所以只能混。这也把 §6 里「静态数据压到地板」的因果说全了：真实动态数据拿不到稠密真值，模型只能从合成场景学运动先验，再在真实动态上打折。
 
-监督信号本身也是异构的——深度、位姿、点轨迹三种真值的量纲与噪声特性完全不同。§4.4 那六项损失（3D、2D、法向、可见性、位移、置信度）本质是在给这些异构监督配权重，让它们不要互相拉扯。**加权的六个系数没有理论依据，是扫出来的**，这一点论文与大多数多任务工作一样，没有给出更好的办法。
+监督信号本身也是异构的——深度、位姿、点轨迹三种真值的量纲与噪声特性完全不同。§4.4 那六项损失（3D、2D、法向、可见性、位移、置信度）本质是在给这些异构监督配权重，让它们不要互相拉扯。论文附录 A 直接给出 $\lambda_{3\mathrm{D}}=1.0$、$\lambda_{2\mathrm{D}}=\lambda_{\mathrm{vis}}=\lambda_{\mathrm{disp}}=0.1$、$\lambda_{\mathrm{normal}}=0.5$、$\lambda_{\mathrm{conf}}=0.2$，Table 8 只做了「逐项移除辅助损失」的消融，**权重本身没有扫描、也没有选取依据**。置信度 $c$ 同时进两处：既以 $-\log c$ 作为惩罚项，又拿来加权 3D 点误差。
 
 ## §5 稀疏解码：省的是哪一笔算力
 
@@ -248,7 +296,11 @@ $C_{\mathrm{enc}}$ 只与 token 数 $N$ 有关，与查询数 $K$ 无关；$c_{\
 
 省下来的东西一定要在别处付账。查询之间不交互，意味着每个 query 只能看到 $F$ 和自己的局部 patch——**它没有邻居可抄**。
 
-论文报告了一条反向证据：让 query 之间做自注意力，性能显著下降。解释是直觉的：一旦 query 能互看，模型就学会「从旁边那个已经答对的 query 抄答案」，而不再把几何压进 $F$。抄出来的结果在训练分布内看着挺好，换个查询模式就散架。
+论文 §2.2 报告了一条反向证据：早期实验里让 query 之间做自注意力，性能大幅下降。论文给的线索是分布外效应——推理时查询可以任意挑、彼此不必相关，训练时一旦让它们互看，换一种查询组合就落到分布外。换成表征的语言，就是模型会去抄邻居的答案而不把几何压进 $F$；这一层机制解释是本文的读法，论文只给了现象。
+
+![D4RT 的容量分配：为什么 query 之间不许交互](/assets/img/4d-foundation/capacity.svg)
+
+*图 3｜左右两栏的差别只有那条虚线：允许 query 互看，几何就不必写进 $F$。底部参数量条按主实验配置，消融默认配置（ViT-L、6 层解码器）是另一套。*
 
 于是容量被迫前移。编码器 1B、解码器 144M，约 7:1——这个比例不是调出来的，是接口设计的直接后果。同一件事在 VGGT 上以另一种形式出现过：它同时预测相机、深度、点图、跟踪四个互相冗余的量（论文称之为 over-complete prediction），也是逼共享表征把几何学全。两篇论文用相反的手段得到同一个结论：**要让表征自己扛住几何，就不能给它外部依赖**。
 
@@ -288,7 +340,7 @@ Sintel 与 ScanNet 的差距值得看两遍：Sintel 上 D4RT 的点云 L1 是 �
 
 VGGT 在 Sintel 上 0.168、在 ScanNet 上 0.016，同一个模型差一个数量级——这条落差就是 §2 末尾说的「静态先验的价格」。
 
-**吞吐（Table 3，单卡、全视频轨迹数）**：60 FPS 下 550 条，24 FPS 下 1570 条，1 FPS 下 40180 条；同期 SpatialTrackerV2 分别是 29、84、2290。位姿估计侧 200+ FPS，比 VGGT 快约 9 倍、比 MegaSaM 快约 100 倍（Fig. 3）。
+**吞吐**：[Table 3](https://arxiv.org/abs/2512.08924) 测的是「单卡 A100、维持给定帧率时最多能同时产出多少条全视频 3D 轨迹」，D4RT 在 60 / 24 / 10 / 1 FPS 下分别是 550 / 1570 / 3890 / 40180 条，同期 SpatialTrackerV2 是 29 / 84 / 219 / 2290 条，即 18 到 300 倍。位姿估计侧的 200+ FPS 是 [Fig. 3](https://arxiv.org/abs/2512.08924) 的另一组数，比 VGGT 快约 9 倍、比 MegaSaM 快约 100 倍；为公平比较，论文还把基线里与相机估计无关的头去掉了。
 
 三个口径必须分开记：
 
@@ -321,9 +373,9 @@ VGGT 在 Sintel 上 0.168、在 ScanNet 上 0.016，同一个模型差一个数�
 
 两笔账的差别不是快慢，是**成本结构**。这解释了为什么两条路并存：只做一条片子、要极致质量时（影视、数字孪生），优化式仍占优；量大、要实时、要进闭环时（机器人、AR），前馈式没有替代品。
 
-**4D-LRM（2025-06，Adobe / 密歇根）** 走的是大规模重建模型那条路：输入任意视角、任意时刻的稀疏 posed image，Transformer 直接回归**每像素的各向异性 4D 高斯基元**，一次前向出 24 帧、单卡不到 1.5 秒，训练集是 Objaverse4D 的动态资产子集。它把 3D 高斯从「优化出来的场景表示」变成「前向预测的输出」。
+**[4D-LRM](https://arxiv.org/abs/2506.18890)（2025-06，Adobe / 密歇根，[项目页](https://4dlrm.github.io/)）** 走的是大规模重建模型那条路：输入任意视角、任意时刻的稀疏 posed image，Transformer 直接回归**每像素的各向异性 4D 高斯基元**，一次前向出 24 帧、单卡不到 1.5 秒，训练集是 Objaverse4D 的动态资产子集。它把 3D 高斯从「优化出来的场景表示」变成「前向预测的输出」。
 
-**NeoVerse（2026-01，CVPR 2026 Highlight）** 走的是重建加生成的混合路，但它把重建放在**条件**的位置，而不是终点：先用一个免位姿的前馈 4DGS 模型从野外单目视频重建出场景与双向运动，再从新视点渲出「退化渲染图」，交给视频生成模型（Wan 系列）合成新轨迹；训练时退化条件由单目视频在线模拟，原始视频自己当监督。这一手绕开了「4D 标注贵」——它不需要多视角 4D 数据，只需要视频。按项目页，蒸馏 LoRA 之后单卡不到 30 秒。
+**[NeoVerse](https://arxiv.org/abs/2601.00393)（2026-01，CVPR 2026 Highlight，[项目页](https://neoverse-4d.github.io/)）** 走的是重建加生成的混合路，但它把重建放在**条件**的位置，而不是终点：先用一个免位姿的前馈 4DGS 模型从野外单目视频重建出场景与双向运动，再从新视点渲出「退化渲染图」，交给视频生成模型（Wan 系列）合成新轨迹；训练时退化条件由单目视频在线模拟，原始视频自己当监督。这一手绕开了「4D 标注贵」——它不需要多视角 4D 数据，只需要视频。按项目页，蒸馏 LoRA 之后单卡不到 30 秒。
 
 4D 高斯把「时间」写进参数有几种做法，代价各不相同：
 
@@ -336,6 +388,8 @@ VGGT 在 Sintel 上 0.168、在 ScanNet 上 0.016，同一个模型差一个数�
 前两条是 4DGS 文献里的标准分歧，第三条更像工程折衷。**4D-LRM 与 NeoVerse 都没有引入形变网络**：一个直接回归每像素基元，一个用双向运动建模（bidirectional motion modeling）描述基元随时间的运动。这是它们能做到亚秒到数十秒级的原因，代价也直白——**「形变」被排除在能力之外**。要重建一个正在弯折的布，这三条路都还不行。
 
 ![两条 4D 表征路线：可测量与可观看](/assets/img/4d-foundation/representations.svg)
+
+*图 4｜左右两栏共享「输入视频 → 一次前向 → 输出」的形状，差别在末端输出是 3D 点还是带外观的 4D 高斯。NeoVerse 的重建部分见 [`DepthAnything3Reconstructor`](https://github.com/IamCreateAI/NeoVerse/blob/bb97880d3f6d5cb06b2fcccc8ca889e0988daa4d/diffsynth/auxiliary_models/depth_anything_3/neoverse_adapter.py#L19-L114)。*
 
 两条路的判据只有一条：**要「测量」还是要「观看」**。要测距离、算碰撞、给策略当输入，点云更合适——它是无偏的几何量，且稀疏可控；要渲染、要合成新视角、要给人生成结果，高斯更合适——外观与几何一起编码，代价是几何精度不再是唯一目标，深度排序、透明度累积都会引入自己的误差。把两者混着比「谁更准」没有意义。
 
@@ -362,6 +416,8 @@ VGGT 在 Sintel 上 0.168、在 ScanNet 上 0.016，同一个模型差一个数�
 | ScanNet | 室内静态扫描 | 近静态 | 深度、位姿 | 几何 + 相机 |
 | Re10K | 互联网室内视频 | 静态场景 | 相机位姿 | 相机 |
 | KITTI / Bonn | 驾驶场景 / 室内 RGB-D | 有运动物体 | 深度 | 几何 |
+
+可跳转的入口：[TAPVid-3D 项目页](https://tapvid3d.github.io/)（含数据生成与评测代码）、[TAPVid-3D 论文](https://arxiv.org/abs/2407.05921)（AJ / $\mathrm{APD}_{3\mathrm{D}}$ 的定义与阈值设定）、[MPI Sintel](http://sintel.is.tue.mpg.de/)、[ScanNet](http://www.scan-net.org/)、[KITTI](https://www.cvlibs.net/datasets/kitti/)。先把指标定义读一遍，再回头看 §6 那三张表，能省掉大半误读。
 
 这张表解释了一件事：**同一个模型换个基准排名就翻转，不是评测噪声，是各基准测的根本不是同一根轴**。§6 里 VGGT 在 ScanNet 与 Sintel 上差一个数量级，原因就在这里。
 
@@ -397,7 +453,7 @@ $$
 
 镜面与运动模糊是几何方法的旧账；遮挡、形变、畸变在 4D 里被放大成新账——因为它们不再是「某一帧的问题」，而是「一段时间里连续的问题」。读论文时按这张表对一遍，比看综合分数有用：综合分数是这些失败模式的加权平均，权重由基准的构成决定。
 
-**可复现性是分水岭。** 前后两个月里，DA3 声明只用公开学术数据集、代码与权重全开；D4RT 拿下了 CVPR 2026 最佳论文，但发布时无代码、无公开 API、训练集含私有数据。这不是八卦，它直接决定一件事：一个方法的结论能不能被独立复现，决定了它能不能进工程选型。读 4D 论文时，「有没有权重」和「指标多高」是同等重要的两列。
+**可复现性是分水岭。** 前后两个月里，[DA3](https://github.com/ByteDance-Seed/depth-anything-3) 声明只用公开学术数据集、代码与权重全开；[D4RT](https://arxiv.org/abs/2512.08924) 拿下了 [CVPR 2026 最佳论文](https://tc.computer.org/tcpami/awards/cvpr-paper-awards)，但发布时无官方代码、无公开 API、训练集含私有数据（论文 §4 明列 public and internal datasets）。这不是八卦，它直接决定一件事：一个方法的结论能不能被独立复现，决定了它能不能进工程选型。读 4D 论文时，「有没有权重」和「指标多高」是同等重要的两列；具体能读到哪一层代码，见 §11。
 
 ## §10 选型与六个开放问题
 
@@ -420,6 +476,47 @@ $$
 5. **4D 数据是瓶颈**。静态 3D 可以扫描，动态 4D 只能合成或标注稀疏轨迹，这是 §6 里「静态数据压到地板」的根源。
 6. **重建与生成的接缝没有统一度量**。NeoVerse 用重建给生成当几何引导，但「引导得对不对」用什么指标衡量，目前没有共识。
 
+## §11 代码索引：从论文跳到实现
+
+正文里每个方法名都可以直接落到实现。仓库锁在固定 commit 上，下表只给仓库与复现状态；具体该打开哪个文件、哪几行，见后面那张按问题索引的表。没有官方代码的项目如实写明，不拿第三方复现冒充官方。
+
+| 方法 | 仓库（锁 commit） | 复现状态 |
+|:---|:---|:---|
+| DUSt3R | [dust3r `4c24a6e`](https://github.com/naver/dust3r/tree/4c24a6ebf04809f2cfe59915e51779c8984aaa40) | 官方，权重公开 |
+| MonST3R | [MonST3R `574cc77`](https://github.com/Junyi42/MonST3R/tree/574cc77ad278bad582f470e5382624e01f8769a7) | 官方 |
+| VGGT | [vggt `a288dd0`](https://github.com/facebookresearch/vggt/tree/a288dd0f14786c93483e45524328726ab7b1b4ce) | 官方，权重公开 |
+| π³ | [Pi3 `9fa3ddb`](https://github.com/yyfz/Pi3/tree/9fa3ddb3f8d53041f8b2738df404f62223bbaa7b) | 官方 |
+| DA3 | [DA3 `3d835ec`](https://github.com/ByteDance-Seed/depth-anything-3/tree/3d835ec1a5802d64a8b8b15f817a1ab54809bfe4) | 官方，公开数据 |
+| MegaSaM | [mega-sam `a27b4e6`](https://github.com/mega-sam/mega-sam/tree/a27b4e633c5cc0828a62ed943ef9f6505705fd3f) | 官方 |
+| SpatialTrackerV2 | [SpaTrackerV2 `7e12274`](https://github.com/henry123-boy/SpaTrackerV2/tree/7e12274c52077860cebfe007a6290777db43b63c) | 官方 |
+| ARROW | [arrow `e0e1a76`](https://github.com/ifradlin/arrow/tree/e0e1a76a1681bbdc88a9fa7f0231ffb68c261cc7) | 官方 |
+| NeoVerse | [NeoVerse `bb97880`](https://github.com/IamCreateAI/NeoVerse/tree/bb97880d3f6d5cb06b2fcccc8ca889e0988daa4d) | 官方 |
+| D4RT | 无官方代码；[lucidrains/d4rt](https://github.com/lucidrains/d4rt/tree/05f3aa0fc11f3df6b80aa629fb0c1358823ba910)、[D4RT-reproduction](https://github.com/sjkncs/D4RT-reproduction/tree/09b8b80a51d58175633629970563e906e92796b7) | 无官方权重 |
+| 4D-LRM | 无官方代码，见[项目页](https://4dlrm.github.io/) | 未发布 |
+| Foundation4D | 无官方代码，见[arXiv:2610.30340](https://arxiv.org/abs/2610.30340) | 未发布 |
+
+按想弄清的问题找，比按方法名找更快：
+
+| 想读什么 | 跳到哪 |
+|:---|:---|
+| 查询结构体存了哪几个字段 | [`types.py` L32–L62](https://github.com/ifradlin/arrow/blob/e0e1a76a1681bbdc88a9fa7f0231ffb68c261cc7/src/arrow/types.py#L32-L62)：`xy` 与三个 frame 索引 |
+| 三个时间索引怎么进模型 | [`d4rt.py` L414–L416](https://github.com/lucidrains/d4rt/blob/05f3aa0fc11f3df6b80aa629fb0c1358823ba910/d4rt/d4rt.py#L414-L416) 独立嵌入；[L580–L587](https://github.com/lucidrains/d4rt/blob/05f3aa0fc11f3df6b80aa629fb0c1358823ba910/d4rt/d4rt.py#L580-L587) 三项相加 |
+| 局部 RGB patch 怎么取 | [`_sample_rgb_patches`](https://github.com/ifradlin/arrow/blob/e0e1a76a1681bbdc88a9fa7f0231ffb68c261cc7/src/arrow/models/query_embed.py#L72-L111) ／ [`extract_patches`](https://github.com/lucidrains/d4rt/blob/05f3aa0fc11f3df6b80aa629fb0c1358823ba910/d4rt/d4rt.py#L51-L75) |
+| 五种任务切片怎么生成 | [`queries.py` L76–L116](https://github.com/ifradlin/arrow/blob/e0e1a76a1681bbdc88a9fa7f0231ffb68c261cc7/src/arrow/queries.py#L76-L116) ／ [`reconstruction.py`](https://github.com/ifradlin/arrow/blob/e0e1a76a1681bbdc88a9fa7f0231ffb68c261cc7/src/arrow/tasks/reconstruction.py#L4-L16) |
+| 解码为什么能按块取消 | [`decode_iter`](https://github.com/ifradlin/arrow/blob/e0e1a76a1681bbdc88a9fa7f0231ffb68c261cc7/src/arrow/models/arrow.py#L127-L170) |
+| 过完备的四个头 | [`vggt.py` L17–L27](https://github.com/facebookresearch/vggt/blob/a288dd0f14786c93483e45524328726ab7b1b4ce/vggt/models/vggt.py#L17-L27) |
+| 成对结果怎么拼成全局点云 | [`optimizer.py` L16–L62](https://github.com/naver/dust3r/blob/4c24a6ebf04809f2cfe59915e51779c8984aaa40/dust3r/cloud_opt/optimizer.py#L16-L62) ／ [`model.py` L142–L171](https://github.com/naver/dust3r/blob/4c24a6ebf04809f2cfe59915e51779c8984aaa40/dust3r/model.py#L142-L171) |
+| 帧内／全局交替注意力 | [`aggregator.py` L187–L266](https://github.com/facebookresearch/vggt/blob/a288dd0f14786c93483e45524328726ab7b1b4ce/vggt/models/aggregator.py#L187-L266) |
+| 置换等变前向 | [`pi3.py` L173–L216](https://github.com/yyfz/Pi3/blob/9fa3ddb3f8d53041f8b2738df404f62223bbaa7b/pi3/models/pi3.py#L173-L216) |
+| 单一深度射线目标 | [`da3.py` L181–L204](https://github.com/ByteDance-Seed/depth-anything-3/blob/3d835ec1a5802d64a8b8b15f817a1ab54809bfe4/src/depth_anything_3/model/da3.py#L181-L204) ／ [`gs_adapter.py`](https://github.com/ByteDance-Seed/depth-anything-3/blob/3d835ec1a5802d64a8b8b15f817a1ab54809bfe4/src/depth_anything_3/model/gs_adapter.py#L27-L58) |
+| 2D 跟踪 + 深度反投影 | [`predictor.py` L21–L92](https://github.com/henry123-boy/SpaTrackerV2/blob/7e12274c52077860cebfe007a6290777db43b63c/models/SpaTrackV2/models/predictor.py#L21-L92) |
+| 免位姿 4DGS 重建 | [`neoverse_adapter.py`](https://github.com/IamCreateAI/NeoVerse/blob/bb97880d3f6d5cb06b2fcccc8ca889e0988daa4d/diffsynth/auxiliary_models/depth_anything_3/neoverse_adapter.py#L19-L114) |
+| 五元组最短可读示例 | [README L34–L68](https://github.com/lucidrains/d4rt/blob/05f3aa0fc11f3df6b80aa629fb0c1358823ba910/README.md#L34-L68) ／ [`d4rt.py` L542–L590](https://github.com/lucidrains/d4rt/blob/05f3aa0fc11f3df6b80aa629fb0c1358823ba910/d4rt/d4rt.py#L542-L590) |
+| 第三方复现做到哪一步 | [`query_decoder.py`](https://github.com/sjkncs/D4RT-reproduction/blob/09b8b80a51d58175633629970563e906e92796b7/models/query_decoder.py#L232-L330)：只两个时间索引、上下文取帧均值 |
+| §4.3 的查询生成器、四张配图 | [本文源码](https://github.com/lrypcy/lrypcy.github.io/blob/master/_posts/2026-11-05-4d-foundation-01-query-interface.md) ／ [配图 SVG 目录](https://github.com/lrypcy/lrypcy.github.io/tree/master/assets/img/4d-foundation/) |
+
+D4RT 那一行的分寸要说清：官方只给了论文与[项目页](https://d4rt-paper.github.io/)的演示结果，上面两个社区实现能帮读者把「五元组查询」从公式变成可读的张量形状，但都没有复现 ViT-g / 40 层、2048 查询、六项损失那一整套训练配置，任何数字都不能拿它们对表 §6。
+
 ## 结语
 
 把四代方法串起来看，删掉的其实是同一个东西的不同形态：**对输入的前置要求**。相机参数、成对结构、参考视图、稠密输出、时序索引，每删一个，模型就要多学一点。
@@ -430,15 +527,17 @@ $$
 
 ## 参考文献
 
-1. Wang, Chen, Karaev, Vedaldi, Rupprecht, Novotny. *DUSt3R: Geometric 3D Vision Made Easy.* [arXiv:2312.14132](https://arxiv.org/abs/2312.14132)
-2. Zhang et al. *MonST3R: A Simple Approach for Estimating Geometry in the Presence of Motion.* [arXiv:2410.03825](https://arxiv.org/abs/2410.03825)
-3. Wang, Chen, Karaev, Vedaldi, Rupprecht, Novotny. *VGGT: Visual Geometry Grounded Transformer.* CVPR 2025. [arXiv:2503.11651](https://arxiv.org/abs/2503.11651)
-4. Wang et al. *π³: Permutation-Equivariant Visual Geometry Learning.* [arXiv:2507.13347](https://arxiv.org/abs/2507.13347)
-5. Xiao et al. *SpatialTrackerV2: 3D Point Tracking Made Easy.* [arXiv:2507.12462](https://arxiv.org/abs/2507.12462)
-6. *Depth Anything 3: Recovering the Visual Space from Any Views.* [arXiv:2511.10647](https://arxiv.org/abs/2511.10647)
-7. *MegaSaM: Accurate, Fast, and Robust Structure and Motion from Casual Dynamic Videos.* [arXiv:2412.04463](https://arxiv.org/abs/2412.04463)
-8. Zhang, Le Moing, Koppula, Rocco, Momeni, Xie, Sun, Sukthankar, Barral, Hadsell, Ghahramani, Zisserman, Zhang, Sajjadi. *Efficiently Reconstructing Dynamic Scenes One D4RT at a Time.* CVPR 2026 最佳论文. [arXiv:2512.08924](https://arxiv.org/abs/2512.08924) ｜ [项目页](https://d4rt-paper.github.io/)
-9. Ma, Chen, Yu, Bi, Zhang, Chen, Xu, Yang, Xu, Sunkavalli, Bansal, Chai, Tan. *4D-LRM: Large Space-Time Reconstruction Model From and To Any View at Any Time.* [arXiv:2506.18890](https://arxiv.org/abs/2506.18890)
-10. *NeoVerse: Enhancing 4D World Model with in-the-wild Monocular Videos.* [arXiv:2601.00393](https://arxiv.org/abs/2601.00393)
-11. Fradlin et al. *ARROW: Arbitrary Reconstruction and Tracking of 4D Observations in the Wild.* [arXiv:2610.01314](https://arxiv.org/abs/2610.01314)
+1. Wang, Leroy, Cabon, Chidlovskii, Revaud. *DUSt3R: Geometric 3D Vision Made Easy.* [arXiv:2312.14132](https://arxiv.org/abs/2312.14132) ｜ [代码](https://github.com/naver/dust3r/tree/4c24a6ebf04809f2cfe59915e51779c8984aaa40)
+2. Zhang et al. *MonST3R: A Simple Approach for Estimating Geometry in the Presence of Motion.* [arXiv:2410.03825](https://arxiv.org/abs/2410.03825) ｜ [代码](https://github.com/Junyi42/MonST3R/tree/574cc77ad278bad582f470e5382624e01f8769a7)
+3. Wang, Chen, Karaev, Vedaldi, Rupprecht, Novotny. *VGGT: Visual Geometry Grounded Transformer.* CVPR 2025 最佳论文. [arXiv:2503.11651](https://arxiv.org/abs/2503.11651) ｜ [代码](https://github.com/facebookresearch/vggt/tree/a288dd0f14786c93483e45524328726ab7b1b4ce)
+4. Wang et al. *π³: Permutation-Equivariant Visual Geometry Learning.* [arXiv:2507.13347](https://arxiv.org/abs/2507.13347) ｜ [代码](https://github.com/yyfz/Pi3/tree/9fa3ddb3f8d53041f8b2738df404f62223bbaa7b)
+5. Xiao et al. *SpatialTrackerV2: Advancing 3D Point Tracking with Explicit Camera Motion.* ICCV 2025. [arXiv:2507.12462](https://arxiv.org/abs/2507.12462) ｜ [代码](https://github.com/henry123-boy/SpaTrackerV2/tree/7e12274c52077860cebfe007a6290777db43b63c)
+6. *Depth Anything 3: Recovering the Visual Space from Any Views.* [arXiv:2511.10647](https://arxiv.org/abs/2511.10647) ｜ [代码](https://github.com/ByteDance-Seed/depth-anything-3/tree/3d835ec1a5802d64a8b8b15f817a1ab54809bfe4)
+7. Li et al. *MegaSaM: Accurate, Fast, and Robust Structure and Motion from Casual Dynamic Videos.* CVPR 2025. [arXiv:2412.04463](https://arxiv.org/abs/2412.04463) ｜ [代码](https://github.com/mega-sam/mega-sam/tree/a27b4e633c5cc0828a62ed943ef9f6505705fd3f)
+8. Zhang, Le Moing, Koppula, Rocco, Momeni, Xie, Sun, Sukthankar, Barral, Hadsell, Ghahramani, Zisserman, Zhang, Sajjadi. *Efficiently Reconstructing Dynamic Scenes One D4RT at a Time.* [CVPR 2026 最佳论文](https://tc.computer.org/tcpami/awards/cvpr-paper-awards). [arXiv:2512.08924](https://arxiv.org/abs/2512.08924) ｜ [项目页](https://d4rt-paper.github.io/) ｜ 无官方代码
+9. Ma, Chen, Yu, Bi, Zhang, Chen, Xu, Yang, Xu, Sunkavalli, Bansal, Chai, Tan. *4D-LRM: Large Space-Time Reconstruction Model From and To Any View at Any Time.* [arXiv:2506.18890](https://arxiv.org/abs/2506.18890) ｜ [项目页](https://4dlrm.github.io/)
+10. Yang et al. *NeoVerse: Enhancing 4D World Model with in-the-wild Monocular Videos.* CVPR 2026. [arXiv:2601.00393](https://arxiv.org/abs/2601.00393) ｜ [项目页](https://neoverse-4d.github.io/) ｜ [代码](https://github.com/IamCreateAI/NeoVerse/tree/bb97880d3f6d5cb06b2fcccc8ca889e0988daa4d)
+11. Fradlin et al. *ARROW: Arbitrary Reconstruction and Tracking of 4D Observations in the Wild.* [arXiv:2610.01314](https://arxiv.org/abs/2610.01314) ｜ [代码](https://github.com/ifradlin/arrow/tree/e0e1a76a1681bbdc88a9fa7f0231ffb68c261cc7)
 12. *Foundation4D: Towards a unified perception and reconstruction model for autonomous vehicles.* [arXiv:2610.30340](https://arxiv.org/abs/2610.30340)
+13. Koppula, Rocco, Yang, Heyward, Carreira, Zisserman, Brostow, Doersch. *TAPVid-3D: A Benchmark for Tracking Any Point in 3D.* NeurIPS 2024. [arXiv:2407.05921](https://arxiv.org/abs/2407.05921) ｜ [项目页与评测代码](https://tapvid3d.github.io/)
+14. *CVPR Paper Awards*（VGGT 2025、D4RT 2026 的获奖记录）. [IEEE Computer Society](https://tc.computer.org/tcpami/awards/cvpr-paper-awards)
