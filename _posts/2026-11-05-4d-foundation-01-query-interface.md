@@ -488,7 +488,7 @@ $$
 | π³ | [Pi3 `9fa3ddb`](https://github.com/yyfz/Pi3/tree/9fa3ddb3f8d53041f8b2738df404f62223bbaa7b) | 官方 |
 | DA3 | [DA3 `3d835ec`](https://github.com/ByteDance-Seed/depth-anything-3/tree/3d835ec1a5802d64a8b8b15f817a1ab54809bfe4) | 官方，公开数据 |
 | MegaSaM | [mega-sam `a27b4e6`](https://github.com/mega-sam/mega-sam/tree/a27b4e633c5cc0828a62ed943ef9f6505705fd3f) | 官方 |
-| SpatialTrackerV2 | [SpaTrackerV2 `7e12274`](https://github.com/henry123-boy/SpaTrackerV2/tree/7e12274c52077860cebfe007a6290777db43b63c) | 官方 |
+| SpatialTrackerV2 | [SpaTrackerV2 `7e12274`](https://github.com/henry123-boy/SpaTrackerV2/tree/7e12274c52077860cebfe007a6290777db43b63c) | 代码公开 |
 | ARROW | [arrow `e0e1a76`](https://github.com/ifradlin/arrow/tree/e0e1a76a1681bbdc88a9fa7f0231ffb68c261cc7) | 官方 |
 | NeoVerse | [NeoVerse `bb97880`](https://github.com/IamCreateAI/NeoVerse/tree/bb97880d3f6d5cb06b2fcccc8ca889e0988daa4d) | 官方 |
 | D4RT | 无官方代码；[lucidrains/d4rt](https://github.com/lucidrains/d4rt/tree/05f3aa0fc11f3df6b80aa629fb0c1358823ba910)、[D4RT-reproduction](https://github.com/sjkncs/D4RT-reproduction/tree/09b8b80a51d58175633629970563e906e92796b7) | 无官方权重 |
