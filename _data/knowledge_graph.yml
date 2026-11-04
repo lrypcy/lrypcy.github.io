@@ -308,8 +308,8 @@ series:
     category: 具身智能
     layer: 2
     order: 4
-    prefixes: [world-model]
-    desc: 1 篇长文。从 Dreamer V4 到 Cosmos Policy / DreamZero 的 2025–2026 完整地图。
+    prefixes: [world-model, cosmos3]
+    desc: 2 篇。一篇 2025–2026 全景（Dreamer V4 到 Cosmos Policy / DreamZero），一篇 Cosmos 3 Nano 对账单：把「16B」拆成两塔层、共享词表、lm_head 与编码器，再逐格核 token 预算、位置轴与动作维度。
 
   - id: pi-vla
     name: π 系列具身模型
