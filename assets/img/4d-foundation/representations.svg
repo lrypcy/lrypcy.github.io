@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 300" width="680" height="300" role="img" font-family="PingFang SC, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="680" height="300" fill="#ffffff"/>
+  <defs>
+    <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <text x="172" y="24" font-size="12" font-weight="700" text-anchor="middle" fill="#065f46">查询式 3D 点 · D4RT</text>
+  <text x="508" y="24" font-size="12" font-weight="700" text-anchor="middle" fill="#1e40af">4D 高斯 · 4D-LRM / NeoVerse</text>
+
+  <!-- left flow -->
+  <rect x="32" y="42" width="280" height="32" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="172" y="63" font-size="11" text-anchor="middle" fill="#111827">单目视频 I_1 … I_T</text>
+  <line x1="172" y1="74" x2="172" y2="85" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar4)"/>
+
+  <rect x="32" y="86" width="280" height="32" rx="7" fill="#ecfdf5" stroke="#059669" stroke-width="1.3"/>
+  <text x="172" y="107" font-size="11" text-anchor="middle" fill="#111827">ViT-g 编码一次 → F（冻结）</text>
+  <line x1="172" y1="118" x2="172" y2="129" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar4)"/>
+
+  <rect x="32" y="130" width="280" height="32" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="172" y="151" font-size="11" text-anchor="middle" fill="#111827">查询 q → 3D 点 P ∈ R³</text>
+  <line x1="172" y1="162" x2="172" y2="173" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar4)"/>
+
+  <rect x="32" y="174" width="280" height="32" rx="7" fill="#ecfdf5" stroke="#059669" stroke-width="1.3"/>
+  <text x="172" y="195" font-size="11" text-anchor="middle" fill="#111827">点云 / 轨迹 / 深度 / 位姿</text>
+
+  <text x="172" y="230" font-size="10.5" text-anchor="middle" fill="#065f46">几何无偏，稀疏可控，按需查询</text>
+  <text x="172" y="247" font-size="10.5" text-anchor="middle" fill="#b91c1c">没有颜色、不透明度，不可渲染</text>
+
+  <!-- right flow -->
+  <rect x="368" y="42" width="280" height="32" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="508" y="63" font-size="11" text-anchor="middle" fill="#111827">稀疏 posed images（任意视点与时刻）</text>
+  <line x1="508" y1="74" x2="508" y2="85" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar4)"/>
+
+  <rect x="368" y="86" width="280" height="32" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.3"/>
+  <text x="508" y="107" font-size="11" text-anchor="middle" fill="#111827">Transformer 回归每像素基元</text>
+  <line x1="508" y1="118" x2="508" y2="129" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar4)"/>
+
+  <rect x="368" y="130" width="280" height="32" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="508" y="151" font-size="11" text-anchor="middle" fill="#111827">4D Gaussian：μ, Σ, SH, v, ω</text>
+  <line x1="508" y1="162" x2="508" y2="173" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar4)"/>
+
+  <rect x="368" y="174" width="280" height="32" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.3"/>
+  <text x="508" y="195" font-size="11" text-anchor="middle" fill="#111827">任意视点 × 任意时刻渲染</text>
+
+  <text x="508" y="230" font-size="10.5" text-anchor="middle" fill="#1e40af">外观与几何一起编码，一帧不到 1.5 s（24 帧）</text>
+  <text x="508" y="247" font-size="10.5" text-anchor="middle" fill="#b91c1c">几何精度让位于观感，深度排序自带误差</text>
+
+  <line x1="16" y1="266" x2="664" y2="266" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="340" y="288" font-size="11.5" text-anchor="middle" fill="#111827">判据只有一条：要「测量」还是要「观看」</text>
+</svg>

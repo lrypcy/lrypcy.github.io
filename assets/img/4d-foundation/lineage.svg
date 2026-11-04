@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 344" width="680" height="344" role="img" font-family="PingFang SC, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="680" height="344" fill="#ffffff"/>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <text x="117" y="20" font-size="12" font-weight="700" text-anchor="middle" fill="#111827">① 成对回归 · DUSt3R 2023</text>
+  <text x="340" y="20" font-size="12" font-weight="700" text-anchor="middle" fill="#111827">② 一次前向 · VGGT 2025</text>
+  <text x="563" y="20" font-size="12" font-weight="700" text-anchor="middle" fill="#111827">③ 编码 + 查询 · D4RT 2025</text>
+
+  <!-- column 1 -->
+  <rect x="20" y="36" width="194" height="40" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="117" y="60" font-size="11" text-anchor="middle" fill="#111827">两张图像 I_i, I_j</text>
+  <line x1="117" y1="76" x2="117" y2="87" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
+  <rect x="20" y="88" width="194" height="40" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="117" y="112" font-size="11" text-anchor="middle" fill="#111827">共享 ViT 编码器 ×2</text>
+  <line x1="117" y1="128" x2="117" y2="139" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
+  <rect x="20" y="140" width="194" height="40" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.3"/>
+  <text x="117" y="164" font-size="11" text-anchor="middle" fill="#111827">点图头 → X_i, X_j（稠密）</text>
+  <line x1="117" y1="180" x2="117" y2="191" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
+  <rect x="20" y="192" width="194" height="40" rx="7" fill="#fef3c7" stroke="#d97706" stroke-width="1.3"/>
+  <text x="117" y="216" font-size="11" text-anchor="middle" fill="#111827">全局对齐（迭代优化）</text>
+
+  <!-- column 2 -->
+  <rect x="243" y="36" width="194" height="40" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="340" y="60" font-size="11" text-anchor="middle" fill="#111827">1 到 200 帧图像</text>
+  <line x1="340" y1="76" x2="340" y2="87" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
+  <rect x="243" y="88" width="194" height="40" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.3"/>
+  <text x="340" y="112" font-size="11" text-anchor="middle" fill="#111827">24 层：帧内 + 全局注意力</text>
+  <line x1="340" y1="128" x2="340" y2="139" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
+  <rect x="243" y="140" width="194" height="40" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.3"/>
+  <text x="340" y="164" font-size="11" text-anchor="middle" fill="#111827">相机头 / DPT 头 / 跟踪特征</text>
+  <line x1="340" y1="180" x2="340" y2="191" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
+  <rect x="243" y="192" width="194" height="40" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="340" y="216" font-size="11" text-anchor="middle" fill="#111827">四组输出，第一帧为参考系</text>
+
+  <!-- column 3 -->
+  <rect x="466" y="36" width="194" height="40" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="563" y="60" font-size="11" text-anchor="middle" fill="#111827">一段视频（48 帧为例）</text>
+  <line x1="563" y1="76" x2="563" y2="87" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
+  <rect x="466" y="88" width="194" height="40" rx="7" fill="#ecfdf5" stroke="#059669" stroke-width="1.3"/>
+  <text x="563" y="112" font-size="11" text-anchor="middle" fill="#111827">ViT-g ×40 层 → F（冻结）</text>
+  <line x1="563" y1="128" x2="563" y2="139" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
+  <rect x="466" y="140" width="194" height="40" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="563" y="157" font-size="10.5" text-anchor="middle" fill="#111827">q = (u, v, t_src, t_tgt, t_cam)</text>
+  <text x="563" y="171" font-size="10.5" text-anchor="middle" fill="#111827">+ 9×9 局部 RGB patch</text>
+  <line x1="563" y1="180" x2="563" y2="191" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
+  <rect x="466" y="192" width="194" height="40" rx="7" fill="#ecfdf5" stroke="#059669" stroke-width="1.3"/>
+  <text x="563" y="216" font-size="11" text-anchor="middle" fill="#111827">8 层 cross-attn → P ∈ R³</text>
+
+  <line x1="16" y1="256" x2="664" y2="256" stroke="#e2e8f0" stroke-width="1"/>
+
+  <text x="117" y="278" font-size="10.5" text-anchor="middle" fill="#475569">稠密成本：O(N²) 次前向</text>
+  <text x="117" y="293" font-size="10.5" text-anchor="middle" fill="#b91c1c">＋ 一次全局对齐优化</text>
+
+  <text x="340" y="278" font-size="10.5" text-anchor="middle" fill="#475569">稠密成本：全局注意力的 N² 项</text>
+  <text x="340" y="293" font-size="10.5" text-anchor="middle" fill="#b91c1c">200 帧时 8.75 s / 40.6 GB</text>
+
+  <text x="563" y="278" font-size="10.5" text-anchor="middle" fill="#475569">编码只做一次，是常数项</text>
+  <text x="563" y="293" font-size="10.5" text-anchor="middle" fill="#059669">解码成本 ∝ 查询数 K</text>
+
+  <text x="340" y="325" font-size="11.5" text-anchor="middle" fill="#111827">三代真正改的不是 backbone，是「稠密计算搬到哪一步」</text>
+</svg>

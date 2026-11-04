@@ -47,9 +47,10 @@ sections:
       - 生成模型
 
   - name: 前沿应用
-    hint: 具身与世界模型
+    hint: 具身 · 世界模型 · 空间
     categories:
       - 具身智能
+      - 空间智能
 
   - name: Agent 工程
     hint: 存储 · 上下文 · 工具

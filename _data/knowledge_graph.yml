@@ -320,6 +320,15 @@ series:
     prefixes: [pi-vla-]
     desc: 10 篇。按问题而非时间线拆 π0 到 π0.7：动作表示（flow matching / FAST / 知识隔离）→ 长程分解（Hi Robot / π0.5）→ 实时执行（RTC）→ 经验学习（RECAP / RLT）→ 记忆与可引导条件（MEM / π0.7）。每篇一个算法、一份 CPU 实验。
 
+  - id: 4d-foundation
+    name: 4D 基础模型：重建、跟踪与空间表征
+    short: 4D 基础模型
+    category: 空间智能
+    layer: 2
+    order: 12
+    prefixes: [4d-foundation-]
+    desc: 从 DUSt3R 到 D4RT 的四代「消元」：删掉相机参数 → 删掉成对拼图与后处理优化 → 删掉固定参考视图（π³ / DA3）→ 删掉逐帧稠密解码。核心是查询接口：编码一次得到全局表征，之后用「像素 + 源时刻 + 目标时刻 + 参考相机」四元查询任意时空点的 3D 位置，深度／点云／轨迹／位姿都是它的切片。代价写在容量分配上——编码器约 1B、解码器 144M，因为 query 之间刻意不许交互。末段接到 4D 高斯（4D-LRM、NeoVerse）与评测四轴。
+
   - id: transcendental
     name: 超越函数与 softmax 的硬件实现
     short: 超越函数
@@ -461,6 +470,8 @@ links:
   - { from: compiler,  to: python-runtime, label: torch.compile 的前端建立在 Python 执行机制之上 }
   - { from: python-runtime, to: serving,   label: 引擎侧 torch.compile 能不能开取决于图捕获稳不稳定 }
   - { from: agent-anatomy, to: python-runtime, label: agent 的会话与工具记录都要先把 Python 进程的上下文状态固定下来 }
+  - { from: embodied,  to: 4d-foundation, label: 具身感知的第一层是「场景几何与自己在哪」 }
+  - { from: 4d-foundation, to: wam,        label: 前馈重建出的 4D 几何是生成式世界模型的底座 }
 
 paths:
   - name: AI Infra 工程师主线
@@ -475,6 +486,9 @@ paths:
   - name: 生成模型与扩散
     desc: 潜空间表示打底 → 扩散全景到 Flow Matching → 去噪函数的主干架构，再到生成式策略与世界模型
     steps: [vae, flow, dit, wam]
+  - name: 空间智能与 4D 重建
+    desc: 从具身感知的需求出发，先解决「几何从哪来」，再交给世界模型做预测与规划
+    steps: [embodied, 4d-foundation, wam]
   - name: Agent 实现阅读
     desc: 从 Python 运行时这类「底座实现」读起，再进入 agent 自身的状态与存储设计
     steps: [python-runtime, agent-anatomy]
