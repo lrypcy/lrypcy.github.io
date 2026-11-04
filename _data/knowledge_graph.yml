@@ -57,6 +57,10 @@ categories:
     icon: "🤖"
     color: "#16a34a"
     desc: 控制地基、学习范式、感知操作、VLA 基础模型与产业版图的完整地图
+  - name: 空间智能
+    icon: "🧭"
+    color: "#0891b2"
+    desc: 从视频前馈出几何、相机与运动的 4D 基础模型：DUSt3R 的点图回归、VGGT 的全局注意力，到 D4RT 的「编码一次、按需查询」
   - name: 模型蒸馏
     icon: "🧪"
     color: "#db2777"
