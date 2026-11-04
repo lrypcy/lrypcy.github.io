@@ -513,7 +513,7 @@ $$
 | 免位姿 4DGS 重建 | [`neoverse_adapter.py`](https://github.com/IamCreateAI/NeoVerse/blob/bb97880d3f6d5cb06b2fcccc8ca889e0988daa4d/diffsynth/auxiliary_models/depth_anything_3/neoverse_adapter.py#L19-L114) |
 | 五元组最短可读示例 | [README L34–L68](https://github.com/lucidrains/d4rt/blob/05f3aa0fc11f3df6b80aa629fb0c1358823ba910/README.md#L34-L68) ／ [`d4rt.py` L542–L590](https://github.com/lucidrains/d4rt/blob/05f3aa0fc11f3df6b80aa629fb0c1358823ba910/d4rt/d4rt.py#L542-L590) |
 | 第三方复现做到哪一步 | [`query_decoder.py`](https://github.com/sjkncs/D4RT-reproduction/blob/09b8b80a51d58175633629970563e906e92796b7/models/query_decoder.py#L232-L330)：只两个时间索引、上下文取帧均值 |
-| §4.3 的查询生成器、四张配图 | [本文源码](https://github.com/lrypcy/lrypcy.github.io/blob/master/_posts/2026-11-05-4d-foundation-01-query-interface.md) ／ [配图 SVG 目录](https://github.com/lrypcy/lrypcy.github.io/tree/master/assets/img/4d-foundation/) |
+| §4.3 的查询生成器、四张配图 | [本文源码](https://github.com/lrypcy/lrypcy.github.io/blob/1b3e13af79ac8daeb5f3865f2f3ce5833a4406fc/_posts/2026-11-05-4d-foundation-01-query-interface.md) ／ [配图 SVG 目录](https://github.com/lrypcy/lrypcy.github.io/tree/1b3e13af79ac8daeb5f3865f2f3ce5833a4406fc/assets/img/4d-foundation/) |
 
 D4RT 那一行的分寸要说清：官方只给了论文与[项目页](https://d4rt-paper.github.io/)的演示结果，上面两个社区实现能帮读者把「五元组查询」从公式变成可读的张量形状，但都没有复现 ViT-g / 40 层、2048 查询、六项损失那一整套训练配置，任何数字都不能拿它们对表 §6。
 
