@@ -73,6 +73,7 @@ exclude:
   # 研究计划与素材：草稿不发布（新增 deep-dive-* / 素材目录要同步加到这儿）
   - deep-dive-diffusion-lm
   - deep-dive-megatron
+  - deep-dive-occupancy
   - deep-dive-profiling
   - deep-dive-rl-frameworks
   - deep-dive-serving-engine
