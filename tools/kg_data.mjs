@@ -120,11 +120,10 @@ export function countPostsByCategory(posts) {
     const names = inline
       ? inline[1].split(",").map((s) => parseScalar(s)).filter(Boolean)
       : [...block.matchAll(/^\s*-\s*(.+?)\s*$/gm)].map((mm) => parseScalar(mm[1]));
-    const names2 = [...block.matchAll(/^\s*-\s*(.+?)\s*$/gm)].map((mm) => parseScalar(mm[1]));
-    perFile.set(f, names2);
-    names2.forEach((c) => { counter[c] = (counter[c] || 0) + 1; });
-    slots += names2.length;
-    if (names2.length > 1) { multi++; }
+    perFile.set(f, names);
+    names.forEach((c) => { counter[c] = (counter[c] || 0) + 1; });
+    slots += names.length;
+    if (names.length > 1) { multi++; }
   });
   return { counter, slots, multi, perFile };
 }
