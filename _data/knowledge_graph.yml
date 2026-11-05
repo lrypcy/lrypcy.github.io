@@ -420,6 +420,15 @@ series:
     prefixes: [agent-anatomy-]
     desc: 2 篇。先看形态：七个 coding agent（OpenCode / Hermes / WorkBuddy / Codex CLI / Pi / Claude Code / DSH）的五类持久状态、四种存储选择、会话树的三种表示、压缩的三种持久化。再算成本：`dbstat` 逐表拆解 1.3 GB 到底装了什么、`EXPLAIN QUERY PLAN` 验证每个索引是否兑现、全文索引为何要付近 3 倍空间。回答「agent 该写什么、写到哪、这笔钱花得值不值」。
 
+  - id: linear-attn
+    name: 线性注意力与状态化缓存
+    short: 线性注意力
+    category: LLM算法
+    layer: 2
+    order: 13
+    prefixes: [linear-attn-]
+    desc: 1 篇。KV cache 从「逐 token 只读历史」变成「固定形状、就地覆盖的矩阵状态」之后，缓存账本出现交叉点 T*、容量受秩下界约束、chunkwise prefill 在块内算力与块间状态传递之间权衡、前缀复用改成快照 + copy-on-write + 尾部重放。回答「线性注意力的 KV cache 去哪了」。
+
 links:
   - { from: chip,      to: op,         label: 存储层次与执行模型决定 Kernel 怎么写 }
   - { from: chip,      to: compiler,   label: ISA 与内存层次是后端代码生成的靶子 }
@@ -476,6 +485,9 @@ links:
   - { from: agent-anatomy, to: python-runtime, label: agent 的会话与工具记录都要先把 Python 进程的上下文状态固定下来 }
   - { from: embodied,  to: 4d-foundation, label: 具身感知的第一层是「场景几何与自己在哪」 }
   - { from: 4d-foundation, to: wam,        label: 前馈重建出的 4D 几何是生成式世界模型的底座 }
+  - { from: ttt,           to: linear-attn, label: 快权重是状态更新规则的一支，状态即记忆 }
+  - { from: quant,         to: linear-attn, label: KV 量化压每 token 位宽，状态化后对应的是状态 dtype }
+  - { from: linear-attn,   to: serving,    label: 混合模型的缓存对象从 KV 变成状态，引擎要另开内存池与快照 }
 
 paths:
   - name: AI Infra 工程师主线

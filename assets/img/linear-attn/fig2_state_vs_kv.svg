@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500" viewBox="0 0 1000 500" font-family="PingFang SC, Helvetica, Arial, sans-serif">
+<rect width="1000" height="500" fill="#ffffff"/>
+<text x="28" y="34" font-size="20" font-weight="600" fill="#1f2937">同样叫「缓存」，两种对象的形状完全不同</text>
+<text x="28" y="56" font-size="12.5" fill="#6b7280">左：逐 token 的只读历史；右：固定形状、被就地覆盖的矩阵状态</text>
+<line x1="500.0" y1="78.0" x2="500.0" y2="455.0" stroke="#e5e7eb" stroke-width="1.5" stroke-dasharray="6,4"/>
+<text x="28.0" y="96.0" font-size="15" fill="#dc2626" text-anchor="start" font-weight="600">softmax attention：KV cache 是历史记录</text>
+<rect x="40.0" y="112.0" width="420.0" height="250.0" rx="4" fill="#fef2f2" stroke="#dc2626" stroke-width="1.4" stroke-dasharray="5,4"/>
+<rect x="62.0" y="126.0" width="160.0" height="27.0" rx="4" fill="#fee2e2"/>
+<text x="72.0" y="144.0" font-size="12" fill="#1f2937" text-anchor="start" font-weight="normal">token 1:  k, v</text>
+<text x="240.0" y="144.0" font-size="11.5" fill="#6b7280" text-anchor="start" font-weight="normal">→ 追加，不覆盖</text>
+<rect x="62.0" y="162.0" width="160.0" height="27.0" rx="4" fill="#fee2e2"/>
+<text x="72.0" y="180.0" font-size="12" fill="#1f2937" text-anchor="start" font-weight="normal">token 2:  k, v</text>
+<text x="240.0" y="180.0" font-size="11.5" fill="#6b7280" text-anchor="start" font-weight="normal">→ 追加，不覆盖</text>
+<rect x="62.0" y="198.0" width="160.0" height="27.0" rx="4" fill="#fee2e2"/>
+<text x="72.0" y="216.0" font-size="12" fill="#1f2937" text-anchor="start" font-weight="normal">token 3:  k, v</text>
+<text x="240.0" y="216.0" font-size="11.5" fill="#6b7280" text-anchor="start" font-weight="normal">→ 追加，不覆盖</text>
+<rect x="62.0" y="234.0" width="160.0" height="27.0" rx="4" fill="#fee2e2"/>
+<text x="72.0" y="252.0" font-size="12" fill="#1f2937" text-anchor="start" font-weight="normal">token 4:  k, v</text>
+<text x="240.0" y="252.0" font-size="11.5" fill="#6b7280" text-anchor="start" font-weight="normal">→ 追加，不覆盖</text>
+<rect x="62.0" y="270.0" width="160.0" height="27.0" rx="4" fill="#fee2e2"/>
+<text x="72.0" y="288.0" font-size="12" fill="#1f2937" text-anchor="start" font-weight="normal">token 5:  k, v</text>
+<text x="240.0" y="288.0" font-size="11.5" fill="#6b7280" text-anchor="start" font-weight="normal">→ 追加，不覆盖</text>
+<rect x="62.0" y="306.0" width="160.0" height="27.0" rx="4" fill="#fee2e2"/>
+<text x="72.0" y="324.0" font-size="12" fill="#1f2937" text-anchor="start" font-weight="normal">token 6:  k, v</text>
+<text x="240.0" y="324.0" font-size="11.5" fill="#6b7280" text-anchor="start" font-weight="normal">→ 追加，不覆盖</text>
+<text x="62.0" y="348.0" font-size="12" fill="#6b7280" text-anchor="start" font-weight="normal">… 一直到第 T 个 token</text>
+<text x="40.0" y="386.0" font-size="13" fill="#dc2626" text-anchor="start" font-weight="600">2 n_kv d T b  字节（随 T 线性增长）</text>
+<text x="40.0" y="410.0" font-size="12" fill="#1f2937" text-anchor="start" font-weight="normal">前缀只读 → 按 block 哈希复用，可任意 fork</text>
+<text x="40.0" y="432.0" font-size="11" fill="#6b7280" text-anchor="start" font-weight="normal">DeepSeek-V2 Table 1：GQA 2 n_g d_h l，MLA (d_c+d_h^R) l</text>
+<text x="528.0" y="96.0" font-size="15" fill="#2563eb" text-anchor="start" font-weight="600">linear attention：状态是一份矩阵，不是历史</text>
+<rect x="540.0" y="112.0" width="420.0" height="250.0" rx="4" fill="#eff6ff" stroke="#2563eb" stroke-width="1.4" stroke-dasharray="5,4"/>
+<rect x="570.0" y="140.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="600.0" y="140.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="630.0" y="140.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="660.0" y="140.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="690.0" y="140.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="720.0" y="140.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="750.0" y="140.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="780.0" y="140.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="570.0" y="168.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="600.0" y="168.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="630.0" y="168.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="660.0" y="168.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="690.0" y="168.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="720.0" y="168.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="750.0" y="168.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="780.0" y="168.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="570.0" y="196.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="600.0" y="196.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="630.0" y="196.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="660.0" y="196.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="690.0" y="196.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="720.0" y="196.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="750.0" y="196.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="780.0" y="196.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="570.0" y="224.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="600.0" y="224.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="630.0" y="224.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="660.0" y="224.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="690.0" y="224.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="720.0" y="224.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="750.0" y="224.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="780.0" y="224.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="570.0" y="252.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="600.0" y="252.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="630.0" y="252.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="660.0" y="252.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="690.0" y="252.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="720.0" y="252.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
+<rect x="750.0" y="252.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<rect x="780.0" y="252.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
+<text x="570.0" y="292.0" font-size="13.5" fill="#1f2937" text-anchor="start" font-weight="normal">S_t = α S_(t-1) + φ(k_t) v_t^T</text>
+<text x="570.0" y="316.0" font-size="11.5" fill="#6b7280" text-anchor="start" font-weight="normal">每步就地覆盖同一块内存，没有第 t 份副本</text>
+<text x="880.0" y="180.0" font-size="13" fill="#2563eb" text-anchor="middle" font-weight="600">d_k × d_v</text>
+<text x="880.0" y="202.0" font-size="12" fill="#6b7280" text-anchor="middle" font-weight="normal">× n_h 头</text>
+<path d="M 790 120 A 40 40 0 0 1 830 160" fill="none" stroke="#2563eb" stroke-width="2"/>
+<text x="870.0" y="128.0" font-size="11.5" fill="#2563eb" text-anchor="start" font-weight="normal">in-place</text>
+<text x="540.0" y="386.0" font-size="13" fill="#2563eb" text-anchor="start" font-weight="600">n_h d² b  字节（与 T 无关，但仍占显存）</text>
+<text x="540.0" y="410.0" font-size="12" fill="#1f2937" text-anchor="start" font-weight="normal">不可回滚 → 整段 snapshot + copy-on-write + 尾部重放</text>
+<text x="540.0" y="432.0" font-size="11" fill="#6b7280" text-anchor="start" font-weight="normal">conv state / normalizer z / SSM state 同样是每层固定状态</text>
+<text x="500.0" y="478.0" font-size="12" fill="#0f766e" text-anchor="middle" font-weight="600">交叉点 T* = n_h d / (2 n_kv)：GQA 4:1、d=128 时是 256 token</text>
+</svg>

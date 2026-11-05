@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="470" viewBox="0 0 1000 470" font-family="PingFang SC, Helvetica, Arial, sans-serif">
+<rect width="1000" height="470" fill="#ffffff"/>
+<text x="28" y="34" font-size="20" font-weight="600" fill="#1f2937">缓存账本：每层 / 每请求，三种口径随上下文长度的变化</text>
+<text x="28" y="56" font-size="12.5" fill="#6b7280">设定 n_h=32, n_kv=8 (GQA 4:1), d=128, bf16；状态 1.0000 MiB 恒定，softmax 每 token 4096 bytes</text>
+<line x1="90.0" y1="395.0" x2="90.0" y2="80.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="90.0" y="415.0" font-size="11" fill="#6b7280" text-anchor="middle" font-weight="normal">128</text>
+<line x1="156.2" y1="395.0" x2="156.2" y2="80.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="156.2" y="415.0" font-size="11" fill="#6b7280" text-anchor="middle" font-weight="normal">256</text>
+<line x1="288.5" y1="395.0" x2="288.5" y2="80.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="288.5" y="415.0" font-size="11" fill="#6b7280" text-anchor="middle" font-weight="normal">1K</text>
+<line x1="420.8" y1="395.0" x2="420.8" y2="80.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="420.8" y="415.0" font-size="11" fill="#6b7280" text-anchor="middle" font-weight="normal">4K</text>
+<line x1="619.2" y1="395.0" x2="619.2" y2="80.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="619.2" y="415.0" font-size="11" fill="#6b7280" text-anchor="middle" font-weight="normal">32K</text>
+<line x1="751.5" y1="395.0" x2="751.5" y2="80.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="751.5" y="415.0" font-size="11" fill="#6b7280" text-anchor="middle" font-weight="normal">128K</text>
+<line x1="950.0" y1="395.0" x2="950.0" y2="80.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="950.0" y="415.0" font-size="11" fill="#6b7280" text-anchor="middle" font-weight="normal">1M</text>
+<line x1="90.0" y1="374.0" x2="950.0" y2="374.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80.0" y="378.0" font-size="11" fill="#6b7280" text-anchor="end" font-weight="normal">0.5</text>
+<line x1="90.0" y1="353.0" x2="950.0" y2="353.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80.0" y="357.0" font-size="11" fill="#6b7280" text-anchor="end" font-weight="normal">1</text>
+<line x1="90.0" y1="311.0" x2="950.0" y2="311.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80.0" y="315.0" font-size="11" fill="#6b7280" text-anchor="end" font-weight="normal">4</text>
+<line x1="90.0" y1="269.0" x2="950.0" y2="269.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80.0" y="273.0" font-size="11" fill="#6b7280" text-anchor="end" font-weight="normal">16</text>
+<line x1="90.0" y1="206.0" x2="950.0" y2="206.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80.0" y="210.0" font-size="11" fill="#6b7280" text-anchor="end" font-weight="normal">128</text>
+<line x1="90.0" y1="164.0" x2="950.0" y2="164.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80.0" y="168.0" font-size="11" fill="#6b7280" text-anchor="end" font-weight="normal">512</text>
+<line x1="90.0" y1="101.0" x2="950.0" y2="101.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="80.0" y="105.0" font-size="11" fill="#6b7280" text-anchor="end" font-weight="normal">4096</text>
+<text x="520.0" y="431.0" font-size="12" fill="#6b7280" text-anchor="middle" font-weight="normal">上下文长度 T (token，对数轴)</text>
+<path d="M90.0,374.0 L156.2,353.0 L288.5,311.0 L420.8,269.0 L619.2,206.0 L751.5,164.0 L950.0,101.0" fill="none" stroke="#dc2626" stroke-width="2.6"/>
+<text x="938.0" y="91.0" font-size="12" fill="#dc2626" text-anchor="end" font-weight="600">softmax KV (∝T)</text>
+<path d="M90.0,353.0 L156.2,353.0 L288.5,353.0 L420.8,353.0 L619.2,353.0 L751.5,353.0 L950.0,353.0" fill="none" stroke="#2563eb" stroke-width="2.6"/>
+<text x="938.0" y="343.0" font-size="12" fill="#2563eb" text-anchor="end" font-weight="600">线性状态 (固定)</text>
+<path d="M90.0,357.0 L156.2,353.0 L288.5,336.0 L420.8,305.8 L619.2,247.3 L751.5,205.8 L950.0,143.0" fill="none" stroke="#7c3aed" stroke-width="2.6"/>
+<text x="938.0" y="133.0" font-size="12" fill="#7c3aed" text-anchor="end" font-weight="600">3:1 混合</text>
+<line x1="156.2" y1="395.0" x2="156.2" y2="80.0" stroke="#0f766e" stroke-width="1.6" stroke-dasharray="5,4"/>
+<rect x="164.2" y="100.0" width="250.0" height="46.0" rx="4" fill="#f0fdfa" stroke="#0f766e" stroke-width="1.4" stroke-dasharray="4,3"/>
+<text x="174.2" y="120.0" font-size="12.5" fill="#0f766e" text-anchor="start" font-weight="600">T* = 256：三者相等</text>
+<text x="174.2" y="138.0" font-size="11.5" fill="#6b7280" text-anchor="start" font-weight="normal">短于此，混合反而更占显存</text>
+<text x="938.0" y="376.0" font-size="11.5" fill="#6b7280" text-anchor="end" font-weight="normal">1M 时显存口径减少 74.9817%，KV 口径 75.00%</text>
+<text x="28.0" y="458.0" font-size="11.5" fill="#6b7280" text-anchor="start" font-weight="normal">曲线来自 results/stdout.txt 组 2 的逐行输出；减少比例 = 0.75 (1 - T*/T)。</text>
+</svg>
