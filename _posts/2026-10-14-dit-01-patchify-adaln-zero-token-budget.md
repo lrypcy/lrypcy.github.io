@@ -85,6 +85,12 @@ DiT 的知识可以拆成三条各自独立变化的线，混淆它们是后面�
 
 三条线正交的直接后果是：任何 FID 或算力上的收益都必须指明动的是哪条线，否则无法归因。生成目标与采样器属于支线，它们改变的是「学什么」，不是「用什么算」；反过来，第 4 节那本 Gflops 的账也只在架构主线里成立。
 
+下面放一张论文原图当索引：左半是 latent → patch → DiT Block → unpatchify 的完整前向（§2.4 会按张量形状重画一遍），右半是 adaLN、交叉注意力、in-context 三种 Block 变体（§3、§7 展开）。后续各节都只在这张图上做局部放大。
+
+![DiT 论文 Figure 3：整体架构（左）与 DiT Block 细节（右）](https://arxiv.org/html/2212.09748v2/block.svg)
+
+*图源：Peebles & Xie, [arXiv:2212.09748](https://arxiv.org/abs/2212.09748) Figure 3，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未改动。*
+
 ---
 
 ## 2. Patchify：latent 怎么变成 token 序列
@@ -129,6 +135,14 @@ $$
 <text x="24" y="298.0" font-size="11.5" fill="#4b5563">下面那条蓝色带子是排成一维后的 token 序列（三段等宽，密度不同）。</text>
 <text x="24" y="314.0" font-size="11.5" fill="#4b5563">缩小 p 换来的不是更多参数，而是更细的空间交互粒度：p 越小，越多的位置对能在注意力里直接见面。</text>
 </svg>
+
+*图：自绘。结构对照 [arXiv:2212.09748](https://arxiv.org/abs/2212.09748) Figure 4（许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未搬用原图）。网格是 32×32×4 latent 的局部示意。*
+
+论文 Figure 4 是同一件事的原始示意，并直接把「patch size 变小 → 序列变长 → Gflops 变多」画了出来：
+
+![DiT 论文 Figure 4：不同 patch size 下的输入规格、序列长度与 Gflops](https://arxiv.org/html/2212.09748v2/patches.svg)
+
+*图源：Peebles & Xie, [arXiv:2212.09748](https://arxiv.org/abs/2212.09748) Figure 4，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未改动。*
 
 型号里的 `/2` `/4` `/8` 指 patch size，**不是**层数也不是降采样次数。DiT-XL/2 在 256×256 上是 $$N=256$$ 个 token，每个 token 携带 $$p^2C=16$$ 个 latent 数；同一个模型换到 512×512，latent 变成 $$64\times64\times4$$，$$N=1024$$，论文 5.1 节原话是「this XL/2 model processes a total of 1024 tokens after patchifying the 64×64×4 input latent」。
 
@@ -203,6 +217,8 @@ token 化丢掉了空间排列，必须补回来。DiT 用固定的二维 sin-co
 <text x="20" y="334" font-size="11" fill="#4b5563">主干全程只在 B×4×32×32 的 latent 上计算，像素空间只出现在两端的 VAE。</text>
 <text x="20" y="352" font-size="11" fill="#4b5563">Final Layer 的 16 = p²C，对应每个 latent 像素一个预测值；展平后由 unpatchify 还原成 4 通道网格。</text>
 </svg>
+
+*图：自绘。结构对照 [arXiv:2212.09748](https://arxiv.org/abs/2212.09748) Figure 3（许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未搬用原图）。按张量形状重画，原图左半。*
 
 | 阶段 | 输入 → 输出形状 | 归属 |
 |:--|:--|:--|
@@ -487,6 +503,12 @@ DiT-XL（$$D=1152,\ r=4$$）的 $$N^\*=6912$$ 个 token。这个数把「分辨�
 
 这张表解释了 PixArt-Σ 的一个设计选择为什么只对超高分辨率有意义：它把注意力的 K 和 V 在空间上压缩 2 倍（每个空间维度），二次项直接除以 4。在 256×256 下这省了 3.2 Gflops（2.7%），无感；在 4K 下省掉 50792 Gflops（61.8%），是能不能训得动的问题。
 
+第 1 节引的那句摘要，论文画成了下面这张散点：横轴是每个 DiT 模型主干的 Gflops，纵轴是训练 400K 步后的 FID-50K，靠深度 / 宽度堆出来的算力和靠缩小 patch size 堆出来的算力落在同一条趋势上。它是**相关性**，不能替代 §4.1 的闭式分解，但解释了为什么挑模型时先看 Gflops 而不是参数量。
+
+![DiT 论文 Figure 8：Transformer Gflops 与 FID-50K 的相关性](https://arxiv.org/html/2212.09748v2/gflops-FID-50K.svg)
+
+*图源：Peebles & Xie, [arXiv:2212.09748](https://arxiv.org/abs/2212.09748) Figure 8，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未改动。*
+
 ### 4.3 与 LLM 的 Scaling Law：像，但多三个旋钮
 
 LLM 的 scaling law 里，$$C\approx 6ND$$ 把算力摊给参数量与数据量，优化问题是一维的（固定 $$C$$，怎么分）。DiT 至少多了三个会重排算力的旋钮：
@@ -496,6 +518,12 @@ LLM 的 scaling law 里，$$C\approx 6ND$$ 把算力摊给参数量与数据量�
 - **训练目标的参数化与时间步采样分布**（第 5 节）与**推理步数**（第 9 节）。
 
 2026 年 ICLR 的 *Scaling Laws for Diffusion Transformers*（Liang, He, Yang & Dai，[会议页](https://iclr.cc/virtual/2026/poster/10009343)）第一次把这件事定量化：在 $$10^{17}\sim6\times10^{18}$$ FLOPs 的预算区间、$$10^6\sim10^9$$ 参数的模型上做 IsoFLOP 扫描，确认预训练损失对算力呈幂律，并据此外推预测了一个 1B 参数、$$1.5\times10^{21}$$ FLOPs 的文生图模型的损失；还报告了一个对架构选择直接有用的观察——**交叉注意力架构的损失下降比 in-context（拼接 token）更陡**。DiT 的规模化从此有了和 LLM 一样的定量工具，不再只靠「加大」。
+
+DiT 原文给出的规模化证据是这张：12 个模型在训练全程的 FID-50K，上排固定 patch size 比模型大小，下排固定模型大小比 patch size；两条轴都能把 FID 往下推，而且从训练早期就分开。这正是「Gflops 才是可比尺度」的原始依据。
+
+![DiT 论文 Figure 6：增大主干与缩小 patch size 都在训练全程改善 FID](https://arxiv.org/html/2212.09748v2/scaling_new.svg)
+
+*图源：Peebles & Xie, [arXiv:2212.09748](https://arxiv.org/abs/2212.09748) Figure 6，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未改动。*
 
 ---
 
@@ -715,6 +743,12 @@ $$
 
 三者不互斥：AdaLN 管时间步，交叉注意力管文本，同一个 Block 里同时出现是常态（PixArt-α、SD3 都是这个组合）。
 
+论文对这三条路径做过同条件消融：adaLN-Zero 在训练全程都优于交叉注意力与 in-context。读这张图要记住两个限定——比较的是**同一训练预算下的经验 FID**，不是「AdaLN-Zero 是必要条件」的证明（§3.3）；实验用的是 ImageNet 类别标签，不是长文本条件。
+
+![DiT 论文 Figure 5：三种条件注入策略的训练曲线对比](https://arxiv.org/html/2212.09748v2/conditioning.svg)
+
+*图源：Peebles & Xie, [arXiv:2212.09748](https://arxiv.org/abs/2212.09748) Figure 5，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未改动。*
+
 ### 7.2 全局向量的表达力上限是 $$1/K$$
 
 「为什么不能把整句文本压成一个向量」可以先在一个**最小反例（toy model）**里用最小二乘精确回答。构造一个最小的属性绑定任务，它有五个明确前提：
@@ -819,6 +853,8 @@ Flux.1（Black Forest Labs，2024-08，[模型卡](https://huggingface.co/black-
 | 交叉注意力 | 文本 token 作为 K/V | 位置相关的加权和 | 每层多一组 Q/K/V/输出投影 | 文本、细粒度对齐 |
 | in-context / MMDiT | 拼进序列做联合注意力 | 位置相关的注意力权重 | 双流时近乎翻倍 | 统一多模态主干 |
 
+MMDiT 的双流结构示意见 [SD3 论文](https://arxiv.org/abs/2403.03206) 的架构图，PixArt-α 的交叉注意力改造与三阶段训练见 [arXiv:2310.00426](https://arxiv.org/abs/2310.00426)。
+
 ---
 
 ## 8. 从 DiT 到 PixArt、SD3、Flux、Sora
@@ -897,6 +933,12 @@ $$T$$ 直接乘进 token 数，而注意力的二次项是 $$2N^2D$$——**时�
 ### 9.1 两个因子，不能分开谈
 
 设单次前向 $$C_{\text{DiT}}$$，采样 $$S$$ 步，总去噪算力近似 $$S\cdot C_{\text{DiT}}$$（CFG 还要把每次前向算两次）。第 4 节只动了第二个因子；这一节动第一个。
+
+论文先给过这条界线的经验版本：对训练 400K 步的各个 DiT 模型，分别用 16 到 1000 步采样，同时记录 FID-10K 与生成每张图所花的 Gflops；小模型即使花掉比大模型更多的测试期算力，也补不回质量差距。也就是说，两个因子不是可以自由互换的同一种预算。
+
+![DiT 论文 Figure 10：增加采样算力补不上模型算力](https://arxiv.org/html/2212.09748v2/sample_complexity_new.svg)
+
+*图源：Peebles & Xie, [arXiv:2212.09748](https://arxiv.org/abs/2212.09748) Figure 10，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未改动。*
 
 步数和质量的关系可以精确测——前提是找一个**有解析解**的设定。高斯数据 + 线性路径（rectified flow）恰好满足：$$(x_0,\epsilon,x_t)$$ 联合高斯，边际速度场是线性的，
 
