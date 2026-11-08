@@ -6,7 +6,7 @@ categories:
 tags: [dit, diffusion-transformer, adaln-zero, patchify, latent-diffusion, rectified-flow, flow-matching, classifier-free-guidance, pixart, sd3, mmdit, sora]
 layout: post
 mathjax: true
-excerpt: "DiT 的全部内容可以压缩成一句话：把去噪网络的主干从 U-Net 换成 Transformer，然后把「模型该多大」这个问题交给 token 数与深度宽度去回答。本文把这句话拆开：patchify 怎么决定 token 预算、AdaLN-Zero 为什么把整个 Block 初始化成恒等映射、$$\\epsilon/x_0/v$$ 三种参数化为什么是同一个函数的三种写法、时间步到底贡献了多少信息（贝叶斯最优 MSE 差 18.99%）、全局向量条件为什么拿不回 $$(K-1)/K$$ 的能量。配套 numpy 实验把 DiT 论文 Table 4 的 13 个 Gflops 数字反算到 0.4% 以内。"
+excerpt: "DiT 的全部内容可以压缩成一句话：把去噪网络的主干从 U-Net 换成 Transformer，然后把「模型该多大」这个问题交给 token 数与深度宽度去回答。本文把这句话拆开：patchify 怎么决定 token 预算、AdaLN-Zero 为什么把整个 Block 初始化成恒等映射、$$\\epsilon/x_0/v$$ 三种参数化为什么是同一个函数的三种写法、时间步到底贡献了多少信息（贝叶斯最优 MSE 差 18.99%）、最小反例里全局向量条件为什么拿不回 $$(K-1)/K$$ 的能量。配套 numpy 实验把 DiT 论文 Table 4 的 13 个 Gflops 数字反算到 0.4% 以内。"
 ---
 
 > **系列导航** ｜ 本系列承接 [变分自编码器（01）](/2026/10/13/vae-01-elbo-reparameterization-latent-space/)（潜空间这一层从哪来、凭什么能被采样）与 [Flow Matching 建模](/2026/08/22/flow-matching-01-algorithm-evolution/)（去噪目标换个写法之后剩下什么），把中间那一层补齐：**去噪函数的主干网络**。
@@ -14,14 +14,10 @@ excerpt: "DiT 的全部内容可以压缩成一句话：把去噪网络的主干
 
 > **TL;DR**
 >
-> * DiT 是**主干架构**，不是独立的生成算法。DDPM 的 $$\epsilon$$ 预测、$$x_0$$ 预测、$$v$$ 预测、Flow Matching 的速度场，都可以装进同一个 Transformer 主干——[SiT](https://arxiv.org/abs/2401.08740) 在**逐位相同的网络、相同参数量、相同 Gflops** 下换目标函数，把 ImageNet 256×256 的 FID 从 2.27 做到 2.06。
-> * Patchify 决定 token 预算：$$N=\frac{HW}{p^2}$$。DiT 论文的原话是「halving $$p$$ will quadruple $$T$$, and thus at least quadruple total transformer Gflops」——实测 DiT-XL 从 $$p=8$$ 到 $$4$$ 是 3.931 倍、从 $$4$$ 到 $$2$$ 是 4.084 倍，**不到 4 倍的那一次**就是 AdaLN 调制这类不随 $$N$$ 增长的项在拉低比值。
-> * 闭合公式 $$\text{MACs} = L\,(3ND^2 + 2N^2D + ND^2 + 2rND^2 + 6D^2) + 2Np^2CD + \cdots$$ 把 DiT 论文 Table 4 的 13 个 Gflops 数字全部反算到 0.4% 以内（唯一超 0.5% 的那个只有两位小数可对）。注意力二次项追平线性项的临界点是 $$N^\*=(2+r)D=6912$$ 个 token：256×256 时注意力只占 3.6%，4K 时占 82.4%。
-> * AdaLN-Zero 把门控 $$\alpha$$ 初始化为零，于是 28 层堆叠后 `max|out − x| = 0`（逐位恒等），初始损失精确等于目标自身能量 0.8107，而普通初始化是 11.6910（14.42 倍）；同时被门控的分支输出非零（Attn 分支 1.14 倍、MLP 分支 1.29 倍），$$\alpha$$ 的梯度不为零——**恒等不等于死梯度**。
-> * $$\epsilon$$ 预测到 $$x_0$$ 的误差放大因子是 $$\sigma/\alpha$$：$$t=0.9$$ 时 9.00 倍、$$t=0.99$$ 时 99.0 倍；$$v$$ 预测的放大因子是 $$\sigma/\Delta$$，两条常用路径下都 ≤ 1。这正是 [Salimans & Ho 引入 $$v$$ 参数化](https://arxiv.org/abs/2202.00512) 的动机。
-> * 时间步**不能**从 $$x_t$$ 里推出来。方差保持路径 + 单位方差数据下，$$x_t\sim\mathcal N(0,1)$$ 对**所有** $$t$$ 成立，边缘分布对 $$t$$ 的信息量是零——但知道 $$t$$ 的贝叶斯最优 MSE 是 0.5000，不知道是 0.5949，差 **18.99%**。
-> * 全局向量条件（只把整段文本池化成一个向量）能解释的能量恰好是 $$1/K$$：8 个正交语义下 MSE 下界 0.875，交叉注意力把它降到 $$7.8\times10^{-10}$$。这就是 AdaLN（全局调制）必须和交叉注意力搭配、而不是二选一的原因。
-> * 推理成本 = 步数 × 单次前向。高斯 + 线性路径有解析速度场，实测 Euler 收敛阶 −0.92、Heun −2.11；折算到 DiT-XL/2，误差容限 $$10^{-3}$$ 时 Heun 的总算力是 Euler 的 **1/46**。
+> * **核心结论**：DiT 是去噪主干而不是生成算法；生成过程、架构、条件三层正交，[SiT](https://arxiv.org/abs/2401.08740) 换目标即把 FID 从 2.27 降到 2.06。$$N=HW/p^2$$ 定 token 预算，AdaLN-Zero 用零门控把 Block 初始化成恒等映射。
+> * **关键证据**：§4 的闭式 MACs 把 [DiT 论文](https://arxiv.org/abs/2212.09748) Table 4 的 13 个 Gflops 反算到 0.4% 内；`dit_core` 实测 28 层逐位恒等、门控分支非零且 $$\alpha$$ 梯度非零；§7 的最小反例给出全局条件的 MSE 下界 $$1-1/K$$。
+> * **适用边界与代价**：$$p$$ 减半使注意力二次项 ×4，但 DiT-XL 到 $$N^\*=6912$$ 个 token 才追平线性项，256×256 下仅占 3.6%；§6 的边缘分布与 §7 的下界都只在写明的高斯 / 最小反例设定下成立。
+> * **系列定位**：补齐 VAE 潜空间与 Flow Matching 之间的去噪主干；下一篇写条件注入的工程谱系。
 
 配套实验：[`ipynbs` commit `478fc03`](https://github.com/lrypcy/ipynbs/tree/478fc03197717af362e127209eae6690458c1866/experiments/dit/dit_core/) 下的 `dit_core/`，纯 numpy、CPU 可跑、固定 seed，30 条断言全过；本文所有实测数字都来自它的实际输出（[`results/summary.md`](https://github.com/lrypcy/ipynbs/tree/478fc03197717af362e127209eae6690458c1866/experiments/dit/dit_core/results/summary.md)）。
 
@@ -79,7 +75,15 @@ excerpt: "DiT 的全部内容可以压缩成一句话：把去噪网络的主干
 
 注意主语是 **Gflops**，不是参数量。这是全文最重要的一句话，第 4 节会专门展开。
 
-所以本文的写法是：先把 Patchify（第 2 节）、Block（第 3 节）、计算账（第 4 节）这三块架构的事讲清楚，再回到生成过程那一层（第 5 节）讲参数化，然后是条件（第 6–7 节）、演进（第 8 节）和推理（第 9 节）。
+DiT 的知识可以拆成三条各自独立变化的线，混淆它们是后面大多数误读的来源：
+
+| 线 | 回答的问题 | 可变的旋钮 | 只动这一条的代表工作 |
+|:--|:--|:--|:--|
+| 架构主线 | 用什么函数算去噪、算力花在哪 | patch size、深度 / 宽度、token 数 | DiT-XL/2 → /8：同样的 675M 参数，Gflops 差 16 倍 |
+| 生成过程支线 | 学什么目标、损失怎么加权、采样怎么走 | $$\epsilon/x_0/v$$、时间步分布、ODE 求解器 | SiT：主干逐位不动，FID 2.27 → 2.06 |
+| 条件控制支线 | 时间步与文本怎么进入函数 | AdaLN / 交叉注意力 / 联合注意力 | PixArt-α：adaLN-single + 交叉注意力 |
+
+三条线正交的直接后果是：任何 FID 或算力上的收益都必须指明动的是哪条线，否则无法归因。生成目标与采样器属于支线，它们改变的是「学什么」，不是「用什么算」；反过来，第 4 节那本 Gflops 的账也只在架构主线里成立。
 
 ---
 
@@ -128,33 +132,129 @@ $$
 
 型号里的 `/2` `/4` `/8` 指 patch size，**不是**层数也不是降采样次数。DiT-XL/2 在 256×256 上是 $$N=256$$ 个 token，每个 token 携带 $$p^2C=16$$ 个 latent 数；同一个模型换到 512×512，latent 变成 $$64\times64\times4$$，$$N=1024$$，论文 5.1 节原话是「this XL/2 model processes a total of 1024 tokens after patchifying the 64×64×4 input latent」。
 
-### 2.2 patch size 的真实代价：不是参数，是「位置对」
+### 2.2 patch size 的真实代价：不是参数，是「显式寻址」
 
 patch 变小带来的参数增量几乎为零——patch embedding 是一个 $$p^2C\times D$$ 的线性层，$$p$$ 减半后这个矩阵反而**变小**。真正变化的是注意力的交互结构：
 
-- 一个 patch 内部的 $$p^2$$ 个空间位置，被线性投影**压进同一个 token 向量**，它们之间的信息交换只能走两条路：patch embedding 的那次投影，以及后续逐 token 的 MLP。**注意力永远看不见它们**。
-- 两个位置能在同一层 attention 里直接见面的条件是它们落在不同的 patch 里。
+- 一个 patch 内部的 $$p^2$$ 个空间位置，被线性投影**压进同一个 token 向量**。这里**没有信息丢失**：$$W_p\operatorname{vec}(P_i)$$ 本身就把这 $$p^2$$ 个位置的数值混合进了 $$D$$ 维表示，后续逐 token 的 MLP 还能继续在同一向量内重组它们。
+- 变的是**寻址方式**：进入 Transformer 之后，这些位置不再拥有独立的 token 身份，Self-Attention 无法对它们分别计算注意力权重。两个位置能在同一层 attention 里直接见面的条件是它们落在不同的 patch 里。
 
-数一下被「锁死」在同一个 patch 里的位置对。latent 是 $$H\times W$$，每个 patch 有 $$\binom{p^2}{2}$$ 个内部位置对，共 $$\frac{HW}{p^2}$$ 个 patch：
+所以下面数的不是「丢失了多少信息」，而是**显式注意力寻址受限的位置对比例**：有多少位置对从「可被注意力分别查询」降级成「只能先被同一个线性投影混合」。latent 是 $$H\times W$$，每个 patch 有 $$\binom{p^2}{2}$$ 个内部位置对，共 $$\frac{HW}{p^2}$$ 个 patch：
 
 $$
-\text{被锁死的比例}
+\text{显式注意力寻址受限比例}
 =\frac{(H/p)(W/p)\cdot\binom{p^2}{2}}{\binom{HW}{2}}
 $$
 
 代入 $$H=W=32$$：
 
-| $$p$$ | 被锁死的位置对 | 全部位置对 | 比例 |
+| $$p$$ | 同 patch 内的位置对 | 全部位置对 | 受限比例 |
 |--:|--:|--:|--:|
 | 8 | $$16\times 2016=32256$$ | $$523776$$ | 6.1584% |
 | 4 | $$64\times 120=7680$$ | $$523776$$ | 1.4663% |
 | 2 | $$256\times 6=1536$$ | $$523776$$ | 0.2933% |
 
-$$p=8$$ 时有 6.1584% 的位置对**永远**无法通过注意力直接交互，只能靠 patch 内部的线性投影与 MLP 折中；$$p=2$$ 把这个比例压到千分之三（0.2933%）。这就是「更小的 patch = 更细的空间表示粒度」的精确含义——它不是模糊的「表达力更强」，而是可数的位置对。
+$$p=8$$ 时有 6.1584% 的位置对无法被 Self-Attention 分别寻址，它们之间只存在 patch embedding 与 MLP 提供的**隐式**混合；$$p=2$$ 把这个比例压到千分之三（0.2933%）。这就是「更小的 patch = 更细的空间表示粒度」的精确含义——它不是模糊的「表达力更强」，也不是「信息被丢掉了」，而是可数的、失去独立 token 身份的位置对。
 
 ### 2.3 位置编码
 
 token 化丢掉了空间排列，必须补回来。DiT 用固定的二维 sin-cos 位置编码（不做学习），加在 patch embedding 之后。后续工作在这一点上分叉明显：PixArt-α 沿用 sin-cos，SD3 沿用，Flux.1 换成了旋转位置编码（RoPE）。位置编码的选择影响的是**外推到没见过的分辨率**的能力，这里先按下不表，02 篇展开。
+
+### 2.4 完整前向：模块、张量形状与主干边界
+
+把前面拆开的模块接成一条链，形状就能逐段核对（DiT-XL/2，256×256 输入，$$B=1$$）：
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 360" role="img" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Segoe UI',Helvetica,Arial,sans-serif">
+<rect x="0" y="0" width="680" height="360" fill="#ffffff"/>
+<text x="20" y="26" font-size="15" font-weight="600" fill="#111827">DiT 完整前向：模块、张量形状与主干边界</text>
+<text x="20" y="46" font-size="11.5" fill="#4b5563">以 DiT-XL/2、256×256 输入、B=1 为例；蓝色是数据，紫色是全局条件，虚线框内不属于 DiT</text>
+<rect x="16" y="64" width="120" height="54" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="76" y="86" font-size="11.5" font-weight="600" text-anchor="middle" fill="#111827">干净图像 x₀</text><text x="76" y="105" font-size="10.5" text-anchor="middle" fill="#2563eb">B×3×256×256</text>
+<rect x="148" y="64" width="120" height="54" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="208" y="86" font-size="11.5" font-weight="600" text-anchor="middle" fill="#111827">VAE Encoder</text><text x="208" y="105" font-size="10.5" text-anchor="middle" fill="#2563eb">B×4×32×32</text>
+<rect x="280" y="64" width="120" height="54" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="340" y="86" font-size="11.5" font-weight="600" text-anchor="middle" fill="#111827">加噪得 z_t</text><text x="340" y="105" font-size="10.5" text-anchor="middle" fill="#2563eb">B×4×32×32</text>
+<rect x="412" y="64" width="120" height="54" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="472" y="86" font-size="11.5" font-weight="600" text-anchor="middle" fill="#111827">Patchify + Pos</text><text x="472" y="105" font-size="10.5" text-anchor="middle" fill="#2563eb">B×256×1152</text>
+<rect x="544" y="64" width="120" height="54" rx="6" fill="#eef2ff" stroke="#2563eb" stroke-width="1.6"/><text x="604" y="86" font-size="11.5" font-weight="600" text-anchor="middle" fill="#111827">DiT Block × 28</text><text x="604" y="105" font-size="10.5" text-anchor="middle" fill="#2563eb">B×256×1152</text>
+<line x1="136" y1="91" x2="146" y2="91" stroke="#111827" stroke-width="1.4"/><polygon points="148,91 141,87.5 141,94.5" fill="#111827"/>
+<line x1="268" y1="91" x2="278" y2="91" stroke="#111827" stroke-width="1.4"/><polygon points="280,91 273,87.5 273,94.5" fill="#111827"/>
+<line x1="400" y1="91" x2="410" y2="91" stroke="#111827" stroke-width="1.4"/><polygon points="412,91 405,87.5 405,94.5" fill="#111827"/>
+<line x1="532" y1="91" x2="542" y2="91" stroke="#111827" stroke-width="1.4"/><polygon points="544,91 537,87.5 537,94.5" fill="#111827"/>
+<text x="20" y="150" font-size="11.5" font-weight="600" fill="#7c3aed">全局条件支路</text>
+<text x="20" y="167" font-size="11" fill="#4b5563">t 与 y 各映射到 D 维后相加，</text>
+<text x="20" y="183" font-size="11" fill="#4b5563">每个 Block 各回归出 6D 个调制参数，</text>
+<text x="20" y="199" font-size="11" fill="#4b5563">再广播到该 Block 的全部 token。</text>
+<rect x="280" y="140" width="120" height="40" rx="6" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.1"/><text x="340" y="157" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">时间步 t → D</text><text x="340" y="172" font-size="10" text-anchor="middle" fill="#7c3aed">频率编码 + MLP</text>
+<rect x="412" y="140" width="120" height="40" rx="6" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.1"/><text x="472" y="157" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">类别 y → D</text><text x="472" y="172" font-size="10" text-anchor="middle" fill="#7c3aed">Embedding 表</text>
+<rect x="544" y="140" width="120" height="40" rx="6" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.1"/><text x="604" y="157" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">c（B×1152）</text><text x="604" y="172" font-size="10" text-anchor="middle" fill="#7c3aed">逐 Block → 6D 调制</text>
+<line x1="400" y1="160" x2="410" y2="160" stroke="#7c3aed" stroke-width="1.3"/><polygon points="412,160 405,156.5 405,163.5" fill="#7c3aed"/>
+<line x1="532" y1="160" x2="542" y2="160" stroke="#7c3aed" stroke-width="1.3"/><polygon points="544,160 537,156.5 537,163.5" fill="#7c3aed"/>
+<line x1="604" y1="140" x2="604" y2="120" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="4 3"/><polygon points="604,118 600.5,125 607.5,125" fill="#7c3aed"/>
+<line x1="604" y1="180" x2="604" y2="216" stroke="#7c3aed" stroke-width="1.3" stroke-dasharray="4 3"/><polygon points="604,220 600.5,213 607.5,213" fill="#7c3aed"/>
+<text x="596" y="204" font-size="10" text-anchor="end" fill="#7c3aed">Final Layer 用同一个 c 做 2D 调制</text>
+<rect x="544" y="220" width="120" height="54" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="604" y="242" font-size="11.5" font-weight="600" text-anchor="middle" fill="#111827">Final Layer</text><text x="604" y="261" font-size="10.5" text-anchor="middle" fill="#2563eb">B×256×16</text>
+<rect x="412" y="220" width="120" height="54" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="472" y="242" font-size="11.5" font-weight="600" text-anchor="middle" fill="#111827">Unpatchify</text><text x="472" y="261" font-size="10.5" text-anchor="middle" fill="#2563eb">B×4×32×32</text>
+<rect x="280" y="220" width="120" height="54" rx="6" fill="#f8fafc" stroke="#9ca3af" stroke-width="1.1"/><text x="340" y="242" font-size="11.5" font-weight="600" text-anchor="middle" fill="#111827">Scheduler / ODE</text><text x="340" y="261" font-size="10.5" text-anchor="middle" fill="#4b5563">更新 z_t</text>
+<rect x="148" y="220" width="120" height="54" rx="6" fill="#f8fafc" stroke="#9ca3af" stroke-width="1.1"/><text x="208" y="242" font-size="11.5" font-weight="600" text-anchor="middle" fill="#111827">VAE Decoder</text><text x="208" y="261" font-size="10.5" text-anchor="middle" fill="#4b5563">B×3×256×256</text>
+<line x1="544" y1="247" x2="534" y2="247" stroke="#111827" stroke-width="1.4"/><polygon points="532,247 539,243.5 539,250.5" fill="#111827"/>
+<line x1="412" y1="247" x2="402" y2="247" stroke="#111827" stroke-width="1.4"/><polygon points="400,247 407,243.5 407,250.5" fill="#111827"/>
+<line x1="280" y1="247" x2="270" y2="247" stroke="#111827" stroke-width="1.4"/><polygon points="268,247 275,243.5 275,250.5" fill="#111827"/>
+<path d="M 664,91 L 672,91 L 672,247 L 666,247" fill="none" stroke="#2563eb" stroke-width="1.6"/><polygon points="664,247 671,243.5 671,250.5" fill="#2563eb"/>
+<rect x="140" y="214" width="268" height="66" rx="8" fill="none" stroke="#9ca3af" stroke-width="1.2" stroke-dasharray="5 4"/>
+<text x="144" y="294" font-size="11" fill="#6b7280">虚线框：DiT 之外的模块，负责状态更新与像素解码</text>
+<text x="20" y="316" font-size="11" fill="#4b5563">形状逐段可核对：N = 32×32 / 2² = 256，D = 1152，p²C = 16，L = 28；DiT 的输出是 ε 或 v，不是新状态。</text>
+<text x="20" y="334" font-size="11" fill="#4b5563">主干全程只在 B×4×32×32 的 latent 上计算，像素空间只出现在两端的 VAE。</text>
+<text x="20" y="352" font-size="11" fill="#4b5563">Final Layer 的 16 = p²C，对应每个 latent 像素一个预测值；展平后由 unpatchify 还原成 4 通道网格。</text>
+</svg>
+
+| 阶段 | 输入 → 输出形状 | 归属 |
+|:--|:--|:--|
+| VAE Encoder | $$B\times3\times256\times256\to B\times4\times32\times32$$ | 潜空间，见 [VAE 那篇](/2026/10/13/vae-01-elbo-reparameterization-latent-space/) |
+| 加噪 $$z_t=\alpha_t z_0+\sigma_t\epsilon$$ | 形状不变 | 生成过程层（§5） |
+| Patchify（$$p=2$$）+ 2D sin-cos | $$B\times4\times32\times32\to B\times256\times1152$$ | 架构层 |
+| 条件向量 $$c=c_{\text{time}}(t)+c_{\text{label}}(y)$$ | $$B\times1152$$，广播到全部 token；每个 Block 各自投影成 $$6D$$ 个调制参数 | 条件控制层（§3、§6） |
+| DiT Block $$\times 28$$ | $$B\times256\times1152\to B\times256\times1152$$ | 架构层 |
+| Final Layer（AdaLN + Linear） | $$B\times256\times1152\to B\times256\times16$$ | 架构层；同一个 $$c$$ 在这里只投影成 $$2D$$（scale / shift），没有门控，见 §4.1 的 $$2D^2$$ 项 |
+| Unpatchify | $$B\times256\times16\to B\times4\times32\times32$$ | 架构层 |
+| Scheduler / VAE Decoder | 更新 $$z_t$$、再解码回 $$B\times3\times256\times256$$ | **不属于 DiT**（§9） |
+
+官方实现里 patch embedding 写成 `nn.Conv2d(C, D, kernel_size=p, stride=p)`，而不是「先切 patch 再过 Linear」。两者逐位等价：卷积核在非重叠的 $$p\times p$$ 窗口上各做一次内积，输出 $$B\times D\times\frac{H}{p}\times\frac{W}{p}$$；展平并转置就是 $$B\times N\times D$$。线性层权重形状为 $$D\times(p^2C)$$，正好是卷积核 reshape 后的结果。差别只在实现：卷积省掉显式切块与拼接，同时要求 $$H,W$$ 能被 $$p$$ 整除。
+
+### 2.5 训练与推理闭环：DiT 只负责其中一步
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 300" role="img" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Segoe UI',Helvetica,Arial,sans-serif">
+<rect x="0" y="0" width="680" height="300" fill="#ffffff"/>
+<text x="20" y="26" font-size="15" font-weight="600" fill="#111827">训练与推理：同一个 DiT，两个不同的状态来源</text>
+<text x="20" y="46" font-size="11.5" fill="#4b5563">训练时 z_t 由真值加噪得到，推理时由求解器迭代给出；DiT 的职责两次完全相同</text>
+<text x="20" y="70" font-size="12" font-weight="600" fill="#2563eb">训练：一次迭代</text>
+<rect x="16" y="78" width="110" height="44" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="71" y="97" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">图像 x₀</text><text x="71" y="113" font-size="10" text-anchor="middle" fill="#4b5563">训练集样本</text>
+<rect x="142" y="78" width="110" height="44" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="197" y="97" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">VAE Enc</text><text x="197" y="113" font-size="10" text-anchor="middle" fill="#4b5563">得到 z₀（冻结）</text>
+<rect x="268" y="78" width="110" height="44" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="323" y="97" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">采样 t、ε</text><text x="323" y="113" font-size="10" text-anchor="middle" fill="#4b5563">构造 z_t</text>
+<rect x="394" y="78" width="110" height="44" rx="6" fill="#eef2ff" stroke="#2563eb" stroke-width="1.5"/><text x="449" y="97" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">DiT 预测 ε/v</text><text x="449" y="113" font-size="10" text-anchor="middle" fill="#2563eb">f_θ(z_t, t, c)</text>
+<rect x="520" y="78" width="144" height="44" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="1.1"/><text x="592" y="97" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">与真值求 Loss</text><text x="592" y="113" font-size="10" text-anchor="middle" fill="#4b5563">反传更新 θ</text>
+<line x1="126" y1="100" x2="140" y2="100" stroke="#111827" stroke-width="1.3"/><polygon points="142,100 135,96.5 135,103.5" fill="#111827"/>
+<line x1="252" y1="100" x2="266" y2="100" stroke="#111827" stroke-width="1.3"/><polygon points="268,100 261,96.5 261,103.5" fill="#111827"/>
+<line x1="378" y1="100" x2="392" y2="100" stroke="#111827" stroke-width="1.3"/><polygon points="394,100 387,96.5 387,103.5" fill="#111827"/>
+<line x1="504" y1="100" x2="518" y2="100" stroke="#111827" stroke-width="1.3"/><polygon points="520,100 513,96.5 513,103.5" fill="#111827"/>
+<text x="20" y="142" font-size="11" fill="#4b5563">条件 c（时间步、类别或文本）与 z_t 一起进主干；损失由生成过程定义（§5），VAE 参数在这一步不更新。</text>
+<text x="20" y="174" font-size="12" font-weight="600" fill="#059669">推理：一次采样</text>
+<rect x="16" y="182" width="110" height="44" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="71" y="201" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">z_T ~ N(0,I)</text><text x="71" y="217" font-size="10" text-anchor="middle" fill="#4b5563">纯噪声起点</text>
+<rect x="142" y="182" width="110" height="44" rx="6" fill="#eef2ff" stroke="#2563eb" stroke-width="1.5"/><text x="197" y="201" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">DiT 预测 v</text><text x="197" y="217" font-size="10" text-anchor="middle" fill="#2563eb">同一个 f_θ</text>
+<rect x="268" y="182" width="110" height="44" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="323" y="201" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">Scheduler 更新</text><text x="323" y="217" font-size="10" text-anchor="middle" fill="#4b5563">Euler / Heun 等</text>
+<rect x="394" y="182" width="110" height="44" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="449" y="201" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">循环 S 步 → z₀</text><text x="449" y="217" font-size="10" text-anchor="middle" fill="#4b5563">得到干净 latent</text>
+<rect x="520" y="182" width="144" height="44" rx="6" fill="#ffffff" stroke="#9ca3af" stroke-width="1.1"/><text x="592" y="201" font-size="11" font-weight="600" text-anchor="middle" fill="#111827">VAE Dec → 图像</text><text x="592" y="217" font-size="10" text-anchor="middle" fill="#4b5563">潜空间回到像素</text>
+<line x1="126" y1="204" x2="140" y2="204" stroke="#111827" stroke-width="1.3"/><polygon points="142,204 135,200.5 135,207.5" fill="#111827"/>
+<line x1="252" y1="204" x2="266" y2="204" stroke="#111827" stroke-width="1.3"/><polygon points="268,204 261,200.5 261,207.5" fill="#111827"/>
+<line x1="378" y1="204" x2="392" y2="204" stroke="#111827" stroke-width="1.3"/><polygon points="394,204 387,200.5 387,207.5" fill="#111827"/>
+<line x1="504" y1="204" x2="518" y2="204" stroke="#111827" stroke-width="1.3"/><polygon points="520,204 513,200.5 513,207.5" fill="#111827"/>
+<path d="M 323,226 L 323,246 L 197,246 L 197,228" fill="none" stroke="#059669" stroke-width="1.5" stroke-dasharray="5 3"/><polygon points="197,226 193.5,233 200.5,233" fill="#059669"/>
+<text x="260" y="262" font-size="10.5" text-anchor="middle" fill="#059669">t ← t − Δt，重复 S 次</text>
+<text x="20" y="286" font-size="11" fill="#4b5563">三个职责不能混：DiT 负责预测，Scheduler / ODE Solver 负责状态更新，VAE Decoder 负责 latent → 图像。</text>
+</svg>
+
+| 职责 | 由谁承担 | 判断依据 |
+|:--|:--|:--|
+| 每一步该往哪个方向走 | DiT 主干 $$f_\theta(z_t,t,c)$$ | 输出是 $$\epsilon$$ 或 $$v$$，不是新的 $$z_t$$ |
+| 把预测变成状态更新 | Scheduler / ODE Solver | 同一个主干可换 Euler / Heun / DDIM，步数任意（§9） |
+| 把 latent 变回图像 | VAE Decoder | 主干全程只在 $$32\times32\times4$$ 上计算（§2.1） |
+| 决定训练目标是什么 | 生成过程层（DDPM / rectified flow） | SiT 主干逐位不动只换目标，FID 就变（§1） |
 
 ---
 
@@ -207,6 +307,18 @@ $$
 h''=h'+\alpha_2\odot\operatorname{MLP}\bigl(\operatorname{AdaLN}_2(h',c)\bigr)
 $$
 
+这组式子里有五处容易一笔带过的设计：
+
+| 设计 | 是什么 | 为什么这么放 |
+|:--|:--|:--|
+| Pre-LN | 归一化在子层**之前**，残差路径上不再套 LayerNorm | 只有这样才能让 $$\alpha=0$$ 时整个 Block 严格恒等；Post-LN 写成 $$\operatorname{LN}(x+\alpha F(x))$$，$$\alpha=0$$ 时输出是 $$\operatorname{LN}(x)\neq x$$ |
+| $$\operatorname{LN}(h)$$ 与 $$\operatorname{AdaLN}(h,c)$$ | 前者按 token 自身统计量归一化；后者在归一化结果上再施加条件相关的仿射 $$\gamma,\beta$$ | AdaLN 不是「另一种 LayerNorm」，而是**条件调制机制**：归一化统计量仍只由 $$h$$ 决定，$$c$$ 只改变之后的仿射系数 |
+| $$\gamma$$ / $$\beta$$ | 逐维 scale / shift | 决定这一层对哪些通道敏感、基线偏置多少；随 $$t$$ 变化等价于换一组去噪滤波器 |
+| 两个独立 $$\alpha$$ | 注意力分支与 MLP 分支各自的残差门控 | 两条分支能异步打开；共用一个门控会强制它们同步，少一个自由度 |
+| 条件广播 | $$c_{\text{cond}}$$ 只有 $$B\times D$$，对全部 $$N$$ 个 token 共享 | 时间步与类别是**全局**条件，不随空间位置变；位置相关的绑定属于交叉注意力（§7） |
+
+$$\gamma,\beta,\alpha$$ 都由同一个条件向量回归出来，所以「条件」在 DiT 里不是拼进序列的一串 token，而是作用在每一层归一化与残差上的一组时变系数。
+
 论文附录 A 的原话：adaLN 层把时间步与类别嵌入的和喂进 SiLU 和一个线性层，输出神经元个数是隐藏维度的 4 倍（adaLN）或 6 倍（adaLN-Zero）。这个 $$6D^2$$ 的调制投影在 12 个 Gflops 数字里也是实打实的一项——第 4 节的公式里会看到它。
 
 ### 3.2 零初始化：把整个 Block 初始化成恒等映射
@@ -220,6 +332,24 @@ AdaLN-Zero 的全部改动只有一处：**把调制 MLP 里输出 $$\alpha$$ �
 - Block 的输出 = 输入（两条残差分支都关闭），**逐位相等**；
 - 梯度穿过 Block 时面对的是恒等映射，$$\partial h''/\partial h=I$$；
 - 而 $$\partial h''/\partial\alpha_1=\operatorname{Attn}(\operatorname{AdaLN}_1(h,c))\neq 0$$，所以**第一步更新就能动**。
+
+把一条残差分支写成 $$y=x+\alpha\odot F(x;\theta)$$（这里把门控简写成标量 $$\alpha$$；DiT 里它是 $$D$$ 维向量、逐维相乘，下面三个式子逐分量成立），链式法则给出三条梯度：
+
+$$
+\frac{\partial y}{\partial x}=I+\alpha\frac{\partial F}{\partial x},\qquad
+\frac{\partial y}{\partial\alpha}=F(x;\theta),\qquad
+\frac{\partial y}{\partial\theta}=\alpha\frac{\partial F}{\partial\theta}
+$$
+
+$$\alpha=0$$ 时依次是 $$I$$、$$F(x;\theta)$$、$$0$$。三行合起来才是完整的图像：
+
+| 对象 | $$\alpha=0$$ 时的梯度 | 后果 |
+|:--|:--|:--|
+| 输入 $$x$$ | $$I$$ | 前向恒等、反向原样穿过，28 层不放大也不衰减 |
+| 门控 $$\alpha$$ | $$F(x;\theta)\neq0$$ | 第一步就离开零，网络学的是「何时打开这条分支」 |
+| 分支内部权重 $$\theta$$（QKV、MLP） | $$0$$ | 初始时刻不参与更新，要等 $$\alpha\neq0$$ 之后才逐层接入 |
+
+所以「恒等映射不等于死梯度」严格说的只是第二行：门控参数活着，被门控的分支内部参数是**延后**启动的。AdaLN-Zero 更像「渐进打开一条分支」，而不是让整块网络从第一步一起训练；这也解释了为什么调制投影（产出 $$\gamma,\beta,\alpha$$ 的那个 MLP）能立刻拿到梯度，而注意力与 MLP 的权重要晚一步。
 
 这不是直觉，可以直接量。`dit_core` 第 3 组用 numpy 写了一个 DiT Block（Pre-LN + AdaLN + 多头注意力 + GELU-MLP，$$D=64$$、4 头、$$N=16$$ token），堆 28 层对比两种初始化：
 
@@ -271,7 +401,7 @@ AdaLN-Zero 的全部改动只有一处：**把调制 MLP 里输出 $$\alpha$$ �
 
 ### 4.1 把单次前向写成显式公式
 
-设 token 数 $$N$$、隐藏维度 $$D$$、层数 $$L$$、MLP 升维比 $$r$$、latent 通道数 $$C$$。按「1 次乘加 = 1 flop」计，单个 DiT Block 的乘加次数是：
+设 token 数 $$N$$、隐藏维度 $$D$$、层数 $$L$$、MLP 升维比 $$r$$、latent 通道数 $$C$$。下文统一按「**1 次乘加（MAC）= 1 flop**」记账：这是 DiT 论文 Table 4 的口径，也是这 13 个 Gflops 能被逐位反算出来的前提。硬件 FLOPs 的常见口径把 1 MAC 算作 2 FLOPs，用那种口径时本文全部数字要乘 2；文中 MACs / Gflops 不再区分，一律指前者。单个 DiT Block 的乘加次数是：
 
 $$
 \operatorname{MACs}_{\text{block}}
@@ -331,7 +461,7 @@ $$
 N^\*=(2+r)\,D
 $$
 
-DiT-XL（$$D=1152,\ r=4$$）的 $$N^\*=6912$$ 个 token。这个数把「分辨率 — 成本」的整条曲线分成了两段：
+DiT-XL（$$D=1152,\ r=4$$）的 $$N^\*=6912$$ 个 token。这个数把「分辨率 — 成本」的整条曲线分成了两段，但要先说清它是什么：$$N^\*$$ 只是**闭式公式里的代数交叉点**，标记二次项与线性项谁更大，不是「从这一档开始注意力就是瓶颈」的硬件阈值——真实成本还取决于访存与算子实现（§9.2 会把理论乘加与实测延迟分成两本账）。
 
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 330" role="img" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
 <rect x="0" y="0" width="680" height="330" fill="#ffffff"/>
@@ -450,6 +580,8 @@ $$
 - **$$\epsilon$$ 预测在高噪声端把预测误差无限放大**——$$t=0.9$$ 时 9 倍，$$t=0.99$$ 时 99 倍，$$t\to1$$ 时发散；
 - **$$v$$ 预测的放大因子有界**，线性路径下就是 $$t$$ 本身（≤ 1），余弦路径下上界 $$2/\pi\approx0.637$$。
 
+这里的 $$\delta$$ 是**固定预测误差**下的代数传播系数：比较的是「同样大小的误差，落在哪个参数化上会被放大多少」，不是「训练时 $$v$$ 预测的误差一定更小」。真实训练误差还由目标的可学性、隐式损失权重与时间步采样共同决定（§5.2 后半、§5.4），两者不能直接等同；能确定的只有这条误差传播的代数上界。
+
 这正是 [Salimans & Ho（*Progressive Distillation for Fast Sampling*，ICLR 2022，arXiv:2202.00512](https://arxiv.org/abs/2202.00512)）引入 $$v$$ 参数化的动机，摘要原话是「we present new parameterizations of diffusion models that provide increased stability when using few sampling steps」——少步采样时每一步都要跨过一大段噪声区间，其中就包括 $$\epsilon$$ 预测被放大得最狠的那一段。
 
 换一个角度看同一件事：最小化 $$\epsilon$$ 预测的均匀-$$t$$ MSE，等价于最小化一个**加了权的 $$x_0$$ 空间 MSE**，权重是 $$(\alpha_t/\sigma_t)^2=\mathrm{SNR}(t)$$：
@@ -500,13 +632,19 @@ $$
 
 既然 $$x_t$$ 里已经混入了噪声，能不能不给 $$t$$，让网络自己从 $$x_t$$ 推断「现在有多脏」？这样网络少一个输入，采样器也少一个要传的量。
 
-在方差保持路径（$$\alpha_t^2+\sigma_t^2=1$$）上取**单位方差**的数据，这个方案的荒谬之处最清楚：此时
+要把这件事严格说死，需要把数据与噪声都固定为高斯，而不只是固定方差：
+
+$$
+x_0\sim\mathcal N(0,1),\qquad \epsilon\sim\mathcal N(0,1),\qquad x_0\perp\epsilon
+$$
+
+在方差保持路径（$$\alpha_t^2+\sigma_t^2=1$$）上，独立高斯变量的线性组合仍是高斯，且
 
 $$
 \operatorname{Var}(x_t)=\alpha_t^2\cdot1+\sigma_t^2\cdot1=1\qquad\forall t
 $$
 
-$$x_t\sim\mathcal N(0,1)$$ 对**每一个** $$t$$ 都成立——边缘分布对 $$t$$ 的信息量**恰好是零**。$$t$$ 完全隐藏，一点都推不出来。
+于是 $$x_t\sim\mathcal N(0,1)$$ 对**每一个** $$t$$ 都成立——边缘分布对 $$t$$ 的信息量**恰好是零**，$$t$$ 在原理上不可推断。这一步**不能只靠「单位方差」**：若 $$x_0$$ 是方差为 1 的非高斯分布，$$\alpha_t^2+\sigma_t^2=1$$ 只保证 $$\mathbb E[x_t]=0$$ 与 $$\operatorname{Var}(x_t)=1$$，高阶矩和边缘分布仍随 $$t$$ 变化（随着 $$\alpha_t\to0$$，高斯噪声才逐渐主导），此时「$$t$$ 完全隐藏」不再严格成立。下面的线性高斯 MMSE 推导，用的正是这个高斯设定。
 
 但最优去噪器仍然强烈依赖 $$t$$。标量情形下线性高斯模型有闭式解：给定 $$x_t=x$$ 与 $$t$$，
 
@@ -579,7 +717,13 @@ $$
 
 ### 7.2 全局向量的表达力上限是 $$1/K$$
 
-「为什么不能把整句文本压成一个向量」可以用最小二乘精确回答。构造一个最小的属性绑定任务：$$K$$ 个正交单位范数的文本嵌入 $$E_1\cdots E_K\in\mathbb R^d$$，$$n$$ 个图像 patch 各自被指派一个文本 token，目标是让第 $$i$$ 个 patch 输出 $$E_{c_i}$$。
+「为什么不能把整句文本压成一个向量」可以先在一个**最小反例（toy model）**里用最小二乘精确回答。构造一个最小的属性绑定任务，它有五个明确前提：
+
+1. $$K$$ 个文本嵌入 $$E_1\cdots E_K\in\mathbb R^d$$ 两两正交、单位范数；
+2. $$n$$ 个图像 patch 各被指派一个语义，各语义出现次数相同；
+3. 条件被池化成**一个**向量并广播给所有 patch，因而所有位置只能共享同一个输出；
+4. 目标是让第 $$i$$ 个 patch 输出 $$E_{c_i}$$，误差用 MSE 度量；
+5. 不计入位置编码、逐层调制，以及其他能恢复位置信息的网络路径。
 
 - **全局向量**：整段文本池化成一个向量后，所有 patch 只能共享同一个输出 $$\hat y$$。最优的 $$\hat y$$ 是所有目标的均值 $$\bar y=\frac1K\sum_kE_k$$，于是
 
@@ -611,7 +755,51 @@ $$
     交叉注意力（softmax + GD）   MSE = 0.000000e+00
 ```
 
-K=8 时全局向量的 MSE 精确落在闭式下界 $$1-1/K=0.875$$ 上，剩下的 87.5% 能量必须靠「每个位置各自去读不同的文本 token」才能拿回来。这就是 7.1 节那句「AdaLN 和交叉注意力是搭配而不是二选一」的定量版本：**全局调制管「所有位置共享的那部分条件」（时间步、整体风格），交叉注意力管「位置相关的绑定」（哪个区域对应哪个词）**。
+两种条件路径的差别，画出来比公式更直接：
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 274" role="img" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Segoe UI',Helvetica,Arial,sans-serif">
+<rect x="0" y="0" width="680" height="274" fill="#ffffff"/>
+<rect x="16" y="12" width="316" height="236" rx="8" fill="#ffffff" stroke="#e5e7eb" stroke-width="1"/>
+<rect x="348" y="12" width="316" height="236" rx="8" fill="#ffffff" stroke="#e5e7eb" stroke-width="1"/>
+<text x="28" y="34" font-size="12.5" font-weight="600" fill="#111827">AdaLN：一个全局向量广播给所有位置</text>
+<text x="360" y="34" font-size="12.5" font-weight="600" fill="#111827">交叉注意力：每个位置各自去读文本</text>
+<rect x="28" y="48" width="150" height="30" rx="5" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.1"/><text x="103" y="67" font-size="10.5" text-anchor="middle" fill="#111827">整段文本 → Pooling</text>
+<rect x="28" y="92" width="150" height="30" rx="5" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.1"/><text x="103" y="111" font-size="10.5" text-anchor="middle" fill="#111827">c（一个 B×D 向量）</text>
+<line x1="103" y1="78" x2="103" y2="90" stroke="#7c3aed" stroke-width="1.3"/><polygon points="103,92 99.5,85 106.5,85" fill="#7c3aed"/>
+<rect x="28" y="150" width="64" height="30" rx="5" fill="#eef2ff" stroke="#2563eb" stroke-width="1.1"/><text x="60" y="169" font-size="10.5" text-anchor="middle" fill="#111827">patch 1</text>
+<rect x="100" y="150" width="64" height="30" rx="5" fill="#eef2ff" stroke="#2563eb" stroke-width="1.1"/><text x="132" y="169" font-size="10.5" text-anchor="middle" fill="#111827">patch 2</text>
+<rect x="172" y="150" width="64" height="30" rx="5" fill="#eef2ff" stroke="#2563eb" stroke-width="1.1"/><text x="204" y="169" font-size="10.5" text-anchor="middle" fill="#111827">patch 3</text>
+<rect x="244" y="150" width="64" height="30" rx="5" fill="#eef2ff" stroke="#2563eb" stroke-width="1.1"/><text x="276" y="169" font-size="10.5" text-anchor="middle" fill="#111827">patch 4</text>
+<path d="M 103,122 L 60,148" fill="none" stroke="#7c3aed" stroke-width="1.1" stroke-dasharray="4 3"/>
+<path d="M 103,122 L 132,148" fill="none" stroke="#7c3aed" stroke-width="1.1" stroke-dasharray="4 3"/>
+<path d="M 103,122 L 204,148" fill="none" stroke="#7c3aed" stroke-width="1.1" stroke-dasharray="4 3"/>
+<path d="M 103,122 L 276,148" fill="none" stroke="#7c3aed" stroke-width="1.1" stroke-dasharray="4 3"/>
+<text x="28" y="202" font-size="10.5" fill="#7c3aed">所有位置共享同一组 γ, β, α</text>
+<text x="28" y="220" font-size="10.5" fill="#4b5563">输出只能是所有目标的均值向量</text>
+<text x="28" y="238" font-size="11" font-weight="600" fill="#dc2626">MSE = 1 − 1/K（K=8 时 0.875）</text>
+<rect x="360" y="48" width="64" height="30" rx="5" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.1"/><text x="392" y="67" font-size="10.5" text-anchor="middle" fill="#111827">E₁</text>
+<rect x="432" y="48" width="64" height="30" rx="5" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.1"/><text x="464" y="67" font-size="10.5" text-anchor="middle" fill="#111827">E₂</text>
+<rect x="504" y="48" width="64" height="30" rx="5" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.1"/><text x="536" y="67" font-size="10.5" text-anchor="middle" fill="#111827">E₃</text>
+<rect x="576" y="48" width="64" height="30" rx="5" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.1"/><text x="608" y="67" font-size="10.5" text-anchor="middle" fill="#111827">E₄</text>
+<rect x="360" y="150" width="64" height="30" rx="5" fill="#eef2ff" stroke="#2563eb" stroke-width="1.1"/><text x="392" y="169" font-size="10.5" text-anchor="middle" fill="#111827">Q₁</text>
+<rect x="432" y="150" width="64" height="30" rx="5" fill="#eef2ff" stroke="#2563eb" stroke-width="1.1"/><text x="464" y="169" font-size="10.5" text-anchor="middle" fill="#111827">Q₂</text>
+<rect x="504" y="150" width="64" height="30" rx="5" fill="#eef2ff" stroke="#2563eb" stroke-width="1.1"/><text x="536" y="169" font-size="10.5" text-anchor="middle" fill="#111827">Q₃</text>
+<rect x="576" y="150" width="64" height="30" rx="5" fill="#eef2ff" stroke="#2563eb" stroke-width="1.1"/><text x="608" y="169" font-size="10.5" text-anchor="middle" fill="#111827">Q₄</text>
+<path d="M 392,78 L 608,148" fill="none" stroke="#7c3aed" stroke-width="1" opacity="0.55"/>
+<path d="M 464,78 L 536,148" fill="none" stroke="#7c3aed" stroke-width="1" opacity="0.55"/>
+<path d="M 536,78 L 392,148" fill="none" stroke="#7c3aed" stroke-width="1" opacity="0.55"/>
+<path d="M 608,78 L 464,148" fill="none" stroke="#7c3aed" stroke-width="1" opacity="0.55"/>
+<rect x="356" y="86" width="292" height="20" fill="#ffffff"/>
+<text x="360" y="100" font-size="10" fill="#7c3aed">文本保留多个 token，作为 K / V</text>
+<text x="360" y="202" font-size="10.5" fill="#2563eb">每个 patch 用自己的 Q 选一组 K / V</text>
+<text x="360" y="220" font-size="10.5" fill="#4b5563">不同区域可绑定不同文本语义</text>
+<text x="360" y="238" font-size="11" font-weight="600" fill="#059669">MSE → 0（硬选择 0，softmax+GD 7.8e-10）</text>
+<text x="20" y="266" font-size="10.5" fill="#6b7280">左图的 1−1/K 只在上列五条前提下成立；右图说明的是表达力差异，不是「必须换架构」的证明。</text>
+</svg>
+
+K=8 时全局向量的 MSE 精确落在闭式下界 $$1-1/K=0.875$$ 上。
+
+但 $$1-1/K$$ 是**这个最小反例里**的下界，不是所有全局条件编码器的普遍误差下界：第 3、5 条前提一旦放开，网络就能用位置编码、多层非线性、逐层不同的注入方式绕开「所有位置共享同一输出」这个约束。能推广的结论只有一条——**当任务要求不同空间位置绑定不同文本语义时，单一全局条件向量存在表达瓶颈，而 token 级条件交互能提供更细粒度的条件信息**。它支持「全局调制管时间步与整体风格、交叉注意力管位置相关绑定」这样的分工（7.1 节），但不能推导成「全局向量必须搭配交叉注意力」的架构定理。
 
 ### 7.3 MMDiT：把两条流分开算，再拼在一起做注意力
 
@@ -647,6 +835,18 @@ flowchart LR
     A --> G["Sora<br/>2024.02<br/>时空 patch"]
     C -.-> E
 ```
+
+把每一步拆到三条线上，就不会把收益记错账：
+
+| 工作 | 架构层 | 生成过程层 | 训练 / 数据层 |
+|:--|:--|:--|:--|
+| SiT | 逐位不动（沿用 DiT） | 随机插值、目标与采样器扫描 | 不动 |
+| PixArt-α | adaLN-single + 交叉注意力 | 沿用 DDPM | 三阶段训练 + 密集 caption |
+| PixArt-Σ | 注意力 KV 压缩 | 沿用 | weak-to-strong 数据升级 |
+| SD3 | MMDiT 双流权重 | rectified flow + logit-normal | 多文本编码器与各自的 dropout |
+| Flux.1 | 双流 + 单流混排 | rectified flow | 训练细节未公开 |
+
+按列读这张表：PixArt-α 的 10.8% 训练成本主要来自三阶段训练与数据，不是 adaLN-single 那 26% 参数；SD3 的收益同时来自架构、目标与训练策略，不能整体记在 MMDiT 头上。SiT 那一行最干净——它只动第二列，因此是第 1 节「三层正交」最直接的证据。
 
 ### 8.1 PixArt-α：把训练成本当成一等设计目标
 
@@ -727,6 +927,8 @@ $$
   log-log 拟合斜率：Euler = -0.915（理论 -1），Heun = -2.111（理论 -2）
 ```
 
+这组数字的三条口径要一并写清：ODE 是 $$s=2$$ 的高斯数据 + 线性插值路径下的一维**线性**边际流 $$\dot x=\lambda(t)x$$，不是神经网络学出来的高维速度场；误差定义是终点方差的相对偏差 $$\lvert\operatorname{Var}_{\text{num}}/s^2-1\rvert$$，不是样本分布距离或 FID；比算力时的容限固定为 $$10^{-3}$$。三者任意一换，46.3 倍这个比值就会变，能搬走的只有「收敛阶」与「步数 × 单次前向」的乘积结构。
+
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 320" role="img" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
 <rect x="0" y="0" width="680" height="320" fill="#ffffff"/>
 <text x="24" y="28" font-size="15" font-weight="600" fill="#111827">推理成本 = 步数 × 单次前向：换求解器是在动第一个因子</text>
@@ -758,13 +960,17 @@ $$
 
 | 维度 | 传统扩散 U-Net | 经典 DiT |
 |:--|:--|:--|
-| 核心主干 | 卷积 + 下采样/上采样 | Transformer Block |
-| 空间信息交互 | 局部卷积、多尺度特征融合、少量注意力 | 全局自注意力为主 |
-| 多尺度归纳偏置 | 结构上自带 | 要靠 token 化、位置编码与网络设计学出来 |
+| 核心主干 | 卷积 + 下采样/上采样（现代版本也含注意力与 Transformer Block） | Transformer Block |
+| 空间信息交互 | 局部卷积逐层扩大感受野、多尺度特征融合 | Self-Attention 显式建立任意两个 token 的关系 |
+| 多尺度特征 | Encoder-Decoder + skip connection 写进结构 | 交给 token 粒度、网络深度与后续的多尺度设计 |
+| 归纳偏置 | 强：局部性、近似平移等变、显式多尺度 | 弱：主要是位置编码与 token 化，其余靠学 |
+| 计算复杂度 | 与通道数、分辨率及多尺度结构相关，通常近似线性于空间像素数 | 投影与 MLP 线性于 $$N$$，标准全局注意力二次于 $$N$$ |
 | 计算扩展 | 受卷积结构与多尺度设计牵制 | 深度、宽度、token 数三个旋钮都可系统调 |
 | 高分辨率成本 | 多尺度结构天然控制成本 | 全局注意力的二次项是瓶颈（$$N^\*=6912$$） |
 | 条件注入 | 时间嵌入 + 交叉注意力 | AdaLN-Zero / 交叉注意力 / 联合注意力 |
 | 规模化路径 | 可扩展，但结构选择多 | 沿 Transformer 的成熟路线走 |
+
+先澄清一个常被默认为对立的说法：**U-Net 不等于纯卷积网络**。SD 系列的主干里已经有自注意力与交叉注意力，后续也有把 Transformer Block 塞进 U-Net 各尺度的设计。真正要比较的不是「CNN 对 Transformer」，而是**信息怎么被组织**：U-Net 靠下采样-上采样与 skip connection 把多尺度写进结构，DiT 靠固定粒度的 token 序列加全局注意力，把多尺度交给 token 粒度、深度与后续设计去补。这也解释了为什么两者的条件注入方式可以共享——它们同样属于第 1 节的第三条线。
 
 「Transformer 全面优于 U-Net」不成立：U-Net 的局部性与多尺度结构是真实的归纳偏置，在小数据与低算力下经常更划算；DiT 的吸引力在**架构统一、扩展可预测、与大规模 Transformer 训练栈兼容**这三点。同理，「DiT 是全局注意力所以不需要多尺度」也不成立——高分辨率生成依然要处理不同粒度的信息，只是组织方式不再依赖 U-Net 的下采样-上采样路径，而是靠 token 粒度（第 2.2 节数过的位置对）、层数和后续工作的 KV 压缩 / 局部注意力去补。
 
@@ -774,7 +980,7 @@ $$
 
 官方实现是 [facebookresearch/DiT](https://github.com/facebookresearch/DiT)，单文件模型，建议按这个顺序读：
 
-1. **`models.py` 的 `DiT` 主类**：patch embedding（注意它实现成了 `kernel_size=stride=patch_size` 的 `Conv2d`）、时间步嵌入（频率编码 + MLP）、类别嵌入（Embedding 表，含一个额外的「无类别」位用于 CFG 的 label dropout）、固定二维 sin-cos 位置编码、输出层。
+1. **`models.py` 的 `DiT` 主类**：patch embedding（注意它实现成了 `kernel_size=stride=patch_size` 的 `Conv2d`，与「切 patch + Linear」逐位等价，见 §2.4）、时间步嵌入（频率编码 + MLP）、类别嵌入（Embedding 表，含一个额外的「无类别」位用于 CFG 的 label dropout）、固定二维 sin-cos 位置编码、输出层。
 2. **`DiTBlock`**：对照第 3 节看 `adaLN_modulation` 这个 `Sequential(SiLU, Linear)` 怎么产出 6 组参数、`modulate()` 怎么把 `shift/scale` 乘加进 LayerNorm 的输出、零初始化写在哪一行。
 3. **`forward()`**：跟踪带噪 latent → token → 28 层 Block → unpatchify 的形状变化，重点看 `FinalLayer` 只输出 $$p^2C$$ 个数（$$\epsilon$$ 预测时是每个 latent 像素一个值）。
 4. **`train.py`**：随机时间步、加噪、目标构造、损失与优化器。
@@ -789,12 +995,12 @@ $$
 五条值得带走的结论：
 
 1. **DiT 是主干架构，不是生成算法**。它可以和 DDPM、$$v$$ 预测、Flow Matching 任意组合；SiT 在逐位相同的主干上换目标函数，FID 2.27 → 2.06。
-2. **Patch size 是计算与表示粒度之间的换算器**。$$p$$ 减半 = token 数 ×4 = Gflops 至少 ×4，同时把被锁死在 patch 内部的位置对比例从 6.1584%（$$p=8$$）压到 0.2933%（$$p=2$$）。
+2. **Patch size 是计算与表示粒度之间的换算器**。$$p$$ 减半 = token 数 ×4 ≈ Gflops ×4（DiT-XL 实测 3.931 与 4.084 倍，§4.1 解释了不到 4 倍的那一次），同时把显式注意力寻址受限的位置对比例从 6.1584%（$$p=8$$）压到 0.2933%（$$p=2$$）——这是寻址粒度的变化，不是信息丢失。
 3. **AdaLN-Zero 的价值在「恒等初始化 + 非零分支」这对组合**。28 层堆叠逐位恒等、初始损失低 14.42 倍，同时被门控的分支输出非零，$$\alpha$$ 的梯度从第一步起就非零。
 4. **算力的账要按 Gflops 记，不是按参数量**。同一个 675M 的模型，$$p=2$$ 与 $$p=8$$ 差 16 倍；注意力二次项在 $$N^\*=6912$$ 个 token 处追平线性项，256×256 时占 3.6%、4K 时占 82.4%——KV 压缩这类优化只在过线之后才值得做。
 5. **推理成本 = 步数 × 单次前向**。Euler 一阶、Heun 二阶，$$10^{-3}$$ 容限下二阶方法省 46 倍总算力；任何「DiT 推理很慢 / 很快」的论断都必须先说清楚这两个因子各是多少。
 
-时间步那组实验（18.99%）大概是最值得记住的一个数字：它说明 $$t$$ 不是一个可以顺手省掉的输入，而是去噪任务的**定义的一部分**——即便输入里完全推断不出 $$t$$，最优答案也随 $$t$$ 改变。
+时间步那组实验（18.99%）大概是最值得记住的一个数字：在 §6.1 的独立高斯设定下，$$t$$ 不是一个可以顺手省掉的输入，而是去噪任务的**定义的一部分**——即便输入里完全推断不出 $$t$$，最优答案也随 $$t$$ 改变。
 
 下一篇（02）写条件注入的工程谱系：PixArt-α 的 adaLN-single 为什么能省 26% 参数、SD3 的 MMDiT 两套权重到底分开了什么、Flux 的双流+单流混排在省什么，以及视频 DiT 的时空 token 与注意力分解。
 
