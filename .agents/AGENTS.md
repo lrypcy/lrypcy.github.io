@@ -18,7 +18,7 @@
 
 | 文件 | 看什么 |
 | --- | --- |
-| `.agents/WRITING.md` | **写作规范**：骨架、TL;DR 规范、语言视角、引用与源码锁定、元叙述不入正文、符号、实验数字、六步校验。动笔前读 |
+| `.agents/WRITING.md` | **写作规范**：骨架、TL;DR 规范、配图与图像引用（图注 / 来源超链接 / 许可）、语言视角、引用与源码锁定、元叙述不入正文、符号、实验数字、六步校验。动笔前读 |
 | `.agents/AGENTS.md`（本文件） | 工程约定：目录、代码示例归属、环境坑、提交门禁、红线 |
 | `.workbuddy/memory/topics/*.md` | 子系统与踩坑细节：`analytics`、`knowledge-graph`、`series-boundaries`、`writing-checks` |
 
@@ -42,9 +42,11 @@
 1. 写新长文：先读 `.workbuddy/memory/topics/series-boundaries.md`（系列边界 + 已核正事实）
 2. 写公式：先读 user-level skill `kramdown-math-render-fix`；**行内与行间的写法区别**（行内 `$$…$$` 夹句中、行间三行式且前后空行、绝不用单 `$`）见 `WRITING.md` §5
 3. 写完：跑 `WRITING.md` §8 的六步校验，**全过才可提交**（TL;DR 有专项 `tools/check_tldr.py`）
-4. 改 `_data/knowledge_graph.yml` 或 `assets/js/kg-layout.js`：
+4. 新增 / 改动配图：跑 `python3 tools/check_figures.py FILE`（图注、来源超链接、许可、改动声明；
+   `--staged` 版已挂 pre-commit，只查新增图片行）
+5. 改 `_data/knowledge_graph.yml` 或 `assets/js/kg-layout.js`：
    `node tools/kg_layout_check.mjs`（pre-commit 已挂，失败阻断提交）
-5. 改访问统计：跑 `node --test tools/analytics/test/*.test.mjs`（**必须带 glob**）+
+6. 改访问统计：跑 `node --test tools/analytics/test/*.test.mjs`（**必须带 glob**）+
    `ruby tools/analytics/check_liquid.rb`（改 include 必跑，写错挂整站）
 
 ## 5. 代码放哪：ipynbs 仓库（本仓库不再新增代码）
@@ -85,7 +87,8 @@
 
 ## 7. 提交与发布
 
-- 提交前跑对应门禁（§4）；pre-commit 钩子默认提示不阻断，`GRAPH_SYNC_STRICT=1` 切严格
+- 提交前跑对应门禁（§4）；pre-commit 钩子默认提示不阻断，`GRAPH_SYNC_STRICT=1` /
+  `LINKS_STRICT=1` / `FIGURES_STRICT=1` 分别把知识图谱、坏链、图注切为严格（阻断）
 - 站点改动 push 后由 GitHub Pages 构建，**本地看不到效果**：前端改动先
   `node tools/kg_preview.mjs` 出离线预览再 push
 - 交付要求：最终改动 push 到远程 `master`

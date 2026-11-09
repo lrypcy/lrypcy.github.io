@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# pre-commit：提交前跑三道体检
+# pre-commit：提交前跑四道体检
 #   1. Liquid 冲突符号（tools/check_liquid.py）—— 有命中就一定阻断
 #   2. 首页知识图谱（tools/graph_sync.py + tools/kg_layout_check.mjs）
 #   3. 站内链接可解析性（tools/check_links.py）
+#   4. 新增配图的图注与来源引用（tools/check_figures.py --staged）
 #
 # 行为：
 #   - 第 1 道对所有 md/html 生效：正文里任何裸 `{{` / `{%` 都会让 GitHub Pages
@@ -13,6 +14,8 @@
 #   - GRAPH_SYNC_STRICT=1 时切换为严格模式：有必须处理项就阻断
 #   - 第 3 道同样只提示、不阻断（坏链不挡构建，挡阅读）；
 #     LINKS_STRICT=1 时切换为严格模式
+#   - 第 4 道只看本次暂存**新增**的图片行（存量 100 多张老图不刷屏），
+#     缺图注 / 缺来源超链接 / 缺许可会提示；FIGURES_STRICT=1 时阻断
 #   - 配置文件本身坏了（yml 解析失败 / 边指向不存在的系列）一定阻断
 #   - 布局体检（tools/kg_layout_check.mjs）发现节点重叠时也一定阻断——那是肉眼可见的坏
 #   - 临时跳过：git commit --no-verify
@@ -119,6 +122,26 @@ if [ -n "$PY_BASE" ]; then
   fi
 else
   echo "check_links: 未找到 python3，跳过链接体检"
+fi
+
+# ---------- 第 4 道：新增配图的图注（来源超链接 / 许可 / 改动声明） ----------
+# `.agents/WRITING.md` §1.0 要求每张图下有一行斜体图注；六步校验里没有任何一步看图。
+# 只查暂存区里新增的 Markdown 图片行，读的是暂存 blob，不受工作区未暂存改动影响。
+if [ -n "$PY_BASE" ]; then
+  FIG_ARGS="--staged"
+  if [ "${FIGURES_STRICT:-0}" = "1" ]; then
+    FIG_ARGS="$FIG_ARGS --strict"
+  fi
+  if ! "$PY_BASE" tools/check_figures.py $FIG_ARGS; then
+    echo ""
+    echo "  check_figures: 以上新增图片缺图注或缺来源 / 许可，按 §1.0 补齐再提交。"
+    echo "                 默认不阻断；FIGURES_STRICT=1 时阻断，或 git commit --no-verify 跳过。"
+    if [ "${FIGURES_STRICT:-0}" = "1" ]; then
+      exit 1
+    fi
+  fi
+else
+  echo "check_figures: 未找到 python3，跳过图注体检"
 fi
 
 exit 0

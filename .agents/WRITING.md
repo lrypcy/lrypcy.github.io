@@ -20,14 +20,19 @@ front matter 必含：`title / date / categories / tags / layout: post / mathjax
 
 Deep-Dive 默认**单篇长文直进 `_posts/`**，不拆篇。
 
-### 1.0 配图（每篇至少 2 张，优先自己画）
+### 1.0 配图（每篇至少 2 张，自绘为主；引用他人图必带出处）
 
 长文不能只堆文字和表格。每篇至少配 **2–3 张图**，位置放在「表格讲完数字、需要一眼看出形状」的地方
 （趋势、塌缩、拐点、分布形状），而不是随便装饰。
 
-**两类图，一种载体：全部自己画 SVG**（脚本放 `ipynbs` 的 `experiments/<topic>/<name>/`
-或 `experiments/<topic>/architecture/`，输出复制到 `assets/img/<系列>/`，
-正文用 `![中文长描述](/assets/img/...)`，图后跟一段「左图 / 右图分别说明了什么」）。
+**两类图，两种载体**：以**自己画的 SVG 为主**；来源与许可明确的论文 / 官方原图，允许按下面
+「引用他人图」的规则**直接外链嵌入**，或下载进 `assets/img/`。
+
+- **自绘图**：脚本放 `ipynbs` 的 `experiments/<topic>/<name>/`（或 `experiments/<topic>/architecture/`），
+  输出复制到 `assets/img/<系列>/`，正文用 `![中文长描述](/assets/img/...)`；结构图也常把 `<svg>`
+  直接内联进正文（本仓多数长文这么做）。
+- **外链图**：`![中文长描述](https://官方或arXiv稳定直链)`，图下必须有图注（见「图注硬性要求」）。
+- 图后跟一句「左图 / 右图分别说明了什么」，别只放图不说结论。
 
 - **数据曲线 / 分布图** → `<topic>_figures.py`，直接 `import` 同目录的 lab 复用函数与真值，
   图上的数字必须和 `results/stdout.txt` 对得上。
@@ -62,6 +67,24 @@ Mermaid 只在**纯拓扑、且真的不需要任何尺寸信息**时才用（�
 *图源：Pertsch et al., FAST: Efficient Action Tokenization …，[arXiv:2501.09747](https://arxiv.org/abs/2501.09747)
 Figure 2，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未改动。*
 ```
+
+**图注硬性要求（每张图必带，2026-11-09 定）**
+
+图不是装饰，是**引用**。每张图下面单独一行斜体图注，按来源三选一：
+
+| 图的来源 | 图注模板 |
+| --- | --- |
+| 外链 / 下载他人图 | `*图源：作者, [原文](链接) Figure X，许可 [CC BY 4.0](链接)，未改动。*` |
+| 自绘、结构参考了论文 | `*图：自绘。结构对照 [arXiv:xxxx](链接) Figure X（许可 …，未搬用原图）。*` |
+| 自绘、数据来自本仓实验 | `*图：自绘。数据来自配套实验（ipynbs commit permalink，results/summary.md），非论文原图。*` |
+
+- **图注里必须有可点击的来源超链接**：他人图给原文 / arXiv 链接，自绘数据图给实验 permalink；
+  光写「图源：DiT 论文」没有链接不算。
+- 署名、许可、**改动声明**（`未改动` / `未搬用原图` / `有裁剪`）三样不能省。
+- 图注只写来源与许可，**不写元叙述**（「这张图是我用脚本画的」见 §4）。
+- **存量文章不批量迁移**，和 TL;DR 同口径：**本轮新增或改动过的图必须合规**。
+  `python3 tools/check_figures.py FILE` 只报告；`--staged` 版挂在 pre-commit，只查本次新增的图片行。
+- 许可不明的图不进正文，改成「见论文 Figure X」+ 链接（下面第一条红线），或自绘同构图。
 
 **两条红线：**
 
@@ -165,6 +188,8 @@ TL;DR 不是「正文的压缩版」，而是**读者判断要不要读、结论
 ## 3. 事实、引用与源码锁定
 
 - 重要论断末尾附链接，优先 arXiv / DOI / 官方文档；不可核验的数据标注「待验证」
+- **配图也是引用**：正文里每张来自他人的图与重要论断同等对待——给来源超链接、Figure 号与许可；
+  许可不明就只写「见论文 Figure X」+ 链接，不下载、不嵌入（格式与判据见 §1.0）。
 - **引用源码一律锁版本 + commit**，行号给可点击 permalink：
   `https://github.com/<org>/<repo>/blob/<commit>/<path>#L<起始>-L<结束>`
 - 文末「参考」区给源文件 permalink + 仓库 + 版本
@@ -281,3 +306,13 @@ TL;DR 不是「正文的压缩版」，而是**读者判断要不要读、结论
 
 六步全过才可提交。`check_tldr.py` 对**存量文章**只是报告（全站还有大量老格式），
 **新写或改动 TL;DR 时必须让它出 `[OK]`**。
+
+配图另有一道自检（不属于六步，但**新增或改动过图片就必须跑**）：
+
+```bash
+python3 tools/check_figures.py _posts/xxx.md          # 报告该篇每张图的图注是否合规
+python3 tools/check_figures.py --staged               # 只查本次暂存里新增的图片行（pre-commit 用）
+python3 tools/check_figures.py --staged --strict      # 有缺图注 / 缺许可就阻断
+```
+
+和 `check_links.py` 一样默认只报告不阻断；`--staged` 只看新增行，所以存量 100 多张老图不会刷屏。
