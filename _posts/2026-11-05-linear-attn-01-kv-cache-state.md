@@ -22,8 +22,8 @@ next_url: /2026/10/18/serving-01-architecture-divergence/
 
 > **TL;DR**
 >
-> * **核心问题与结论**：线性注意力不是把 KV cache 压小，而是把逐 token 的只读历史换成固定形状、就地覆盖的矩阵状态 $S_t$；它不再随 $T$ 增长，但仍有常数体积，两者存在交叉点 $T^\ast=n_h d/(2n_{kv})$（§2、§3）。
-> * **关键证据**：合成探针 `linear-attention/kv-cache-state` 组 2（58 条断言）在 $n_h=32$、$n_{kv}=8$、$d=128$、bf16 下算得 $T^\ast=256$ token；把线性层状态计入显存后，3:1 混合的减少是 $0.75(1-T^\ast/T)$，4K 时 70.3125%（§3、§6）。Kimi Linear 官方的 75% 是 KV 口径 [arXiv:2510.26692](https://arxiv.org/abs/2510.26692)。
+> * **核心问题与结论**：线性注意力不是把 KV cache 压小，而是把逐 token 的只读历史换成固定形状、就地覆盖的矩阵状态 $S_t$：缓存不再随 $T$ 增长，但常数仍在，短上下文里反而不省（§1–§3）。
+> * **关键证据**：一般口径下交叉点为 $T^\ast=M_{\mathrm{state}}/(2n_{kv}d_{kv}b_{kv})$；简化模型取 $n_h=32$、$n_{kv}=8$、$d=128$、bf16 时为 256 token，合成探针 `linear-attention/kv-cache-state` 组 2（58 条断言）算得 3:1 混合在 4K 的显存口径减少 70.3125%（§3、§6）。Kimi Linear 官方的 75% 是 KV 口径 [arXiv:2510.26692](https://arxiv.org/abs/2510.26692)。
 > * **适用边界与代价**：以上只对「按层、按请求的缓存字节」成立，不含权重与激活；$T<T^\ast$ 时混合反而更占显存。状态就地覆盖、不可回滚，按 token block 复用前缀要换成快照 + copy-on-write + 尾部重放（§8，[SGLang 官方博客](https://pytorch.org/blog/hybrid-models-meet-sglang-more-than-full-attention/)）。
 > * **系列定位**：接住 TTT / KV 量化 / 推理服务三条主线的空档，下一篇回到引擎侧读 KV 缓存组织。
 
@@ -31,7 +31,8 @@ next_url: /2026/10/18/serving-01-architecture-divergence/
 
 ## §0 符号表与阅读地图
 
-本文尽量沿用来源文献的符号，只有记账用的 $T^\ast$、$b$ 是本文为算字节而定义的量。
+本文尽量沿用来源文献的符号，记账用的 $b$、$b_{\mathrm{kv}}$、$b_{\mathrm{state}}$、$T^\ast$、
+$M_z$、$M_{\mathrm{conv}}$、$M_{\mathrm{aux}}$、$n_{\mathrm{state}}$ 是本文为算字节而定义的量。
 
 | 符号 | 含义 | 出处 / 约定 |
 |:---|:---|:---|
@@ -42,7 +43,9 @@ next_url: /2026/10/18/serving-01-architecture-divergence/
 | $\gamma$ / $\alpha_t$ | RetNet 的固定衰减 / GLA 的数据依赖门控 | [arXiv:2307.08621](https://arxiv.org/abs/2307.08621) / [arXiv:2312.06635](https://arxiv.org/abs/2312.06635) |
 | $\beta_t$ | delta rule 的写入强度（学习率） | [arXiv:2412.06464](https://arxiv.org/abs/2412.06464) 公式 10 |
 | $n_h,n_{kv},d,L,T$ | query 头数 / KV 头数 / 每头维度 / 层数 / 序列长度 | [DeepSeek-V2 Table 1](https://arxiv.org/html/2405.04434v5) 的口径 |
-| $b$ | 每个元素占用的字节数（本文记账定义） | bf16 时 $b=2$ |
+| $b$ | 简化模型里 KV 与状态共用的每元素字节数（本文记账定义） | bf16 时 $b=2$ |
+| $b_{\mathrm{kv}},b_{\mathrm{state}},n_{\mathrm{state}}$ | 一般口径下两侧的 dtype 字节数、每层独立状态的份数（本文记账定义） | 两者 dtype 可不同，§3 |
+| $M_z,M_{\mathrm{conv}},M_{\mathrm{aux}}$ | normalizer / 卷积状态 / 其余辅助状态的字节数（本文记账定义） | §3 一般式 |
 | $T^\ast$ | 固定状态与逐 token KV 的字节数交叉点（本文记账定义） | §3 推导 |
 
 阅读地图：
@@ -53,9 +56,9 @@ next_url: /2026/10/18/serving-01-architecture-divergence/
 - §10 是判据与三条不能往外推的结论。
 
 配套实验（纯 CPU numpy、固定 seed、七个分组、58 条断言、输出已固化）：
-[`experiments/linear-attention/kv-cache-state/`](https://github.com/lrypcy/ipynbs/tree/b00b5ea8013f3e845312c9cfaef7f8f47962182a/experiments/linear-attention/kv-cache-state/)，
-其中 [`results/stdout.txt`](https://github.com/lrypcy/ipynbs/blob/b00b5ea8013f3e845312c9cfaef7f8f47962182a/experiments/linear-attention/kv-cache-state/results/stdout.txt)
-是正文所有 ```text 块与三张配图的数字来源。合成探针只验代数恒等式、字节账本与数值量级，
+[`experiments/linear-attention/kv-cache-state/`](https://github.com/lrypcy/ipynbs/tree/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/)，
+其中 [`results/stdout.txt`](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/results/stdout.txt)
+是正文所有 ```text 块与四张配图的数字来源。合成探针只验代数恒等式、字节账本与数值量级，
 **不是真实模型的精度或吞吐**；论文数字单独标出处，不与探针数字混在同一张表。
 
 ---
@@ -94,6 +97,8 @@ QK 交互也还在。它把每个 token 的 KV 变短了，没有把「历史」
 3. **缓存的语义变了**——KV 是只读追加，状态是就地覆盖。这一条决定了 §8 的全部内容。
 
 ![图 1：softmax KV cache 是逐 token 追加的只读历史，线性注意力的状态是固定形状、就地覆盖的矩阵](/assets/img/linear-attn/fig2_state_vs_kv.svg)
+
+*图：自绘。结构对照 [Katharopoulos et al., arXiv:2006.16236](https://arxiv.org/abs/2006.16236) §3.4 与 [vLLM Hybrid KV Cache Manager](https://docs.vllm.ai/en/latest/design/hybrid_kv_cache_manager/)，非论文原图，未搬用原图。*
 
 左栏是 softmax：每个 token 追加一份 $k,v$，前缀天然只读、可以按 block 哈希复用、可以任意 fork；
 右栏是线性注意力：$S_t\in\mathbb{R}^{d_k\times d_v}$ 每步被覆盖，不存在「第 $j$ 步那份状态」，
@@ -140,11 +145,26 @@ $$
 关键在于**结合律换序**：$(\phi(Q)\phi(K)^\top)V$ 变成 $\phi(Q)(\phi(K)^\top V)$。
 前者是 $T\times T$ 的注意力矩阵，后者是 $d_k\times d_v$ 的累计量。
 所以同一个层有三种等价写法（RetNet 把它们命名为 parallel / recurrent / chunkwise，
-[arXiv:2307.08621](https://arxiv.org/abs/2307.08621)）：
+[arXiv:2307.08621](https://arxiv.org/abs/2307.08621)）。三种写法的计算量并不相同：
 
-- **parallel**：整段下三角矩阵一次算完，训练友好，复杂度 $O(T^2 d)$。
-- **recurrent**：逐步更新 $S_t$，解码内存与单步计算都与 $T$ 无关，但无法并行。
-- **chunkwise**：块内 parallel、块间只传一份 $S$，兼得两者（§7）。
+| 写法 | 核心计算 | 随 $T$ 的量级 | 用在 |
+|:---|:---|:---|:---|
+| parallel | $S=K_\phi^\top V$、$O=Q_\phi S$ | $O(T d_k d_v)$ | 非因果整段 |
+| recurrent | 逐步更新 $S_t,z_t$ | $O(T d_k d_v)$ 总量、单步常数 | 自回归解码 |
+| chunkwise | 块内 matmul、块间传一份 $S$ | 每块 $\propto C^2 d$、共 $T/C$ 块 | 训练与 prefill（§7） |
+
+最容易写错的是第一行：显式物化 $T\times T$ 的注意力或衰减矩阵才是 $O(T^2 d)$，
+**不是**线性注意力换序之后的复杂度。原文摘要给的就是把 $O(N^2)$ 降到 $O(N)$
+（[arXiv:2006.16236](https://arxiv.org/abs/2006.16236)）：非因果整段只需
+$S=K_\phi^\top V$ 与 $O=Q_\phi S$ 两次收缩；因果版本要用前缀扫描或分块，
+不能把全序列的 $K_\phi^\top V$ 一次算完再当成每个位置的答案。
+RetNet / GLA 的 parallel 表示里确实带一个 $T\times T$ 的半可分离结构，
+但实现靠 chunkwise 分解避免物化它（§7），这才是「训练友好」的来源。
+不同算法的 parallel 实现也不完全一样，不能一律写成「一次算出 $K^\top V$」。
+
+理论量级还不等于墙钟时间：逐步递推缺乏整段并行度，同等计算量下的实际吞吐更低，
+所以训练实现普遍回到 chunkwise。[Nebius 的平行 / 递推对照图](https://nebius.com/blog/posts/mixers-are-rnns)
+把这条换序关系画成了张量形状，可作结构参考。
 
 配套实验组 1 用 $T=48$、$d_k=8$、$d_v=6$ 的合成数据，
 把显式双重循环（构造真值）、parallel、recurrent、chunkwise 四种写法逐位对账，
@@ -180,7 +200,7 @@ def step(S, z, q, k, v, phi):
 省掉它，输出会随序列长度整体放大。xLSTM 的 mLSTM 甚至给这个分母加了下界
 $\max(\lvert n^\top q\rvert,1)$ 防止除零（[arXiv:2405.04517](https://arxiv.org/abs/2405.04517)）。
 
-随文实现：[组 1 `g1_forms`](https://github.com/lrypcy/ipynbs/blob/b00b5ea8013f3e845312c9cfaef7f8f47962182a/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
+随文实现：[组 1 `g1_forms`](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
 
 ---
 
@@ -189,19 +209,49 @@ $\max(\lvert n^\top q\rvert,1)$ 防止除零（[arXiv:2405.04517](https://arxiv.
 「常数内存」听起来像「不要钱」，但它是一个与 $T$ 无关的**常数**，
 而 softmax KV 是一个从 0 开始线性增长的量。两者必然有一个交叉点。
 
-按每层、每请求记账（$b$ 是每元素字节数）：
+按**每层、每请求**记账。先把假设摊开：KV 与状态未必同 dtype，
+每层独立状态的份数未必等于 query 头数，normalizer 与卷积状态也要占字节。一般形式是
 
 $$
-M_{\mathrm{softmax}}(T)=2\,n_{kv}\,d\,T\,b,\qquad M_{\mathrm{state}}=n_h\,d_k\,d_v\,b
+M_{\mathrm{softmax}}(T)=2\,n_{kv}\,d_{kv}\,T\,b_{\mathrm{kv}},\qquad
+M_{\mathrm{state}}=n_{\mathrm{state}}\,d_k\,d_v\,b_{\mathrm{state}}+M_z+M_{\mathrm{conv}}+M_{\mathrm{aux}}
 $$
 
-取常见的 $d_k=d_v=d$，令两者相等：
+其中 $M_z$、$M_{\mathrm{conv}}$、$M_{\mathrm{aux}}$ 分别是 normalizer、卷积状态与其余辅助状态；
+两侧 dtype 分开写，是因为引擎常把它们分别配置（§9）。令两者相等，交叉点只由
+「固定那一侧的总字节」与「每 token 那一侧的字节」决定：
+
+$$
+T^\ast=\frac{M_{\mathrm{state}}}{2\,n_{kv}\,d_{kv}\,b_{\mathrm{kv}}}
+$$
+
+换成 MLA 的 latent、换成 fp32 状态、或把 conv state 算进来，都只是替换这两个量，
+式子的形式不变。按架构把两侧填开，就是一张缓存账本（每层、单请求，暂略辅助状态）：
+
+| 架构 | 每 token 历史缓存 | 固定状态 | 核心特点 |
+|:---|:---|:---|:---|
+| MHA | $2n_h d T b$ | 无 | 完整显式历史 |
+| GQA | $2n_{kv} d T b$ | 无 | 多个 query 头共享 KV 头 |
+| MLA | $(d_c+d_h^R) T b$ | 无 | 联合压缩 latent，**仍随 $T$ 增长** |
+| Linear Attention | 无 | $d_k d_v b$（每头） | 外积累积的矩阵状态 |
+| GLA / Gated DeltaNet | 无 | 门控 / delta 矩阵状态，另有 $z$ | 动态遗忘、精确覆盖 |
+| Mamba-2 | 无传统 KV | SSM 状态 + conv state | 状态空间递推 |
+| Hybrid | 部分层的 K/V | 部分层的状态 | 两类对象在同一内存池里分配（§8） |
+
+「每 token 历史」为 0 不等于缓存为 0，只是把线性增长那一列搬成了常数那一列；
+把 $b$ 按架构拆回 $b_{\mathrm{kv}}$ 与 $b_{\mathrm{state}}$、补上 $M_z$、$M_{\mathrm{conv}}$，
+每一行就落回上面的一般式。下面所有数字取的是**简化模型**：$d_k=d_v=d_{kv}=d$、
+$b_{\mathrm{kv}}=b_{\mathrm{state}}=b$、$n_{\mathrm{state}}=n_h$、辅助状态全部忽略，于是
+
+$$
+M_{\mathrm{softmax}}(T)=2\,n_{kv}\,d\,T\,b,\qquad M_{\mathrm{state}}=n_h\,d^2\,b
+$$
 
 $$
 T^\ast=\frac{n_h\,d^2}{2\,n_{kv}\,d}=\frac{n_h\,d}{2\,n_{kv}}
 $$
 
-$n_h=n_{kv}$ 时退化为 $d/2$；GQA 把 $n_{kv}$ 压小，交交叉点会被放大
+$n_h=n_{kv}$ 时退化为 $d/2$；GQA 把 $n_{kv}$ 压小，交叉点会被放大
 （分母小了，状态相对更贵）。代入一组工程上常见的配置
 $n_h=32$、$n_{kv}=8$（4:1 GQA）、$d=128$、bf16：
 
@@ -210,9 +260,16 @@ $n_h=32$、$n_{kv}=8$（4:1 GQA）、$d=128$、bf16：
 - $T^\ast=1048576/4096=256$ token。
 
 也就是说：**上下文短于 256 token 时，固定状态比 KV 列表还大**。
-这还没算 normalizer $z$、卷积状态，以及多头状态下每个头各自一份矩阵。
+这还没算的两项，正是一般式里的 $M_z$ 与 $M_{\mathrm{conv}}$；
+$n_{\mathrm{state}}$ 已按 $n_h$ 计入上面那份 1 MiB；
 换成单头、无 GQA 的配置，$T^\ast=d/2=64$ token，量级同样在「几十到几百」，
 不是「几十万」。
+
+四种口径不能混用：以上是**单层、单请求**；乘层数 $L$ 是全模型单请求，
+再乘并发请求数是 batch 总缓存，引擎实际分配还要按 page / block 对齐向上取整
+（§1 的 Case 4）。本文只算第一种；$\text{save}(T)$ 在前三种口径下形式不变，
+到引擎物理分配这一层还要再算对齐取整；「省下的字节够不够多开一路并发」，
+这条比例式单独回答不了。
 
 组 2 把三种口径随 $T$ 的变化整张算出来（第三列是 3:1 混合，按层型比例加权）：
 
@@ -229,11 +286,13 @@ $n_h=32$、$n_{kv}=8$（4:1 GQA）、$d=128$、bf16：
 
 ![图 2：softmax KV、固定状态与 3:1 混合的缓存字节随上下文长度变化，竖虚线是交叉点](/assets/img/linear-attn/fig1_cache_ledger.svg)
 
+*图：自绘。数据来自[配套实验组 2](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/results/stdout.txt) 与 [notebook](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)，非论文原图，未搬用原图。*
+
 红线是 softmax KV，蓝线是固定状态，紫线是 3:1 混合；竖虚线标出 $T^\ast=256$。
 左半段紫线在红线之上——短上下文里混合架构的缓存反而更大；
 右半段两条线逐渐拉开，但减少比例只能趋近 75%，永远到不了。
 
-把混合记为线性层占比 $f$，减少比例的闭式是
+在简化模型下把混合记为线性层占比 $f$，减少比例的闭式是
 
 $$
 \text{save}(T)=1-\frac{(1-f)\,M_{\mathrm{softmax}}(T)+f\,M_{\mathrm{state}}}{M_{\mathrm{softmax}}(T)}
@@ -259,20 +318,40 @@ $N$ 是状态维度，$T$ 是历史长度，换掉的是 $T$ 这一项，
    且权重、激活、MoE 路由都不在任何一边的分子里。
 3. **「长上下文一定线性赢」**。缓存账上成立；但容量账（§4）与前缀复用账（§8）各有各的失败条件。
 
-随文实现：[组 2 `g2_ledger`](https://github.com/lrypcy/ipynbs/blob/b00b5ea8013f3e845312c9cfaef7f8f47962182a/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)，
+随文实现：[组 2 `g2_ledger`](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)，
 断言包括 $T=T^\ast$ 三口径相等、减少随 $T$ 单调增且恒小于 $f$、以及闭式与逐项计算一致。
 
 ---
 
 ## §4 状态装不下无限多的键值对：容量下界与 memory collision
 
-$S_t=\sum_{j\le t}v_j k_j^\top$ 是一个外积和，也就是一份 key-value 联想记忆。
-它的秩受限于 $\min(d_k,d_v,N)$，其中 $N$ 是写进去的关联对数。
-这条线性代数事实比任何 benchmark 都更早地划出了能力边界。
+为方便写读回，本节把状态排成 §2 的转置 $S_t\in\mathbb{R}^{d_v\times d_k}$，
+两者是同一份记忆。外积和与用 $k_j$ 读回分别是
+
+$$
+S_t=\sum_{j\le t}v_j\phi(k_j)^\top,\qquad
+\hat v_j=S_t\phi(k_j)=\sum_{i\le t}\big(\phi(k_j)^\top\phi(k_i)\big)v_i
+$$
+
+把 $N$ 个 key 堆成 $K_\phi$，记 Gram 矩阵 $G=K_\phi K_\phi^\top$，
+整张读回表就是 $\hat V=GV$。于是有三件不同的事，不能混为一谈：
+
+1. **状态维度**：$S_t$ 只有 $d_k d_v$ 个元素，$\mathrm{rank}(S_t)\le\min(N,d_k,d_v)$。
+   这是自由度的上界，不是「能记住几对关联」的答案。
+2. **记忆容量**：能否把 $N$ 对关联无损写进状态，取决于是否存在线性映射 $W$ 使
+   $K_\phi W=V$；$N\le d_k$ 时通常有解，$N>d_k$ 时一般没有（组 3 的最小二乘残差）。
+3. **读回串扰**：即便映射存在，用 $k_j$ 去读时其他 key 的贡献由 $G$ 的非对角元给出，
+   只有 $G=I$ 才有 $\hat V=V$。正交 key 精确、相似 key 串扰，差别全在这一项。
+
+所以「秩有上界」只把第一件事钉死，推不出「$N>d$ 时网络必然 recall 失败」；
+后两件事分别由数值实验与信息论下界回答。
+[Based 官方博客的 recall–memory 权衡图](https://hazyresearch.stanford.edu/blog/2024-03-03-based)（Figure 1）
+画的是同一条因果链的实测面：递推状态的字节数越小，关联回忆越差，
+而状态大小相同的不同更新规则会落在 Pareto 前沿的不同位置。
 
 构造两组合成探针（组 3，$d_k=16$、$d_v=6$）：
 
-- **正交 key**：取标准正交基写入 $N=d_k$ 对关联，读回 $S k_j$ 与 $v_j$ 逐位相等（最大误差 $0.000\mathrm{e}+00$）。
+- **正交 key**：取标准正交基写入 $N=d_k$ 对关联，读回 $\hat v_j$ 与 $v_j$ 逐位相等（最大误差 $0.000\mathrm{e}+00$）。
   正交时没有串扰，状态确实能把 $d$ 对关联精确存下。
 - **随机单位 key**：写入 $N=8,16,32,64,128$ 对，读回误差随 $N$ 单调上升；
   同时用最小二乘反算「是否存在一个 $W$ 使 $KW=V$」，$N\le d$ 时残差是机器精度，
@@ -291,6 +370,9 @@ $S_t=\sum_{j\le t}v_j k_j^\top$ 是一个外积和，也就是一份 key-value �
 
 注意 $\mathrm{rank}(S)=6$ 是因为 $d_v=6$ 也压住了秩；
 真实模型里 $d_k=d_v=128$，天花板会高得多，但**有限**这一点不变。
+「最小二乘残差」从机器精度跳到 $0.72$ 以上，只说明该 $K$ 下不存在精确的
+线性读回映射，不等于真实模型在这些 $N$ 上的 recall 准确率；
+读回误差随 $N$ 单调上升，才是 $\hat V=GV$ 里非对角元累积的直接后果。
 Gated DeltaNet 论文 §1 把这个现象叫 memory collisions：
 「可存储的正交 key-value 对数受模型维度限制，序列长度超过该维度时碰撞不可避免」
 （[arXiv:2412.06464](https://arxiv.org/abs/2412.06464)）。
@@ -319,30 +401,51 @@ Qwen 官方把整条证据链压成一句工程判断：「linear attention is f
 
 ![图 3：左面板是随机 key 的读回误差随 N 增长，右面板是 chunk 大小的两笔账](/assets/img/linear-attn/fig3_capacity_chunk.svg)
 
+*图：自绘。数据来自[配套实验组 3 与组 4](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/results/stdout.txt)，非论文原图，未搬用原图。*
+
 左面板的红线是容量碰撞：正交 key 可逐位读回，随机 key 的串扰随 $N$ 从 0.9014 涨到 3.1916，
 且 $\mathrm{rank}(S)$ 被 $\min(N,d_k,d_v)=6$ 钉死；右面板的两条曲线方向相反，是 §7 要讲的
 块内算力与块间状态传递。两张图用的都是合成探针，不是真实模型精度。
 
-随文实现：[组 3 `g3_capacity`](https://github.com/lrypcy/ipynbs/blob/b00b5ea8013f3e845312c9cfaef7f8f47962182a/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
+![图 4：正交 key 的 Gram 矩阵是单位阵、读回无串扰；相似 key 的非对角元把其他 value 混进读回结果](/assets/img/linear-attn/fig4_gram_interference.svg)
+
+*图：自绘。结构对照 [Gated DeltaNet, arXiv:2412.06464](https://arxiv.org/abs/2412.06464) §1 的 memory collisions；[配图与生成脚本](https://github.com/lrypcy/ipynbs/tree/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/figures) 及[配套实验组 3](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)，非论文原图，未搬用原图。*
+
+左半的 $G=I$ 对应组 3 的正交 key（读回最大误差 $0.000\mathrm{e}+00$）；
+右半的非对角元对应随机单位 key，$N=128$ 时读回相对误差 $3.1916$。
+同一份 $S$，差别只在 key 之间的内积；delta rule 改的是写入端，
+让同一个 key 重复出现时不再把旧值累加进来。
+
+随文实现：[组 3 `g3_capacity`](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
 
 ---
 
-## §5 更新规则的谱系：状态形状没变，变的是写入方式
+## §5 更新规则的谱系：状态仍是常数项，变的是写入方式
 
-把各家工作按「改了什么」分类，比按年份排成一条链更能说明问题。
-下面每一行都保持同一个状态 $S_t\in\mathbb{R}^{d_k\times d_v}$，
-只改右边的更新算子——这正是「KV cache 去哪了」的答案：
-历史被压进同一个形状的容器，各家的差别全在**怎么往容器里写**。
+把各家工作按「改了什么」分类，比按年份排成一条链更能说明问题：
+换核（历史怎么表示）、换遗忘（旧信息怎么衰减）、换写入（同一个 key 怎么覆盖）、
+换容器（状态做多大、是不是一个模型）。下面这些写法都以矩阵形状的递推状态为载体
+（按 §4 的读回排布写，与 §2 的 $d_k\times d_v$ 排布互为转置），
+差别在右边的更新算子与状态尺寸——这正是「KV cache 去哪了」的答案：
+历史被压进固定形状的容器，各家的差别全在**怎么往容器里写**。
 
 | 改动对象 | 代表工作 | 更新规则（简化） | 解决了什么 |
 |:---|:---|:---|:---|
 | 特征映射 $\phi$ | Performer / Based | 随机特征近似 softmax / 二阶泰勒 | 让核更像 softmax，不改状态 |
 | 固定衰减 $\gamma$ | RetNet | $S_t=\gamma S_{t-1}+v_t k_t^\top$ | 给旧信息一个统一遗忘速度 |
-| 数据依赖门控 $\alpha_t$ | GLA / Mamba-2 | $S_t=\alpha_t S_{t-1}+v_t k_t^\top$ | 按 token 决定忘多少，可快速擦除 |
+| 数据依赖门控 $\alpha_t$ | GLA | $S_t=\alpha_t S_{t-1}+v_t k_t^\top$ | 按 token 决定忘多少，可快速擦除 |
 | delta 改写 $\beta_t$ | DeltaNet / Gated DeltaNet / RWKV-7 / KDA | $S_t=\alpha_t(I-\beta_t k_t k_t^\top)S_{t-1}+\beta_t v_t k_t^\top$ | 精确覆盖同一 key，缓解碰撞 |
 | 状态扩张 | Mamba-2 SSD / xLSTM mLSTM | 更大的 $N$；矩阵记忆 + normalizer + stabilizer | 用容量换 recall |
 | 状态本身是模型 | TTT | $W_t=W_{t-1}-\eta\nabla\ell(W_{t-1};x_t)$ | 用快权重提高状态表达力 |
 | 并行形式 | 上述各家的 chunkwise | 块内 matmul、块间传 $S$ | 让递推能在训练里并行 |
+
+表里 $S_t=\alpha_t S_{t-1}+v_t k_t^\top$ 是「衰减 + 外积」这一族的示意式，
+不是各家的精确更新式：GLA 的 $\alpha_t$ 是按通道的数据依赖门控，作用在整个矩阵状态上；
+Mamba-2 的 SSD 状态是 $N\times P$，衰减 $a_t$ 是头级标量，递推写成
+$h_t=a_t h_{t-1}+B_t x_t^\top$，另有 conv state
+（[arXiv:2405.21060](https://arxiv.org/abs/2405.21060) §3.2、§4）。
+SSM 状态、GLA 的矩阵状态、TTT 的快权重不是同一种数据结构，
+缓存布局与分页粒度不能按同一套 `state_size` 统一分配（§8 的 Case 4 就是后果）。
 
 逐条给出处与必要的分寸：
 
@@ -362,8 +465,9 @@ Qwen 官方把整条证据链压成一句工程判断：「linear attention is f
 前两个不增加状态体积，第三个直接把 §3 的常数项抬高——
 Mamba-2 用 8 倍状态换质量、xLSTM 用矩阵记忆换表达力，都是同一个方向。
 
-对缓存账的后果很直接：**换更新规则不改变 $T^\ast$ 的形式，只改变常数 $M_{\mathrm{state}}$ 里的维度**。
-只要 $S_t$ 还是 $d_k\times d_v$，§3 的结论就成立；要动它，得动 $d_k$、$d_v$、头数或层数。
+对缓存账的后果很直接：**换更新规则不改变 $T^\ast$ 的形式，只改变常数 $M_{\mathrm{state}}$ 里的维度与份数**。
+只要状态仍与 $T$ 无关，§3 的一般式就成立；要移动交叉点，得动 $d_k$、$d_v$、状态份数、
+两侧 dtype，或者把辅助状态算进来。
 
 ---
 
@@ -377,6 +481,12 @@ Mamba-2 用 8 倍状态换质量、xLSTM 用矩阵记忆换表达力，都是同
 | Kimi Linear (48B/A3B) | KDA : MLA = **3:1** | KV cache 最多减 75%、1M 上下文 decode 吞吐最高 6× | [arXiv:2510.26692](https://arxiv.org/abs/2510.26692) |
 | Qwen3-Next-80B-A3B | Gated DeltaNet : Gated Attention = **3:1** | 75% 层用线性；>32K 时吞吐超 10×（相对 Qwen3-32B） | [官方博客](https://qwen.ai/blog?id=4074cca80393150c248e508aa62983f9cb7d27cd) |
 | MiniMax-Text-01 | Lightning Attention : softmax = **7:1** | 每 8 层里 7 层线性、共 80 层；训练 1M、推理外推 4M | [arXiv:2501.08313](https://arxiv.org/abs/2501.08313) |
+
+留下的那 $1/4$ 并不是同一种缓存：Kimi Linear 是 MLA 层（每 token 存压缩 latent，
+$d_c+d_h^R$ 个元素，§1），Qwen3-Next 是 Gated Attention 层（标准 K/V，head dim 256），
+MiniMax-01 是 softmax 层。层型比例同为 3:1，但「每 token 那份 KV 的字节基数」不同，
+§3 用 GQA 口径算出的 $T^\ast=256$ 不能直接套到 MLA 层上，
+要回到一般式 $T^\ast=M_{\mathrm{state}}/(2n_{kv}d_{kv}b_{kv})$ 重算。
 
 三个容易混的数字必须分开：Kimi Linear 的 **6×** 是 1M 上下文的 decode 吞吐，
 **3.98×** 是 RULER@128K 的加速，**6.3×** 是 1M 下的 TPOT（1.84 ms 对 11.48 ms）
@@ -424,7 +534,7 @@ Mamba-3 是 2026 的架构论文（[arXiv:2603.15569](https://arxiv.org/abs/2603
 不是新的商用混合比例。这几条的精确层型计数在公开一手材料里并未全部给全，
 正文因此不写具体层数。
 
-随文实现：[组 7 `g7_hybrid`](https://github.com/lrypcy/ipynbs/blob/b00b5ea8013f3e845312c9cfaef7f8f47962182a/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
+随文实现：[组 7 `g7_hybrid`](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
 
 ---
 
@@ -467,7 +577,11 @@ chunkwise 形式「rich in matrix multiplications」，才能吃到矩阵乘硬�
 ```
 
 $C$ 翻倍，块内算力翻倍，块间状态传递减半，乘积恒定——**块大小是一个权衡旋钮，不是免费的加速开关**。
-GLA 论文 Figure 2 与 §5 给的实测结论是同一件事的两面：
+但乘积恒定只是两条解析曲线的代数恒等式，不是运行时间模型：它把两项按同等权重相乘，
+既不含各自的单位成本，也不含调度与同步开销，推不出最优 $C$。
+表中「块间状态传递」还是**逻辑量**：块数乘一份 $d\times d$ 状态再乘 $b$，
+不是实际访存字节；同一份状态在真实 kernel 里可能被缓存、融合或重复读。
+能作为一手依据的是实测：GLA 论文 Figure 2 与 §5 的实测结论是同一件事的两面：
 「Inter-chunk computation is mainly bottlenecked by the HBM I/O cost,
 while intra-chunk computation is mainly bottlenecked by FLOPs」，
 在 BF16 / batch 32 / model dim 1024 设定下最优块大小是 128
@@ -484,7 +598,7 @@ vLLM 的 `--mamba-block-size` 只在启用 prefix caching 时可设，
 （[引擎参数文档](https://docs.vllm.ai/en/latest/configuration/engine_args/)）。
 也就是说，§3 的字节账、§7 的块内算力账与 §8 的复用粒度，被同一个 $C$ 串在一起。
 
-随文实现：[组 4 `g4_chunk`](https://github.com/lrypcy/ipynbs/blob/b00b5ea8013f3e845312c9cfaef7f8f47962182a/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
+随文实现：[组 4 `g4_chunk`](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
 
 ---
 
@@ -518,6 +632,12 @@ softmax 侧两条分支共享同一份只读前缀 K/V 即可，不需要任何�
 | 状态随请求走 | 按 request 级分配状态槽，生命周期与请求绑定 | SGLang `HybridReqToTokenPool` |
 | 尾部重放 | 从最深的可用 checkpoint 之后重放剩余 token | vLLM ReplaySSM、[Unified Radix Cache](https://www.sglang.io/blog/unified-radix-cache) |
 
+还有一处容易被漏掉的分支：**投机解码**。KV 侧被拒绝的草稿 token 对应的 block
+直接丢弃即可，前缀始终只读；状态侧因为就地覆盖，每个草稿 token 都得有独立状态槽，
+或者从 checkpoint 重放，才能在拒绝后回到分叉点
+（[SGLang 官方博客](https://pytorch.org/blog/hybrid-models-meet-sglang-more-than-full-attention/)）。
+这是「状态不可回滚」在解码侧的直接后果，不是另一套调度策略。
+
 引擎侧的演进要**带版本读**，否则会写出互相矛盾的话：
 
 - vLLM 的 [Hybrid KV Cache Manager](https://docs.vllm.ai/en/latest/design/hybrid_kv_cache_manager/)
@@ -547,7 +667,7 @@ softmax 侧两条分支共享同一份只读前缀 K/V 即可，不需要任何�
 两篇都以「逐 token KV」为前提；本节只回答「换成状态后，复用条件变成什么」，
 不重算命中率，也不重复调度与批处理的讨论。
 
-随文实现：[组 6 `g6_prefix`](https://github.com/lrypcy/ipynbs/blob/b00b5ea8013f3e845312c9cfaef7f8f47962182a/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
+随文实现：[组 6 `g6_prefix`](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
 
 ---
 
@@ -563,7 +683,11 @@ GLA §4.3 给出一手说明：朴素 parallel 形式需要 **log-space 的广�
 （[arXiv:2312.06635](https://arxiv.org/abs/2312.06635)）。
 xLSTM 同样为指数门控可能溢出而加 stabilizer state，并给 mLSTM 的分母加下界。
 
-组 5 用两个合成探针把量级跑出来：
+组 5 用两个合成探针把量级跑出来。参考精度与误差度量先说清：第一行的参考值是
+fp64 闭式累加的 $S_T=\sum_j\alpha^{T-1-j}k_j v_j^\top$（$\alpha=0.999$、$T=20000$、$d=8$），
+误差取 Frobenius 范数的相对偏差 $\lVert \hat S-S_T\rVert_F/\lVert S_T\rVert_F$；
+第二行的参考值是 fp64 的 $\exp(\sum\log\gamma)$，$\gamma\sim U(0.70,0.99)$、$C=128$，
+误差取标量相对偏差。
 
 ```text
   T=20000, alpha=0.999, d=8
@@ -593,7 +717,7 @@ fp16 的 subnormal 区，直接连乘得到 5.960464e-08（相对误差 325.7 �
 上面两行探针是合成数据上的量级演示，不能读成真实模型的精度损失；
 把框架默认值写成结论，或者把 bf16 说成「必然不可用」，都超出了证据。
 
-随文实现：[组 5 `g5_numeric`](https://github.com/lrypcy/ipynbs/blob/b00b5ea8013f3e845312c9cfaef7f8f47962182a/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
+随文实现：[组 5 `g5_numeric`](https://github.com/lrypcy/ipynbs/blob/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/linear_attn_kv_cache_lab.ipynb)。
 
 ---
 
@@ -610,6 +734,9 @@ fp16 的 subnormal 区，直接连乘得到 5.960464e-08（相对误差 325.7 �
 | 引擎支持 | 已支持混合 KV / Mamba 池与 checkpoint | 只有标准分页 KV 栈 | §8 版本口径 |
 | 层型比例 | 3:1 / 7:1 这类以线性层为主 | 需要每层都做全局交互 | §6 官方配置 |
 
+判据按代价从低到高过一遍：先看 $T$ 与 $T^\ast$ 的关系（短上下文到这一步就可以否掉），
+再看任务是否要求多键值对精确 recall，最后看前缀复用率与引擎是否已支持状态 checkpoint。
+
 三条不能往外推的结论：
 
 1. **不是「显存降 75%」**。官方 75% 是 KV cache 口径，等于线性层占比；
@@ -623,9 +750,8 @@ fp16 的 subnormal 区，直接连乘得到 5.960464e-08（相对误差 325.7 �
 
 与相邻优化的交互只点一句：KV 量化压的是「每 token 元素位宽」，
 线性层没有逐 token 元素可压，对应的量是状态 dtype（§9）；
-投机解码在状态模型上要给每个草稿 token 留独立状态槽，否则拒绝后无法回滚
-（[SGLang 官方博客](https://pytorch.org/blog/hybrid-models-meet-sglang-more-than-full-attention/)），
-这与本站 [specdec 系列](/2026/10/18/specdec-02-acceptance-and-speedup-model/) 的收益模型是两笔账。
+投机解码的状态分支管理见 §8，它与本站 [specdec 系列](/2026/10/18/specdec-02-acceptance-and-speedup-model/)
+的收益模型是两笔账。
 
 ---
 
@@ -657,7 +783,7 @@ fp16 的 subnormal 区，直接连乘得到 5.960464e-08（相对误差 325.7 �
 9. Beck et al. *xLSTM: Extended Long Short-Term Memory.* NeurIPS 2024. [arXiv:2405.04517](https://arxiv.org/abs/2405.04517)
 10. Sun et al. *Learning to (Learn at Test Time): RNNs with Expressive Hidden States.* [arXiv:2407.04620](https://arxiv.org/abs/2407.04620)
 11. Arora et al. *Zoology: Measuring and Improving Recall in Efficient Language Models.* [arXiv:2312.04927](https://arxiv.org/abs/2312.04927)
-12. Arora et al. *Simple Linear Attention Language Models Balance the Recall-Throughput Tradeoff (Based).* [arXiv:2402.18668](https://arxiv.org/abs/2402.18668)
+12. Arora et al. *Simple Linear Attention Language Models Balance the Recall-Throughput Tradeoff (Based).* [arXiv:2402.18668](https://arxiv.org/abs/2402.18668) ｜ [官方博客 Figure 1（recall–memory 权衡）](https://hazyresearch.stanford.edu/blog/2024-03-03-based)
 13. Jelassi et al. *Repeat After Me: Transformers are Better than State Space Models at Copying.* [arXiv:2402.01032](https://arxiv.org/abs/2402.01032)
 14. DeepSeek-AI. *DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model.* [arXiv:2405.04434](https://arxiv.org/abs/2405.04434) ｜ [GQA: arXiv:2305.13245](https://arxiv.org/abs/2305.13245)
 15. Kimi Team. *Kimi Linear: An Expressive, Efficient Attention Architecture.* 2025-10-30. [arXiv:2510.26692](https://arxiv.org/abs/2510.26692) ｜ [代码](https://github.com/MoonshotAI/Kimi-Linear)
@@ -666,4 +792,5 @@ fp16 的 subnormal 区，直接连乘得到 5.960464e-08（相对误差 325.7 �
 18. NVIDIA. *Nemotron-H: A Family of Accurate and Efficient Hybrid Mamba-Transformer Models.* [arXiv:2504.03624](https://arxiv.org/abs/2504.03624) ｜ *Falcon-H1* [arXiv:2507.22448](https://arxiv.org/abs/2507.22448) ｜ *Mamba-3* [arXiv:2603.15569](https://arxiv.org/abs/2603.15569)
 19. vLLM. *Hybrid KV Cache Manager*（基于 commit `458e74`）. [设计文档](https://docs.vllm.ai/en/latest/design/hybrid_kv_cache_manager/) ｜ [引擎参数](https://docs.vllm.ai/en/latest/configuration/engine_args/) ｜ [v0.29.0 release notes](https://github.com/vllm-project/vllm/releases/tag/v0.29.0)
 20. SGLang Team. *Hybrid Models Meet SGLang: More than Full Attention.* 2025-12-03. [PyTorch 博客](https://pytorch.org/blog/hybrid-models-meet-sglang-more-than-full-attention/) ｜ *Unified Radix Cache* [SGLang 博客](https://www.sglang.io/blog/unified-radix-cache)
-21. 配套实验（58 条断言、三张配图、输出固化）. [`ipynbs/experiments/linear-attention/kv-cache-state/`](https://github.com/lrypcy/ipynbs/tree/b00b5ea8013f3e845312c9cfaef7f8f47962182a/experiments/linear-attention/kv-cache-state/)
+21. 配套实验（58 条断言、四张配图、输出固化）. [`ipynbs/experiments/linear-attention/kv-cache-state/`](https://github.com/lrypcy/ipynbs/tree/ca8caa9e6a7352a4016e2c1b93e695ca2abdaada/experiments/linear-attention/kv-cache-state/)
+22. 结构参考（配图仅以文字链接引用，未搬用原图）. [Nebius, *How transformers, RNNs and SSMs are more alike than you think*](https://nebius.com/blog/posts/mixers-are-rnns) ｜ [Hazy Research, *Based: recall–memory tradeoff* Figure 1](https://hazyresearch.stanford.edu/blog/2024-03-03-based)
