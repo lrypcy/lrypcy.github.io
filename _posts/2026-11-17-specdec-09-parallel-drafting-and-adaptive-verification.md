@@ -21,10 +21,10 @@ mathjax: true
 
 > **TL;DR**
 >
-> * **核心问题与结论**：2026 年的重心从「把草稿变准」转到「拆掉草稿的串行依赖、让运行时决定验证多少」。P-EAGLE、DFlash、DSpark 一次前向出整块候选，草稿耗时从 $\gamma c$ 变成与块长无关的常数，[第 02 篇](/2026/10/18/specdec-02-acceptance-and-speedup-model/)的收益模型要换分母。
-> * **关键证据**：DFlash 论文（[arXiv:2602.06036](https://arxiv.org/abs/2602.06036)，ICML 2026）报告超过 6 倍无损加速、相对 EAGLE-3 最多 2.5 倍；配套合成探针用 Red Hat 公布的逐位置接受率反算，常数 $\alpha$ 假设把每轮产出高估 18.00%（[实验输出](https://github.com/lrypcy/ipynbs/blob/762671adf77b99f856d638bee296efc25e4eca4b/experiments/speculative-decoding/parallel-drafting/results/stdout.txt)，commit `762671a`）。
-> * **适用边界与代价**：草稿成本解耦了，验证成本没有。MLSys 2026 在生产级 vLLM 上测得验证主导耗时、接受长度随位置与请求漂移，高并发下仍可能负收益。置信度调度截断候选前缀不破坏无损性，margin 一类有损规则才放弃分布正确性。
-> * **系列定位**：本篇不重证无偏性，那归[采样实现深读](/2026/09/30/pytorch-sampling-internals/) §4；只回答新架构改动了收益模型的哪一项，以及代价记在哪笔账上。
+> * **核心问题与结论**：2026 年的重心从「把草稿变准」转到「拆掉草稿的串行依赖、让运行时决定验证多少」。P-EAGLE、DFlash、DSpark 一次前向出整块；固定配置下草稿耗时对块长近似不敏感，验证仍随候选数增长，[第 02 篇](/2026/10/18/specdec-02-acceptance-and-speedup-model/)的收益模型要换分母，最优块长写成随负载移动的 argmax。
+> * **关键证据**：DFlash（[arXiv:2602.06036](https://arxiv.org/abs/2602.06036)）自报超 6 倍无损加速；合成探针用 Red Hat 逐位置接受率反算：它是前缀率 $u_i$，误用条件率连乘低估 25.4%，常数 $\alpha$ 再高估 18.00%；$K^*$ 随 batch 1→256 从 7 降到 4（[实验输出](https://github.com/lrypcy/ipynbs/blob/8732811b95a7007bfa53d3d38e57aa68233f9a85/experiments/speculative-decoding/parallel-drafting/results/stdout.txt)，commit `8732811`）。
+> * **适用边界与代价**：验证侧仍是瓶颈，高并发可能负收益；截断无损取决于决策信号是否与提议分布一致，margin 偏差在同一阈值下随分布差数倍。工程上 EAGLE-3 最成熟，P-EAGLE 训练已弃用，AdaptiveSpec 公开源码待核实。
+> * **系列定位**：本篇不重证无偏性，只答新架构改了收益模型哪一项、代码生态里什么真能跑。
 
 ---
 
@@ -40,20 +40,88 @@ $$
 
 | 符号 | 含义 |
 |:---|:---|
-| $T_d(\gamma)$ | 一轮里**生成草稿**的总耗时（串行草稿为 $\gamma t_d$，并行草稿为常数 $t_b$） |
-| $T_v(\gamma)$ | 一轮里**验证候选**的耗时，随候选位置数增长 |
+| $T_d(K)$ | 一轮里**生成草稿**的总耗时（串行草稿为 $K t_d$，并行草稿为整块 $t_b$） |
+| $T_v(K; B, L)$ | 一轮里**验证候选**的耗时，随候选数 $K$ 增长，也依赖批大小 $B$ 与上下文长度 $L$ |
 | $K$ | 并行草稿一次前向产出的块长度（与 $\gamma$ 同量纲，但成本结构不同） |
-| $a_i$ | 第 $i$ 个草稿位置的**条件接受率**（给定前 $i-1$ 个都被接受） |
-| $r$ | 条件接受率的几何衰减率，$a_{i+1} \approx r a_i$ |
+| $u_i$ | **前缀接受率**：第 $i$ 个草稿位置仍被接受的概率，即 $P(A_1 \wedge \cdots \wedge A_i)$ |
+| $s_i$ | **条件接受率**：在前 $i-1$ 个都被接受的条件下第 $i$ 个被接受的概率，$u_i = \prod_{j=1}^{i} s_j$ |
+| $r$ | 条件接受率的几何衰减率，$s_{i+1} \approx r\, s_i$ |
+| $c_b$ | 整块草稿一次前向相对目标前向的成本比；$\beta$ 是验证侧随候选位置数增加的增量 |
 | $\tau$ | 有损验证的 margin 阈值 |
 | $\mathcal A$ | 训练时采样的锚点位置集合 |
+| $T_s$ | 调度、采样、KV 管理等与候选数无关的固定开销 |
 | $\mathrm{TV}(p, q)$ | 两个离散分布的总变差距离 |
 
-两条口径先钉死，后面不再重复：
+这里必须把**前缀接受率**与**条件接受率**分开，否则 §7.1 的推导会自我矛盾：期望产出是 $E[L] = 1 + \sum_{i=1}^{K} u_i$，只有在各位置独立、$u_i = \alpha^i$ 时才退化成第 02 篇的等比求和；$s_i$ 要通过连乘还原 $u_i$。Red Hat 公布的逐位置表是 $u_i$，分寸差一点，反算值就会偏低四分之一（见 §7.1 与实验组 6）。
+
+三条口径先钉死，后面不再重复：
 
 1. **不重证无偏性**。标准拒绝采样为什么让输出分布仍等于 $p$，属于[采样实现深读](/2026/09/30/pytorch-sampling-internals/) §4；本篇只在 §5、§6 讨论「哪些改动动了接受规则，哪些只动了候选长度」。
 2. **合成探针与论文数字分开标**。本文所有带四位小数的数字来自
-   [配套实验](https://github.com/lrypcy/ipynbs/blob/762671adf77b99f856d638bee296efc25e4eca4b/experiments/speculative-decoding/parallel-drafting/parallel_drafting_lab.ipynb)（纯 numpy、固定 seed、23 条断言）；论文与官方博客的数字一律写明出处与实验设定，两者不混在一张表里。
+   [配套实验](https://github.com/lrypcy/ipynbs/blob/8732811b95a7007bfa53d3d38e57aa68233f9a85/experiments/speculative-decoding/parallel-drafting/parallel_drafting_lab.ipynb)（纯 numpy、固定 seed、29 条断言）；论文与官方博客的数字一律写明出处与实验设定，两者不混在一张表里。
+
+---
+
+本篇要放的技术都在下面这张图的三条轴上，先看地图再读推导：
+
+<svg viewBox="0 0 680 250" xmlns="http://www.w3.org/2000/svg" font-family="PingFang SC, sans-serif">
+  <rect x="0" y="0" width="680" height="250" fill="#ffffff"/>
+  <text x="16" y="22" font-size="14" font-weight="600" fill="#1f2937">投机解码三条演进轴：不是替代，而是汇入统一 Runtime</text>
+
+  <!-- 轴1 Draft Quality -->
+  <text x="16" y="52" font-size="11" font-weight="600" fill="#1d4ed8">草稿质量</text>
+  <g font-size="10.5">
+    <rect x="16" y="58" width="128" height="30" rx="4" fill="#dbeafe" stroke="#93c5fd"/>
+    <text x="80" y="77" text-anchor="middle" fill="#1e3a8a">Draft Model</text>
+    <text x="152" y="77" font-size="12" fill="#64748b">→</text>
+    <rect x="162" y="58" width="120" height="30" rx="4" fill="#dbeafe" stroke="#93c5fd"/>
+    <text x="222" y="77" text-anchor="middle" fill="#1e3a8a">EAGLE / EAGLE-2</text>
+    <text x="290" y="77" font-size="12" fill="#64748b">→</text>
+    <rect x="300" y="58" width="120" height="30" rx="4" fill="#bfdbfe" stroke="#60a5fa"/>
+    <text x="360" y="77" text-anchor="middle" fill="#1e3a8a" font-weight="600">EAGLE-3</text>
+  </g>
+
+  <!-- 轴2 Draft Parallelism -->
+  <text x="16" y="112" font-size="11" font-weight="600" fill="#15803d">草稿并行</text>
+  <g font-size="10.5">
+    <rect x="16" y="118" width="128" height="30" rx="4" fill="#dcfce7" stroke="#86efac"/>
+    <text x="80" y="137" text-anchor="middle" fill="#14532d">Medusa 多头</text>
+    <text x="152" y="137" font-size="12" fill="#64748b">→</text>
+    <rect x="162" y="118" width="120" height="30" rx="4" fill="#dcfce7" stroke="#86efac"/>
+    <text x="222" y="137" text-anchor="middle" fill="#14532d">P-EAGLE 多深度</text>
+    <text x="290" y="137" font-size="12" fill="#64748b">→</text>
+    <rect x="300" y="118" width="120" height="30" rx="4" fill="#bbf7d0" stroke="#4ade80"/>
+    <text x="360" y="137" text-anchor="middle" fill="#14532d" font-weight="600">DFlash / DSpark</text>
+  </g>
+
+  <!-- 轴3 Verify Efficiency -->
+  <text x="16" y="172" font-size="11" font-weight="600" fill="#b45309">验证效率</text>
+  <g font-size="10.5">
+    <rect x="16" y="178" width="128" height="30" rx="4" fill="#fef3c7" stroke="#fcd34d"/>
+    <text x="80" y="197" text-anchor="middle" fill="#78350f">固定 γ</text>
+    <text x="152" y="197" font-size="12" fill="#64748b">→</text>
+    <rect x="162" y="178" width="120" height="30" rx="4" fill="#fef3c7" stroke="#fcd34d"/>
+    <text x="222" y="197" text-anchor="middle" fill="#78350f">动态树 / 置信度</text>
+    <text x="290" y="197" font-size="12" fill="#64748b">→</text>
+    <rect x="300" y="178" width="120" height="30" rx="4" fill="#fde68a" stroke="#fbbf24"/>
+    <text x="360" y="197" text-anchor="middle" fill="#78350f" font-weight="600">Adaptive Verify</text>
+  </g>
+
+  <!-- 汇合箭头 -->
+  <g stroke="#94a3b8" stroke-width="1.4" fill="none" stroke-dasharray="4 3">
+    <path d="M 425 73 L 500 120"/>
+    <path d="M 425 133 L 500 133"/>
+    <path d="M 425 193 L 500 146"/>
+  </g>
+  <rect x="500" y="96" width="164" height="74" rx="6" fill="#eef2ff" stroke="#818cf8" stroke-width="1.5"/>
+  <text x="582" y="120" font-size="12" font-weight="600" fill="#3730a3" text-anchor="middle">统一 Inference Runtime</text>
+  <text x="582" y="138" font-size="10" fill="#4338ca" text-anchor="middle">vLLM / SGLang</text>
+  <text x="582" y="153" font-size="10" fill="#4338ca" text-anchor="middle">训练 → 调度 → 验证预算</text>
+
+  <text x="16" y="236" font-size="11" fill="#6b7280">图：自绘。技术归类见第 01 篇生成轴 / 验证轴；2026 年的变化是三条轴开始在同一运行时里联合调参（见 §7.2、§9、§11）。</text>
+</svg>
+
+*图：自绘。基于第 01 篇谱系与 [vLLM](https://vllm.ai/blog/2026-07-28-speculators-parallel-drafting) / [SGLang](https://docs.sglang.io/advanced_features/speculative_decoding.html) 公开文档，非论文原图。*
 
 ---
 
@@ -197,7 +265,19 @@ vLLM 与 Speculators 在 2026-07 同时开源了 P-EAGLE、DFlash、DSpark 三�
 
 *图源：Chen et al., [DFlash: Block Diffusion for Flash Speculative Decoding](https://arxiv.org/abs/2602.06036) Figure 2，许可 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，未改动。*
 
-图中蓝色方块是融合后的目标上下文特征、橙色是目标解码 token、绿色是待去噪的 mask token；一次 block diffusion 前向把整块绿色位置填成候选。这里的 diffusion 指「块内并行去噪」，不是图像生成里的 DDPM 采样链——它仍然由目标模型做拒绝采样兜底，所以论文标题里的 lossless 指的是这个验证闭环，不是草稿本身无误差。
+图中蓝色方块是融合后的目标上下文特征、橙色是目标解码 token、绿色是待去噪的 mask token；一次 block diffusion 前向把整块绿色位置填成候选。这里的 diffusion 指「块内并行去噪」，不是图像生成里的 DDPM 采样链——论文用**单次前向**完成整块草稿，不存在多轮迭代次数 $S$ 要乘进成本的问题。它仍然由目标模型做拒绝采样兜底，所以论文标题里的 lossless 指的是这个验证闭环，不是草稿本身无误差。
+
+把「投影进 KV」这条路径写成形状，接口关系更清楚（以下为说明接口的示意形状，具体按层数与 KV 头数展开）：
+
+$$
+H_{\mathrm{target}} \in \mathbb R^{B \times L \times 3d}
+\;\xrightarrow{\ \mathrm{Proj}_{\text{feat}}\;}\;
+H_{\mathrm{proj}} \in \mathbb R^{B \times L \times d}
+\;\xrightarrow{\ \mathrm{Proj}_{KV}\;}\;
+K_c, V_c \in \mathbb R^{B \times H \times L \times d_h}
+$$
+
+草稿块里的 mask token 通过注意力读这批条件 KV，再在块内做双向去噪——这就是它不靠拉长输入序列也能携带目标上下文的原因。vLLM 的[实现文档](https://github.com/vllm-project/speculators/blob/main/docs/user_guide/algorithms/dflash.md)把它叫 anchored-block drafting：锚点位置决定条件 KV 的落点，`block_size` 与 `max_anchors` 是两个直接暴露在训练 CLI 上的旋钮。
 
 注意力可见性由另一张图给出的稀疏模式决定：目标侧特征全部可见，块内 mask 位置按锚点分段可见。
 
@@ -223,6 +303,95 @@ vLLM 与 Speculators 在 2026-07 同时开源了 P-EAGLE、DFlash、DSpark 三�
 论文在 DeepSeek-V4 在线服务的实时流量下，相对生产基线 MTP-1，在吞吐相当时把单用户生成速度提高 60%–85%。**这是「同等吞吐下的单用户速度」，不是离线加速比**，两个口径不能互换。
 
 ### 3.4 三条路线的分界
+
+三者不是「谁替代谁」的时间线，而是并行预测里三种不同的**信息缺失**各补一处。把信息流画在一起，分界就清楚了：
+
+<svg viewBox="0 0 680 340" xmlns="http://www.w3.org/2000/svg" font-family="PingFang SC, sans-serif">
+  <rect x="0" y="0" width="680" height="340" fill="#ffffff"/>
+  <text x="16" y="22" font-size="14" font-weight="600" fill="#1f2937">三种并行草稿的信息流：各自补的是哪一种缺失</text>
+
+  <!-- 列标题 -->
+  <text x="120" y="48" font-size="12" font-weight="600" fill="#1d4ed8" text-anchor="middle">P-EAGLE</text>
+  <text x="340" y="48" font-size="12" font-weight="600" fill="#15803d" text-anchor="middle">DFlash</text>
+  <text x="560" y="48" font-size="12" font-weight="600" fill="#b45309" text-anchor="middle">DSpark</text>
+
+  <!-- 行1: Target Feature Input -->
+  <g font-size="10.5" fill="#374151">
+    <rect x="40" y="58" width="160" height="34" rx="4" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="120" y="73" text-anchor="middle">目标多层隐藏特征</text><text x="120" y="86" text-anchor="middle">[B, L, 3d]</text>
+    <rect x="260" y="58" width="160" height="34" rx="4" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="340" y="73" text-anchor="middle">目标多层隐藏特征</text><text x="340" y="86" text-anchor="middle">[B, L, 3d]</text>
+    <rect x="480" y="58" width="160" height="34" rx="4" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="560" y="73" text-anchor="middle">目标多层隐藏特征</text><text x="560" y="86" text-anchor="middle">[B, L, 3d]</text>
+  </g>
+
+  <!-- 箭头 -->
+  <g stroke="#94a3b8" stroke-width="1.3" fill="none">
+    <line x1="120" y1="92" x2="120" y2="110"/><line x1="340" y1="92" x2="340" y2="110"/><line x1="560" y1="92" x2="560" y2="110"/>
+  </g>
+
+  <!-- 行2: Feature Conditioning（核心差异） -->
+  <g font-size="10.5">
+    <rect x="40" y="110" width="160" height="46" rx="4" fill="#dbeafe" stroke="#93c5fd"/>
+    <text x="120" y="126" text-anchor="middle" fill="#1e3a8a" font-weight="600">当输入特征</text>
+    <text x="120" y="141" text-anchor="middle" fill="#1e3a8a">拼进 token embedding</text>
+    <text x="120" y="153" text-anchor="middle" fill="#1e3a8a">多种预测深度</text>
+
+    <rect x="260" y="110" width="160" height="46" rx="4" fill="#dcfce7" stroke="#86efac"/>
+    <text x="340" y="126" text-anchor="middle" fill="#14532d" font-weight="600">投影成条件 KV</text>
+    <text x="340" y="141" text-anchor="middle" fill="#14532d">K_c, V_c 进草稿 cache</text>
+    <text x="340" y="153" text-anchor="middle" fill="#14532d">注意力直接读取</text>
+
+    <rect x="480" y="110" width="160" height="46" rx="4" fill="#fef3c7" stroke="#fcd34d"/>
+    <text x="560" y="126" text-anchor="middle" fill="#78350f" font-weight="600">同 DFlash 条件 KV</text>
+    <text x="560" y="141" text-anchor="middle" fill="#78350f">+ 块内低秩 Markov 偏置</text>
+    <text x="560" y="153" text-anchor="middle" fill="#78350f">B = W1·W2 补前缀依赖</text>
+  </g>
+
+  <g stroke="#94a3b8" stroke-width="1.3" fill="none">
+    <line x1="120" y1="156" x2="120" y2="174"/><line x1="340" y1="156" x2="340" y2="174"/><line x1="560" y1="156" x2="560" y2="174"/>
+  </g>
+
+  <!-- 行3: Intra-block Dependency -->
+  <g font-size="10.5">
+    <rect x="40" y="174" width="160" height="40" rx="4" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="120" y="189" text-anchor="middle" fill="#374151">flex-attention mask</text>
+    <text x="120" y="203" text-anchor="middle" fill="#64748b">各 rollout 只看自己链</text>
+
+    <rect x="260" y="174" width="160" height="40" rx="4" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="340" y="189" text-anchor="middle" fill="#374151">块内双向注意力</text>
+    <text x="340" y="203" text-anchor="middle" fill="#64748b">无显式自回归</text>
+
+    <rect x="480" y="174" width="160" height="40" rx="4" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="560" y="189" text-anchor="middle" fill="#374151">Markov / RNN 头</text>
+    <text x="560" y="203" text-anchor="middle" fill="#64748b">按位置补块内依赖</text>
+  </g>
+
+  <g stroke="#94a3b8" stroke-width="1.3" fill="none">
+    <line x1="120" y1="214" x2="120" y2="232"/><line x1="340" y1="214" x2="340" y2="232"/><line x1="560" y1="214" x2="560" y2="232"/>
+  </g>
+
+  <!-- 行4: Output -->
+  <g font-size="10.5">
+    <rect x="40" y="232" width="160" height="30" rx="4" fill="#e0e7ff" stroke="#a5b4fc"/>
+    <text x="120" y="251" text-anchor="middle" fill="#3730a3">一次前向出 K 个 token</text>
+    <rect x="260" y="232" width="160" height="30" rx="4" fill="#e0e7ff" stroke="#a5b4fc"/>
+    <text x="340" y="251" text-anchor="middle" fill="#3730a3">一次前向出整块</text>
+    <rect x="480" y="232" width="160" height="30" rx="4" fill="#e0e7ff" stroke="#a5b4fc"/>
+    <text x="560" y="251" text-anchor="middle" fill="#3730a3">整块 + 逐位置置信度</text>
+  </g>
+
+  <!-- 底部：补的缺失 -->
+  <text x="16" y="288" font-size="11.5" font-weight="600" fill="#1f2937">各自补的缺失：</text>
+  <text x="120" y="308" font-size="10.5" fill="#1d4ed8" text-anchor="middle">未来位置没有真实 token</text>
+  <text x="120" y="322" font-size="10.5" fill="#1d4ed8" text-anchor="middle">→ 用 mask + 多深度组织</text>
+  <text x="340" y="308" font-size="10.5" fill="#15803d" text-anchor="middle">目标条件如何进草稿</text>
+  <text x="340" y="322" font-size="10.5" fill="#15803d" text-anchor="middle">→ 投影成 KV 而非拉长输入</text>
+  <text x="560" y="308" font-size="10.5" fill="#b45309" text-anchor="middle">并行丢失块内依赖</text>
+  <text x="560" y="322" font-size="10.5" fill="#b45309" text-anchor="middle">→ 修正头 + 置信度调度</text>
+</svg>
+
+*图：自绘。结构对照基于 [vLLM 并行草稿博客](https://vllm.ai/blog/2026-07-28-speculators-parallel-drafting) Figure 3、[P-EAGLE 文档](https://developers.redhat.com/articles/2026/09/03/speeding-llm-inference-p-eagle-vllm-speculators)与 [DSpark 论文](https://arxiv.org/abs/2607.05147)，非论文原图。*
 
 | 维度 | P-EAGLE | DFlash | DSpark |
 |:---|:---|:---|:---|
@@ -287,7 +456,17 @@ $$
 | 按置信度**截断候选前缀** | 只改本轮送验的 $\gamma$ | 无影响；拒绝采样与残差分布照旧 |
 | 按置信度**放宽接受规则** | 改了「什么算被接受」 | 有损，输出分布不再等于 $p$ |
 
-只要丢弃的是**尾部连续块**（而不是在中间挖洞），剩下的是一条合法的因果前缀：后续位置本就条件于前面位置，截断不会造出不存在的上下文，目标模型仍按标准拒绝采样产出 token。配套实验组 4 用 20 万轮蒙特卡洛把这个结论钉在数字上：
+但这个结论有一个必须写明的边界：**决策发生在采样之前还是之后**。
+
+| 决定 $K$ 的信号 | 是否保持无损 | 条件 |
+|:---|:---|:---|
+| 上下文与历史接受率，与候选 token 的取值无关 | 可以 | 草稿分布与标准拒绝采样不变 |
+| 草稿 top-1 置信度等「提议前」就绪的信号 | 可以 | 决策不改变实际送验的提议分布 |
+| 生成候选之后，按候选 token 自身取值筛选 | **不保证** | 提议分布已被选择改变，须重算一致性 |
+
+前两行里，$K$ 在看候选内容之前就定了，送验的仍是同一套 $q$ 下的合法前缀，拒绝采样照旧成立。第三行不能用「丢掉的是尾部连续块」替它背书：例如草稿 $q(A)=0.8,\ q(B)=0.2$，若系统只保留置信度高的 A，实际送验的提议分布已不再是 $q$，继续套 $\min(1, p(x)/q(x))$ 就会破坏分布正确性。所以更准确的说法是——**动态调整候选前缀长度本身不必然破坏无损性，但自适应策略必须保证「决策信号与提议分布一致」**，而「尾部连续」只是必要条件不是充分条件。
+
+配套实验组 4 覆盖了上表前两行的情形，用 20 万轮蒙特卡洛把这个结论钉在数字上：
 
 ```text
 纯目标采样        : [0.50108 0.29964 0.14970 0.04958]
@@ -314,11 +493,13 @@ DSpark 用串行修正头处理后缀衰减，[论文的位置条件接受率图
 
 ## 6. 有损验证：margin rule 到底放弃了什么
 
-§5.2 提到的 [AdaptiveSpec](https://arxiv.org/abs/2609.02897) 出自《Margins, Not Windows: Training-Free Per-Step Lossy Speculative Decoding》（v2，2026-09-28）。它按步同时调两处：树形策略已在上节讲完（无损），这里讲另一半——它放宽的是**接受规则**：草稿提议 $d_i$ 与目标的采样结果不一致时，只要它在目标分布里足够接近 top-1，也照样接受：
+§5.2 提到的 [AdaptiveSpec](https://arxiv.org/abs/2609.02897) 出自《Margins, Not Windows: Training-Free Per-Step Lossy Speculative Decoding》（v2，2026-09-28）。它按步同时调两处：树形策略已在上节讲完（无损），这里讲另一半——它放宽的是**接受规则**。当草稿提议 $d_i$ 与目标的采样结果不一致（是一个 mismatch 候选）时，只要它在目标分布里足够接近 top-1，也照样放行：
 
 $$
-\frac{p(d_i)}{\max_x p(x)} \geq \tau
+\frac{p(d_i)}{\max_x p(x)} > \tau
 $$
+
+这里的判据是**严格大于**。要区分两类候选：与 $p$ 一致的候选本就通过标准验证，不参与这条规则；只有 mismatch 候选才由 margin 决定额外放行。top-1 的 margin 恒为 $1$——任何 $\tau < 1$ 都会放行它，而 $\tau = 1$ 时 `margin > τ` 对谁都不成立，规则整体退化为严格采样（实验组 5 里 $\tau=1$ 的 $\mathrm{TV}=0$ 正来自这里）。若把判据写成 $\geq$，$\tau=1$ 时 top-1 反而会被放行，与「阈值归一退回无损」的语义冲突，这个符号不能含糊。
 
 标题里的 "Margins, Not Windows" 说的是这一改动——判据从「是否与窗口内的采样结果一致」换成「概率比值是否过阈值」。它明确属于**有损**验证：输出分布不再严格等于 $p$。论文在 SGLang 上报告相对 EAGLE-3 吞吐最高提升 56%，并在 GSM8K / MATH-500 / HumanEval、三个目标模型上恢复到完全无损设置的任务准确率的 93%。
 
@@ -346,7 +527,7 @@ $$
   <text x="16" y="242" font-size="11" fill="#6b7280">柱高表示目标分布 p，虚线表示放行阈值；放宽 τ 让更多次优 token 绕过严格匹配</text>
 </svg>
 
-*图：自绘。数据来自配套实验组 5（[ipynbs commit `762671a`](https://github.com/lrypcy/ipynbs/blob/762671adf77b99f856d638bee296efc25e4eca4b/experiments/speculative-decoding/parallel-drafting/results/stdout.txt)），非论文原图。*
+*图：自绘。数据来自配套实验组 5（[ipynbs commit `8732811`](https://github.com/lrypcy/ipynbs/blob/8732811b95a7007bfa53d3d38e57aa68233f9a85/experiments/speculative-decoding/parallel-drafting/results/stdout.txt)），非论文原图。*
 
 配套实验组 5 用 $p = [0.51, 0.47, 0.02]$ 的小词表扫描阈值，得到一个反直觉结果：
 
@@ -363,7 +544,20 @@ $$
 
 $\tau = 1$ 时没有任何候选满足严格大于，等于退回严格采样，$\mathrm{TV} = 0$；$\tau = 0.98$ 时只有 top-1 的 A 被放行，把概率质量硬推向 A，$\mathrm{TV}$ 跳到 0.19600；$\tau$ 再降到 0.92，B（在 $p$ 里本就有 0.47 的高概率 token）也进入放行集合，分布反而更接近 $p$，$\mathrm{TV}$ 回落到 0.05050。
 
-**偏差不随阈值单调变化**。原因不是数值噪声，而是「放行集合」与「目标分布的质量分布」之间的相互作用：多放行一个本来就高概率的 token，可能比只放行 top-1 更接近原分布。所以有损验证的调参不能只盯 $\tau$ 一个数，必须同时看放行集合与任务侧指标。
+**偏差不随阈值单调变化**。原因不是数值噪声，而是「放行集合」与「目标分布的质量分布」之间的相互作用：多放行一个本来就高概率的 token，可能比只放行 top-1 更接近原分布。
+
+更关键的是，**同一个阈值对不同目标分布的伤害完全不同**。实验组 6 固定草稿分布、换三个目标分布扫描同一组 $\tau$：
+
+```text
+     τ |  p1=[.51,.47,.02] |  p2=[.80,.15,.05] |  p3=[.40,.35,.25]
+  1.00 |           0.00000 |           0.00000 |           0.00000
+  0.98 |           0.19600 |           0.08000 |           0.24000
+  0.92 |           0.05050 |           0.08000 |           0.24000
+  0.85 |           0.05050 |           0.08000 |           0.21250
+  0.50 |           0.05050 |           0.08000 |           0.10000
+```
+
+$\tau = 0.92$ 时三者分别是 0.0505 / 0.08 / 0.24，极差 0.19：$p_2$ 的次优 token 概率太低、碰不到阈值，曲线平着走；$p_3$ 三个 token 概率接近，放宽就把质量大规模推走。所以 $\tau$ 根本不是可以跨任务复用的超参——调参必须同时看放行集合、目标分布的形状与任务侧指标。
 
 把 §5、§6 合起来，无损与有损的分界线只有一条：**有没有改动接受规则**。改候选长度、改树形、改送验多少都还在无损侧；改「什么算被接受」就越线了。
 
@@ -371,13 +565,13 @@ $\tau = 1$ 时没有任何候选满足严格大于，等于退回严格采样，
 
 ## 7. 收益模型重算：$T_d$ 换形状之后
 
-把第 02 篇的分母 $1 + \gamma c$ 换成两块之和，就得到并行草稿的一阶模型：
+把第 02 篇的分母 $1 + \gamma c$ 换成两块之和，先得到一个**一阶模型**——它假设各位置接受率恒为 $\alpha$：
 
 $$
-S_{\mathrm{par}}(\alpha, \gamma) = \frac{1 - \alpha^{\gamma+1}}{(1 - \alpha)(1 + c_b + \beta \gamma)}
+S_{\mathrm{par}}(\alpha, K) = \frac{1 - \alpha^{K+1}}{(1 - \alpha)(1 + c_b + \beta K)}
 $$
 
-$c_b$ 是整块草稿一次前向的成本，$\beta$ 是验证侧随候选位置数增加的增量。注意 **$c_b$ 与 $\gamma$ 解耦了，$\beta \gamma$ 没有**——这正是 §1 结尾留的那个伏笔。配套实验组 2 在 $\alpha = 0.647$、$c = 0.08$、$c_b = 0.08$、$\beta = 0.02$ 的设定下枚举 $\gamma \in [1, 32]$：
+$c_b$ 是整块草稿一次前向的成本，$\beta$ 是验证侧随候选位置数增加的增量。注意 **$c_b$ 与 $K$ 解耦了，$\beta K$ 没有**——这正是 §1 结尾留的那个伏笔。配套实验组 2 在 $\alpha = 0.647$、$c = 0.08$、$c_b = 0.08$、$\beta = 0.02$ 的设定下枚举 $K \in [1, 32]$：
 
 ```text
    γ |      串行 S |      并行 S
@@ -426,23 +620,59 @@ S*：串行 1.7973  →  并行 2.2507
   <text x="16" y="260" font-size="11" fill="#6b7280">合成探针组 2；α=0.647, c=0.08, c_b=0.08, β=0.02。曲线按网格值描点，非实测性能</text>
 </svg>
 
-*图：自绘。数据来自配套实验组 2（[ipynbs commit `762671a`](https://github.com/lrypcy/ipynbs/blob/762671adf77b99f856d638bee296efc25e4eca4b/experiments/speculative-decoding/parallel-drafting/results/stdout.txt)），非论文原图。*
+*图：自绘。数据来自配套实验组 2（[ipynbs commit `8732811`](https://github.com/lrypcy/ipynbs/blob/8732811b95a7007bfa53d3d38e57aa68233f9a85/experiments/speculative-decoding/parallel-drafting/results/stdout.txt)），非论文原图。*
 
 ### 7.1 常数 $\alpha$ 假设在长块上会失真
 
-上面的模型仍把 $\alpha$ 当常数。Red Hat 公布的 P-EAGLE 逐位置接受率（Average 行）给了一个可以反算的一手样本：
+上面的模型仍把 $\alpha$ 当常数。Red Hat 公布的 P-EAGLE 逐位置接受率（Average 行）给了一个可以反算的一手样本——先把统计口径认对，再谈拟合：
 
-| 位置 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+| 位置 $i$ | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |:---|---:|---:|---:|---:|---:|---:|---:|
-| 条件接受率 $a_i$ | 0.749 | 0.499 | 0.319 | 0.204 | 0.131 | 0.085 | 0.055 |
+| 前缀接受率 $u_i$ | 0.749 | 0.499 | 0.319 | 0.204 | 0.131 | 0.085 | 0.055 |
+| 条件接受率 $s_i = u_i / u_{i-1}$ | 0.749 | 0.6662 | 0.6393 | 0.6395 | 0.6422 | 0.6489 | 0.6471 |
 
-每轮产出期望是 $1 + \sum_i a_i = 3.042$，与官方给的 `Avg Length = 3.044` 只差 0.002（四舍五入）。相邻比值 $a_{i+1}/a_i$ 依次是 0.6662 / 0.6393 / 0.6395 / 0.6422 / 0.6489 / 0.6471，均值 0.6472、标准差 0.0092——**几乎是一个常数衰减率**，而不是「每个位置都以同一个 $\alpha$ 被接受」。
+第二行由 $s_i = u_i/u_{i-1}$ 算出，反过来 $\prod_{j \le i} s_j$ 能逐项还原 $u_i$（最大误差 $2.8\times10^{-17}$）。**Red Hat 的 Pos 1–7 是前缀接受率 $u_i$，不是条件接受率**：判据是 $1 + \sum_i u_i = 3.042$，与官方 `Avg Length = 3.044` 只差 0.002（四舍五入）。若误把它当条件率再连乘一次（$E[L] = 1 + \sum_i \prod_{j\le i} u_j$），会得到 2.2698，**低估 25.4%**——这个坑比 $\alpha$ 取常数更致命，因为它连期望的定义都用错了（实验组 6）。
+
+条件接受率 $s_i$ 相邻比值依次是 0.6662 / 0.6393 / 0.6395 / 0.6422 / 0.6489 / 0.6471，均值 0.6472、标准差 0.0092——**几乎是一个常数衰减率**，而不是「每个位置都以同一个 $\alpha$ 被接受」。
 
 ```text
 组 1：官方 Avg Length 3.044 / 反算 3.042 / 比值均值 0.6472 / 常数 α 高估 18.00%
+组 6：u_i 前缀率 vs s_i 条件率；误用连乘低估 25.4%；Πs 还原 u 误差 <1e-10
 ```
 
-把位置 1 的 0.749 当成全局 $\alpha$ 套进第 02 篇的闭式，会算出 $E[T] = 3.5894$，比 3.042 **高估 18.00%**；改用 $a_1 r^{i-1}$ 的双参数模型，误差降到 0.66%。结论不是「第 02 篇错了」，而是它的独立接受假设是**一阶近似**：块越拉长，位置相关的衰减越不能忽略，$\gamma^*$ 与 $S^*$ 都会算偏。这也是 DSpark 要专门加串行修正头把后缀接受率拉平的原因。
+把位置 1 的 0.749 当成全局 $\alpha$ 套进第 02 篇的闭式，会算出 $E[L] = 3.5894$，比 3.042 **高估 18.00%**；改用 $u_i \approx 0.749 \cdot r^{i-1}$ 的双参数模型（等价于一阶几何衰减的条件率），误差降到 0.66%。结论不是「第 02 篇错了」，而是它的独立接受假设是**一阶近似**：块越拉长，位置相关的衰减越不能忽略，$K^*$ 与 $S^*$ 都会算偏。这也是 DSpark 要专门加串行修正头把后缀接受率拉平的原因。
+
+### 7.2 统一收益模型：把分子、分母、决策一起写下来
+
+把前面三处修正合并，得到一个能同时容纳位置衰减、批大小与运行时决策的模型。每轮收益：
+
+$$
+\mathrm{Speedup} = \frac{E[L(K)] \cdot T_{\mathrm{AR}}}{T_d(K) + T_v(K;\, B, L) + T_s}
+$$
+
+分子 $E[L(K)] = 1 + \sum_{i=1}^{K} u_i$ 用前缀接受率，不再假设各位置同分布；分母里 $T_v$ 显式依赖批大小 $B$ 与上下文长度 $L$——[vLLM Adaptive Verification 文档](https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/)把这点讲得很直白：batch=1 时 GPU 受内存带宽限制，多验几个 token 近乎免费；batch=256 时草稿 token 与真实 token 抢同一份算力，被拒绝的每一个都是实打实的浪费。**所以不存在一个跨并发都最优的固定 $K$**。
+
+最优候选长度因此是个argmax，而且应当随请求变化：
+
+$$
+K^* = \arg\max_{K} \frac{E[L(K)]}{T_d(K) + T_v(K;\, B, L) + T_s},
+\qquad
+K_t^* = \arg\max_{k \in \mathcal K} \frac{E[L_t(k)]}{T_d(k) + T_v(k \mid B_t, L_t)}
+$$
+
+第二式是动态版：$k$ 在候选档位集合 $\mathcal K$ 里选，条件是**当步**观测到的批大小与上下文。实验组 6 用一个简化的 $\beta(B) = 0.02(1 + 0.35\log_2 B)$ 展示了这个移动——批次越大，多验一个 token 越贵，$K^*$ 单调下降：
+
+```text
+    B |    β(B) |  K* |      S*
+    1 |  0.0200 |   7 |  2.4934
+   16 |  0.0480 |   5 |  2.1985
+   64 |  0.0620 |   5 |  2.0878
+  256 |  0.0760 |   4 |  2.0022
+```
+
+这里的 $\beta(B)$ 是**合成设定**，不是 vLLM 的实测成本曲线；它要说明的是「$K^*$ 随负载移动」这个结构，具体数值不可用于部署。真实的 $\beta$ 要靠启动时 profiling 得到——这正是 §9 要讲的 vLLM Adaptive Verification 做的事：它测出各 shape 的单步成本，再挑期望每秒接受 token 数最大的那个候选数。
+
+至此本篇的数学模型闭环：**一阶模型（§7）看成本形状 → 位置衰减（§7.1）修正分子 → 联合模型（§7.2）把分母与决策也纳入**。$S_{\mathrm{par}}$ 不是被推翻，而是退化成这个统一模型在「$\alpha$ 恒定、$B=1$、$K$ 固定」下的特例。
 
 ---
 
@@ -475,7 +705,64 @@ S*：串行 1.7973  →  并行 2.2507
 
 ---
 
-## 9. 工程落地：从一份 speculator checkpoint 到能开起来
+## 9. 开源实现与工程成熟度：论文之外还有什么能跑
+
+前面每提到一个方法，都跟着一句「已有开源实现」。但 GitHub 上有仓库，和「能复现、能训练、能进引擎、能上生产」是四件不同的事。这一节按实现成熟度重新看一遍——所有状态均以 2026-11 的官方文档与仓库为准，而不是论文里的「we implement」。
+
+四级判据，从低到高：
+
+1. **Reference**：作者给出复现核心算法的参考实现；
+2. **Training**：有数据处理、隐藏状态抽取、训练脚本、评估与 checkpoint 导出；
+3. **Inference**：真正接进 vLLM / SGLang 等引擎，有可部署路径；
+4. **Production**：有模型权重、跨配置 benchmark、版本发布与持续维护。
+
+| 方法 | 主要实现 | 训练 | 推理集成 | 成熟度判断 |
+|:---|:---|:---|:---|:---|
+| EAGLE-3 | [SafeAILab/EAGLE](https://github.com/SafeAILab/EAGLE) | 完整 | 多引擎 | 四级齐全，成熟基线 |
+| DFlash | [z-lab/dflash](https://github.com/z-lab/dflash) + [Speculators](https://github.com/vllm-project/speculators) | 完整 | vLLM / SGLang | 较完整，多后端可跑 |
+| DSpark | [Speculators](https://github.com/vllm-project/speculators/blob/main/docs/user_guide/algorithms/dspark.md) | 完整 | vLLM / SGLang 生态 | 较完整，覆盖三个核心组件 |
+| P-EAGLE | [Speculators](https://github.com/vllm-project/speculators/blob/main/docs/user_guide/algorithms/peagle.md) | **已弃用**（0.11 移除） | vLLM 仍在 | 版本状态需注意 |
+| AdaptiveSpec | [论文](https://arxiv.org/abs/2609.02897) | 无需训练 | 论文报告 SGLang 实现 | 完整公开源码待核实 |
+| vLLM Adaptive Verification | [vLLM](https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/) | 无需额外训练 | vLLM | 已有 Runtime 实现 |
+| SGLang Adaptive Steps | [SGLang](https://docs.sglang.io/advanced_features/speculative_decoding.html) | 无需训练 | SGLang | 有 Runtime 实现 |
+
+这张表里最该留意的是 **P-EAGLE 的训练状态**：[Speculators 官方 P-EAGLE 文档](https://github.com/vllm-project/speculators/blob/main/docs/user_guide/algorithms/peagle.md)开头就挂着警告——训练将在 0.11 移除，选择它训练会触发 `FutureWarning`。但「训练器弃用」不等于「vLLM 的并行草稿能力被弃用」，两者是不同层面的事；[算法决策指南](https://github.com/vllm-project/speculators/blob/main/docs/user_guide/algorithms/decision_guide.md)现在把 EAGLE-3 标为 Mature，DFlash / DSpark / MTP 标为 "Newer, growing fast"。选型时别把 §3 里的算法比分直接当成工具链成熟度比。
+
+### 9.1 vLLM Adaptive Verification：把 §7.2 的 argmax 做进 Runtime
+
+§7.2 推出 $K^*$ 应该随负载移动，vLLM 已经把这件事做成了独立功能（默认关闭，`--speculative-config` 里 `enable_adaptive_verification: true` 开启）。它对每个 (request, position) 草稿槽算生存概率
+
+$$
+s_{i,j} = \prod_{k=1}^{j} \hat a_{i,k}
+$$
+
+再把所有请求的候选槽放到一起排序，从高到低接纳，直到花完一个**全局预算**。于是会出现这种调度：某个高置信请求的第 5 个位置，优先级高于另一个低置信请求的第 1 个位置——后者可能只验一两个 token 就被裁掉。预算本身来自启动时的 profiling：vLLM 测出各 shape 的单步成本，再挑「期望每秒接受 token 数」最大的候选数，正是 §7.2 那个 argmax 的工程版。
+
+接受概率 $\hat a_{i,k}$ 有三个来源：[官方文档](https://docs.vllm.ai/en/latest/features/speculative_decoding/adaptive_verification/)列得很清楚——DSpark 的 confidence head 直接用；其他 model-based drafter 用在线 logistic estimator，在服务中按 target 的验证结果再校准；suffix decoding 没有 draft logits，用同来源、同匹配长度、同位置的历史接受率估计。
+
+它不是没有代价的。文档列出的限制值得原样记下来：**必须启用完整 CUDA Graph**（`--enforce-eager` 会被直接拒绝，因为 step 成本从捕获的图里 profile）；**不支持 LoRA 与 pipeline parallelism**；attention backend 必须能容忍 device-decided query lengths；没有 confidence head 时 `use_local_argmax_reduction` 不可用。这些是部署前要先核对的硬约束，不是调参能绕过的。
+
+### 9.2 AdaptiveSpec 的代码状态：论文实现 ≠ 上游可复现
+
+[《Margins, Not Windows》](https://arxiv.org/abs/2609.02897)明确报告了在 SGLang 上的实现与实验（margin rule + 动态树两个组件），但核查 SGLang 主仓库、其 speculative runtime、vLLM Speculators 与 Adaptive Verification 后，**没有找到能独立确认完整复现该论文算法的公开上游入口**——论文页只有 arXiv 模板自带的 CatalyzeX 通用链接。这不是说论文没做实现，而是「论文里 report 了」和「读者能拉下来复现」之间还差一层。
+
+尤其要把三个同名/近名概念分开，否则很容易张冠李戴：
+
+- **AdaptiveSpec 论文**（arXiv:2609.02897）：margin 有损验证 + 动态树，本文 §5.2 / §6 讲的就是它；
+- **SGLang Adaptive Speculative Decoding**：基于历史接受长度维护 EMA、按 batch 分档切换 draft steps、带 hysteresis 防抖，**是运行时 draft-length 调度**，官方 quick guidance 明确要求挂在 EAGLE 上且 `--speculative-eagle-topk 1`；
+- **vLLM Adaptive Verification**：§9.1 的生存概率 + 全局预算分配。
+
+三者都在动「验多少 / 接受什么」，但不是一套算法。把 SGLang 的 EMA 控制器写成 AdaptiveSpec 论文的开源实现，是这组材料里最容易犯的错。
+
+### 9.3 量化与并行草稿：一个正在成形的交叉点
+
+审稿与官方仓库都指向同一个趋势：并行草稿正在和量化一起调。[Speculators 决策指南](https://github.com/vllm-project/speculators/blob/main/docs/user_guide/algorithms/decision_guide.md)写明 EAGLE-3 / P-EAGLE / DFlash / DSpark 都可搭配量化 verifier，而 DFlash2 因候选选择器跑在完整词表上，目前需要未量化的 lm_head；[DFlash 官方 README](https://github.com/z-lab/dflash) 更给出一条实测约束——MLX 后端量化 draft / target 时要把 `block_size` 压到 5 以内，因为量化 matmul kernel 在更宽的 verify 面上效率会掉。
+
+这里藏着一个容易混淆的无损口径：**相对于量化 target 的无损，不等于相对于原始 BF16 target 的无损**。Exact speculative sampling 保证的是输出分布与「它验证的那个 target」一致；如果 target 本身已被量化，它保证的是量化后分布，不会自动把高精度模型的分布找回来。把这条写清楚，比多列几个加速数字更有用。
+
+---
+
+## 10. 工程落地：从一份 speculator checkpoint 到能开起来
 
 [Speculators v0.6.0](https://github.com/vllm-project/speculators)把并行草稿做成了四步流水线：准备数据 → 用 vLLM 抽取目标模型隐藏状态 → 训练草稿器 → 部署。以 Qwen3-8B 为例，Red Hat 文档给的取层是第 2 / 18 / 33 层（41 层模型的早、中、后段），拼成 $3 \times 4096$ 的输入；训练参数里 `--num-depths 4`、`--down-sample-ratio 0.7`、`--down-sample-ratio-min 0.2` 正对应 §4 的 COD 几何衰减，`--mask-token-id` 对应 §3.1 的占位符。
 
@@ -508,7 +795,7 @@ vllm serve Qwen/Qwen3-30B-A3B \
 
 ---
 
-## 10. 边界、选型与还没解决的问题
+## 11. 边界、选型与还没解决的问题
 
 把本篇的结论压成一张选型判据表：
 
@@ -521,12 +808,13 @@ vllm serve Qwen/Qwen3-30B-A3B \
 | 允许质量换吞吐 | margin 一类有损验证 | 需同时盯任务指标与放行集合，不能只调 $\tau$ |
 | 没有配对 checkpoint | n-gram / suffix 等无模型方案 | 并行草稿都要与目标模型配对的草稿权重 |
 
-四个仍然开放的问题（**以下为作者判断**）：
+五个仍然开放的问题（**以下为作者判断**）：
 
 1. **验证能否不完整前向**。DSpark 与 AdaptiveSpec 都只在「少验几个 token」上做文章，目标模型仍要跑整层前向；若能让验证成本随接受置信度连续变化，收益模型的 $\beta \gamma$ 项才真正被拆掉。
 2. **位置衰减有没有可迁移的理论形状**。§7.1 的一组样本呈现近乎完美的几何衰减（$r = 0.6472$，标准差 0.0092），但它是单一草稿器、单一评测表的样本；是否随模型、任务、块长保持稳定，还需要更多公开逐位置数据。
-3. **并行草稿与批量调度的联合优化**。草稿一次出整块之后，不同请求的验证宽度差异会变大，continuous batching 里的组批与 KV 分配都要重新算；这已经不是草稿器自己的问题。
-4. **有损验证的可控边界**。§6 的 TV 非单调说明「阈值越低越有损」并不成立；要给出可交付的部署准则，需要把放行集合、任务指标、分布偏差三者一起标定。
+3. **置信度估计准不准、怎么校准**。DSpark 的 confidence head 预测的是「该位置被接受的概率」，不是目标 token 概率，两者不是一回事；原始置信头普遍过度自信。要评估调度是否可靠，需要 ECE / Brier Score 这类校准指标与温度缩放，并按位置、按任务分别标定——§9.1 的在线 estimator 也依赖它的准确性。
+4. **并行草稿与批量调度的联合优化**。草稿一次出整块之后，不同请求的验证宽度差异会变大，continuous batching 里的组批与 KV 分配都要重新算；这已经不是草稿器自己的问题。
+5. **有损验证的可控边界**。§6 的 TV 非单调与多分布差异说明「阈值越低越有损」并不成立；要给出可交付的部署准则，需要把放行集合、目标分布形状、任务指标三者一起标定。
 
 与[第 08 篇](/2026/10/18/specdec-08-future-directions/)的「动态策略与部署形态正在洗牌」对照：2026 年下半年这批工作已经把「动态」落成了具体组件（confidence head、prefix scheduler、margin rule、动态树策略），把「部署形态」落成了具体的开源实现（Speculators、vLLM / SGLang 的 `dflash` / `dspark` 方法）。洗牌没有结束，但牌面比一年前清楚：**收益模型的分子由草稿质量决定，分母里剩下的大头是验证**。
 
@@ -540,11 +828,11 @@ vllm serve Qwen/Qwen3-30B-A3B \
 
 ## 参考
 
-**配套实验**（纯 numpy / CPU，`seed = 20261117`，23 条断言）：
+**配套实验**（纯 numpy / CPU，`seed = 20261117`，29 条断言）：
 
-- [并行草稿与自适应验证：五个合成探针（带输出 notebook）](https://github.com/lrypcy/ipynbs/blob/762671adf77b99f856d638bee296efc25e4eca4b/experiments/speculative-decoding/parallel-drafting/parallel_drafting_lab.ipynb)
-  —— `ipynbs` 仓库 `experiments/speculative-decoding/parallel-drafting/`，commit `762671a`；
-  [固化输出](https://github.com/lrypcy/ipynbs/blob/762671adf77b99f856d638bee296efc25e4eca4b/experiments/speculative-decoding/parallel-drafting/results/stdout.txt)
+- [并行草稿与自适应验证：六个合成探针（带输出 notebook）](https://github.com/lrypcy/ipynbs/blob/8732811b95a7007bfa53d3d38e57aa68233f9a85/experiments/speculative-decoding/parallel-drafting/parallel_drafting_lab.ipynb)
+  —— `ipynbs` 仓库 `experiments/speculative-decoding/parallel-drafting/`，commit `8732811`；
+  [固化输出](https://github.com/lrypcy/ipynbs/blob/8732811b95a7007bfa53d3d38e57aa68233f9a85/experiments/speculative-decoding/parallel-drafting/results/stdout.txt)
 
 **2026 年并行草稿与自适应验证**：
 
