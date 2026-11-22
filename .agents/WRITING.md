@@ -122,7 +122,7 @@ printf '<html><body style="margin:0"><img src="x.svg" style="width:1100px"></bod
   --screenshot=/tmp/x.png --window-size=1150,520 file:///tmp/_w.html
 ```
 
-**画 SVG 的两条硬约束**（都踩过）：
+**画 SVG 的三条硬约束**（都踩过）：
 
 1. **字体用 PingFang SC，不要用 Hiragino Sans GB**——后者有缺字形，中文会渲染成方框，
    而且**不报任何警告**，只有肉眼看 PNG 才发现。`−`(U+2212) 之类的符号也只在新字体里有。
@@ -132,6 +132,16 @@ printf '<html><body style="margin:0"><img src="x.svg" style="width:1100px"></bod
    另外 `bbox_inches="tight"` 会把画到画布外的元素**悄悄扩进画布**，
    所以「元素排到了 x=16 而画布只有 12.6 宽」这种错不会报错，只能靠看 PNG 发现。
    **每次出图都存一份 PNG 肉眼过一遍**，确认没有豆腐块、重叠、越界。
+3. **图里的数学记号必须显式排版，禁止字面量下标 / 上标**（2026-11-22 定）。
+   SVG 是用 `<img src="...svg">` 嵌进正文的，MathJax 只扫主文档 DOM，**进不了被当成图片的
+   SVG 文档**；写 `n_h`、`d_k`、`T*`、`d^2` 只会原样显示，`$n_h$` 也只是多两个美元符。
+   下标写 `<tspan baseline-shift="sub" font-size="0.72em">h</tspan>`，上标把 `sub` 换成
+   `super`（`²` 这类 Unicode 上标也统一走 tspan）。生成脚本里**封成 `sub()` / `sup()`
+   两个 helper 再拼字符串**（范本：`ipynbs/experiments/linear-attention/kv-cache-state/
+   linear_attn_figures.py`），不要在每处手写 tspan。
+   **改生成脚本而不只是改 SVG**——只改产物，下次重跑又退回字面量；改完同步两份：
+   ipynbs 的 `figures/` 与本站的 `assets/img/<系列>/`。验收用上面的无头 Chrome 截图看一遍，
+   确认下标真的下沉、上标上升、字距没有挤在一起。
 
 **Mermaid 的三条约束**（`tools/check_mermaid.py` 只查前两条，**不查语法**）：
 
@@ -246,6 +256,7 @@ TL;DR 不是「正文的压缩版」，而是**读者判断要不要读、结论
 - **公式里禁止裸 `|`**：绝对值写 `\lvert o\rvert`，KL 的双竖线写 `\Vert`（**不要写 `\|`**，
   kramdown 会把它转义成单竖线，表格单元格里还会撞分隔符）。插件生效时 `\|` 也能活，
   但这条规范按「插件可能没生效」写，两边都安全
+- **SVG 配图里的公式不适用本节规则**：图片文档里没有 MathJax，按 §1.0 第三条用 `<tspan>` 排版
 - **正文里的美元金额写 `\$`**：`$5` 与后文的 `$` 会被配成公式。插件已经用「闭合 `$` 后面不能紧跟
   数字」挡掉大部分情况，但写 `\$5` 才是确定的
 - **行内公式优先写「两种构建都不坏」的等价形式**：插件没生效时也能正确渲染，不依赖部署方式
