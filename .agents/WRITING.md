@@ -135,9 +135,9 @@ printf '<html><body style="margin:0"><img src="x.svg" style="width:1100px"></bod
 3. **图里的数学记号必须显式排版，禁止字面量下标 / 上标**（2026-11-22 定）。
    SVG 是用 `<img src="...svg">` 嵌进正文的，MathJax 只扫主文档 DOM，**进不了被当成图片的
    SVG 文档**；写 `n_h`、`d_k`、`T*`、`d^2` 只会原样显示，`$n_h$` 也只是多两个美元符。
-   下标写 `<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">h</tspan>`，上标把 `sub` 换成
-   `super`（不需要 dy）。`dy="-0.08em"` 是必要的：`baseline-shift="sub"` 默认把下标压得太低，
-   抬回约 0.08em 才和正文紧贴又不贴到基线；`²` 这类 Unicode 上标也统一走 tspan。生成脚本里**封成 `sub()` / `sup()`
+   下标写 `<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">h</tspan>`，上标把 `sub` 换成
+   `super`（不需要 dy）。`dy="-0.16em"` 是必要的：`baseline-shift="sub"` 默认把下标压得太低，
+   抬回 0.16em 才和正文紧贴又不贴到基线；`²` 这类 Unicode 上标也统一走 tspan。生成脚本里**封成 `sub()` / `sup()`
    两个 helper 再拼字符串**（范本：`ipynbs/experiments/linear-attention/kv-cache-state/
    linear_attn_figures.py`），不要在每处手写 tspan。
    **改生成脚本而不只是改 SVG**——只改产物，下次重跑又退回字面量；改完同步两份：

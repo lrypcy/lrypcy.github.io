@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="470" viewBox="0 0 1000 470" font-family="PingFang SC, Helvetica, Arial, sans-serif">
 <rect width="1000" height="470" fill="#ffffff"/>
 <text x="28" y="34" font-size="20" font-weight="600" fill="#1f2937">缓存账本：每层 / 每请求，三种口径随上下文长度的变化</text>
-<text x="28" y="56" font-size="12.5" fill="#6b7280">设定 n<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">h</tspan>=32, n<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">kv</tspan>=8 (GQA 4:1), d=128, bf16；状态 1.0000 MiB 恒定，softmax 每 token 4096 bytes</text>
+<text x="28" y="56" font-size="12.5" fill="#6b7280">设定 n<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">h</tspan>=32, n<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">kv</tspan>=8 (GQA 4:1), d=128, bf16；状态 1.0000 MiB 恒定，softmax 每 token 4096 bytes</text>
 <line x1="90.0" y1="395.0" x2="90.0" y2="80.0" stroke="#e5e7eb" stroke-width="1"/>
 <text x="90.0" y="415.0" font-size="11" fill="#6b7280" text-anchor="middle" font-weight="normal">128</text>
 <line x1="156.2" y1="395.0" x2="156.2" y2="80.0" stroke="#e5e7eb" stroke-width="1"/>

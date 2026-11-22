@@ -339,7 +339,7 @@ $$
 
     <rect x="260" y="110" width="160" height="46" rx="4" fill="#dcfce7" stroke="#86efac"/>
     <text x="340" y="126" text-anchor="middle" fill="#14532d" font-weight="600">投影成条件 KV</text>
-    <text x="340" y="141" text-anchor="middle" fill="#14532d">K<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">c</tspan>, V<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">c</tspan> 进草稿 cache</text>
+    <text x="340" y="141" text-anchor="middle" fill="#14532d">K<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">c</tspan>, V<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">c</tspan> 进草稿 cache</text>
     <text x="340" y="153" text-anchor="middle" fill="#14532d">注意力直接读取</text>
 
     <rect x="480" y="110" width="160" height="46" rx="4" fill="#fef3c7" stroke="#fcd34d"/>
@@ -616,8 +616,8 @@ S*：串行 1.7973  →  并行 2.2507
   <text x="158" y="142" font-size="11" fill="#1d4ed8">串行 γ<tspan baseline-shift="super" font-size="0.72em">*</tspan>=3, S<tspan baseline-shift="super" font-size="0.72em">*</tspan>=1.7973</text>
   <text x="255" y="116" font-size="11" fill="#15803d">并行 γ<tspan baseline-shift="super" font-size="0.72em">*</tspan>=7, S<tspan baseline-shift="super" font-size="0.72em">*</tspan>=2.2507</text>
   <text x="400" y="60" font-size="11" fill="#2563eb">串行：1 + γc</text>
-  <text x="400" y="78" font-size="11" fill="#16a34a">并行：1 + c<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">b</tspan> + βγ</text>
-  <text x="16" y="260" font-size="11" fill="#6b7280">合成探针组 2；α=0.647, c=0.08, c<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">b</tspan>=0.08, β=0.02。曲线按网格值描点，非实测性能</text>
+  <text x="400" y="78" font-size="11" fill="#16a34a">并行：1 + c<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">b</tspan> + βγ</text>
+  <text x="16" y="260" font-size="11" fill="#6b7280">合成探针组 2；α=0.647, c=0.08, c<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">b</tspan>=0.08, β=0.02。曲线按网格值描点，非实测性能</text>
 </svg>
 
 *图：自绘。数据来自配套实验组 2（[ipynbs commit `8732811`](https://github.com/lrypcy/ipynbs/blob/8732811b95a7007bfa53d3d38e57aa68233f9a85/experiments/speculative-decoding/parallel-drafting/results/stdout.txt)），非论文原图。*

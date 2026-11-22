@@ -305,30 +305,30 @@ m_i = m_ij
 
 <rect x="24" y="122" width="300" height="46" rx="5" fill="#f8fafc" stroke="#94a3b8"/>
 <text x="34" y="140" font-size="11.5" font-weight="600" fill="#0f172a">运行最大值</text>
-<text x="130" y="140" font-size="11.5" fill="#1d4ed8">m<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">ij</tspan> = max( m<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan> , max<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">j</tspan> s̃<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">ij</tspan> )</text>
+<text x="130" y="140" font-size="11.5" fill="#1d4ed8">m<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">ij</tspan> = max( m<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan> , max<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">j</tspan> s̃<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">ij</tspan> )</text>
 <text x="34" y="158" font-size="10" fill="#64748b">注意 max 作用在「修正之后」的 s̃ 上 —— 这是全部正确性的来源</text>
 
 <rect x="340" y="122" width="316" height="46" rx="5" fill="#f8fafc" stroke="#94a3b8"/>
 <text x="350" y="140" font-size="11.5" font-weight="600" fill="#0f172a">重标定因子</text>
-<text x="446" y="140" font-size="11.5" fill="#b45309">α = 2<tspan baseline-shift="super" font-size="0.72em"> m<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan> − m<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">ij</tspan> </tspan></text>
+<text x="446" y="140" font-size="11.5" fill="#b45309">α = 2<tspan baseline-shift="super" font-size="0.72em"> m<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan> − m<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">ij</tspan> </tspan></text>
 <text x="350" y="158" font-size="10" fill="#64748b">标量，一行一个；把已经算好的旧贡献整体缩回去</text>
 
 <path d="M150 168 L150 190" stroke="#94a3b8" stroke-width="1.1"/>
 <path d="M480 168 L480 190" stroke="#94a3b8" stroke-width="1.1"/>
 
 <rect x="24" y="192" width="300" height="46" rx="5" fill="#fff7ed" stroke="#fdba74"/>
-<text x="34" y="210" font-size="11.5" font-weight="600" fill="#7c2d12">运行分母 l<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan></text>
-<text x="130" y="210" font-size="11.5" fill="#9a3412">l<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan> ← α·l<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan> + Σ<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">j</tspan> 2<tspan baseline-shift="super" font-size="0.72em"> s̃<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">ij</tspan> − m<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">ij</tspan> </tspan></text>
+<text x="34" y="210" font-size="11.5" font-weight="600" fill="#7c2d12">运行分母 l<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan></text>
+<text x="130" y="210" font-size="11.5" fill="#9a3412">l<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan> ← α·l<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan> + Σ<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">j</tspan> 2<tspan baseline-shift="super" font-size="0.72em"> s̃<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">ij</tspan> − m<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">ij</tspan> </tspan></text>
 <text x="34" y="228" font-size="10" fill="#7c2d12">l 只会单调增长：它永远不小于已扫描部分的和</text>
 
 <rect x="340" y="192" width="316" height="46" rx="5" fill="#fff7ed" stroke="#fdba74"/>
-<text x="350" y="210" font-size="11.5" font-weight="600" fill="#7c2d12">运行分子 acc<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan></text>
-<text x="446" y="210" font-size="11.5" fill="#9a3412">acc ← α·acc + Σ<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">j</tspan> 2<tspan baseline-shift="super" font-size="0.72em"> s̃<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">ij</tspan> − m<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">ij</tspan> </tspan>·v<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">j</tspan></text>
+<text x="350" y="210" font-size="11.5" font-weight="600" fill="#7c2d12">运行分子 acc<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan></text>
+<text x="446" y="210" font-size="11.5" fill="#9a3412">acc ← α·acc + Σ<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">j</tspan> 2<tspan baseline-shift="super" font-size="0.72em"> s̃<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">ij</tspan> − m<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">ij</tspan> </tspan>·v<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">j</tspan></text>
 <text x="350" y="228" font-size="10" fill="#7c2d12">矩阵形式就是 acc += P·V，P 是已经归一化到 α 基准的概率块</text>
 
 <path d="M340 268 L172 268" stroke="#2563eb" stroke-width="1.2"/>
 <path d="M180 264 L172 268 L180 272 Z" fill="#2563eb"/>
-<text x="352" y="272" font-size="11.5" fill="#1d4ed8">收尾：o<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan> = acc<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan> / l<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan> ，lse<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan> = m<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan> + log₂ l<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan></text>
+<text x="352" y="272" font-size="11.5" fill="#1d4ed8">收尾：o<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan> = acc<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan> / l<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan> ，lse<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan> = m<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan> + log₂ l<tspan baseline-shift="sub" dy="-0.16em" font-size="0.72em">i</tspan></text>
 <text x="24" y="290" font-size="10.5" fill="#6b7280">对应源码：torch/_inductor/kernel/flex/templates/common.py.jinja:111-140 与 flex_attention.py.jinja:193-216（commit 5c48869）</text>
 </svg>
 
