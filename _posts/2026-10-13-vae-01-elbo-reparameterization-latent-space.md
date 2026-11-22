@@ -283,8 +283,8 @@ $$
 <text x="350" y="188" font-size="12" text-anchor="middle" fill="#111827">q₂</text>
 <text x="608.0" y="48" font-size="11.5" fill="#047857">间隙 = 0</text>
 <rect x="502.0" y="54" width="96" height="114" fill="#2563eb" opacity="0.22" stroke="#2563eb" stroke-width="1.4"/>
-<text x="550" y="188" font-size="12" text-anchor="middle" fill="#111827">q* = 真后验</text>
-<text x="50" y="212" font-size="11.5" fill="#4b5563">同一个 x：换不同的 q 只会抬高或压低 ELBO（蓝），天花板 log pθ(x) 不动；中间那截就是 D_KL(q||pθ(z|x))。</text>
+<text x="550" y="188" font-size="12" text-anchor="middle" fill="#111827">q<tspan baseline-shift="super" font-size="0.72em">*</tspan> = 真后验</text>
+<text x="50" y="212" font-size="11.5" fill="#4b5563">同一个 x：换不同的 q 只会抬高或压低 ELBO（蓝），天花板 log pθ(x) 不动；中间那截就是 D<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">KL</tspan>(q||pθ(z|x))。</text>
 </svg>
 
 ### 3.2 下界有多紧：一个能算出真值的 toy

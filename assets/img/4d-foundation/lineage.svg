@@ -12,13 +12,13 @@
 
   <!-- column 1 -->
   <rect x="20" y="36" width="194" height="40" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
-  <text x="117" y="60" font-size="11" text-anchor="middle" fill="#111827">两张图像 I_i, I_j</text>
+  <text x="117" y="60" font-size="11" text-anchor="middle" fill="#111827">两张图像 I<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan>, I<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">j</tspan></text>
   <line x1="117" y1="76" x2="117" y2="87" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
   <rect x="20" y="88" width="194" height="40" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
   <text x="117" y="112" font-size="11" text-anchor="middle" fill="#111827">共享 ViT 编码器 ×2</text>
   <line x1="117" y1="128" x2="117" y2="139" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
   <rect x="20" y="140" width="194" height="40" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="1.3"/>
-  <text x="117" y="164" font-size="11" text-anchor="middle" fill="#111827">点图头 → X_i, X_j（稠密）</text>
+  <text x="117" y="164" font-size="11" text-anchor="middle" fill="#111827">点图头 → X<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">i</tspan>, X<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">j</tspan>（稠密）</text>
   <line x1="117" y1="180" x2="117" y2="191" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
   <rect x="20" y="192" width="194" height="40" rx="7" fill="#fef3c7" stroke="#d97706" stroke-width="1.3"/>
   <text x="117" y="216" font-size="11" text-anchor="middle" fill="#111827">全局对齐（迭代优化）</text>
@@ -44,7 +44,7 @@
   <text x="563" y="112" font-size="11" text-anchor="middle" fill="#111827">ViT-g ×40 层 → F（冻结）</text>
   <line x1="563" y1="128" x2="563" y2="139" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
   <rect x="466" y="140" width="194" height="40" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
-  <text x="563" y="157" font-size="10.5" text-anchor="middle" fill="#111827">q = (u, v, t_src, t_tgt, t_cam)</text>
+  <text x="563" y="157" font-size="10.5" text-anchor="middle" fill="#111827">q = (u, v, t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">src</tspan>, t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">tgt</tspan>, t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">cam</tspan>)</text>
   <text x="563" y="171" font-size="10.5" text-anchor="middle" fill="#111827">+ 9×9 局部 RGB patch</text>
   <line x1="563" y1="180" x2="563" y2="191" stroke="#64748b" stroke-width="1.4" marker-end="url(#ar)"/>
   <rect x="466" y="192" width="194" height="40" rx="7" fill="#ecfdf5" stroke="#059669" stroke-width="1.3"/>

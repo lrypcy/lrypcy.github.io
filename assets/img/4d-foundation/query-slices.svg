@@ -31,9 +31,9 @@
   <text x="76" y="317" font-size="10" text-anchor="end" fill="#475569">原点</text>
 
   <!-- axis labels -->
-  <text x="289" y="276" font-size="11" font-weight="700" fill="#111827">t_src</text>
-  <text x="82" y="120" font-size="11" font-weight="700" text-anchor="end" fill="#111827">t_tgt</text>
-  <text x="198" y="338" font-size="11" font-weight="700" fill="#111827">t_cam</text>
+  <text x="289" y="276" font-size="11" font-weight="700" fill="#111827">t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">src</tspan></text>
+  <text x="82" y="120" font-size="11" font-weight="700" text-anchor="end" fill="#111827">t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">tgt</tspan></text>
+  <text x="198" y="338" font-size="11" font-weight="700" fill="#111827">t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">cam</tspan></text>
 
   <!-- in-cube slice labels: white halo keeps them readable over the lines -->
   <g font-size="10.5" stroke="#ffffff" stroke-width="3.5" paint-order="stroke" stroke-linejoin="round">
@@ -50,19 +50,19 @@
 
   <rect x="412" y="70" width="12" height="12" rx="3" fill="#7c3aed"/>
   <text x="432" y="80" font-size="11" font-weight="700" fill="#111827">点轨迹</text>
-  <text x="432" y="97" font-size="10" fill="#475569">t_src 固定；t_tgt = t_cam = 1…T</text>
+  <text x="432" y="97" font-size="10" fill="#475569">t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">src</tspan> 固定；t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">tgt</tspan> = t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">cam</tspan> = 1…T</text>
 
   <rect x="412" y="118" width="12" height="12" rx="3" fill="#2563eb"/>
   <text x="432" y="128" font-size="11" font-weight="700" fill="#111827">点云</text>
-  <text x="432" y="145" font-size="10" fill="#475569">t_src = t_tgt = 1…T；t_cam 固定</text>
+  <text x="432" y="145" font-size="10" fill="#475569">t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">src</tspan> = t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">tgt</tspan> = 1…T；t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">cam</tspan> 固定</text>
 
   <rect x="412" y="166" width="12" height="12" rx="3" fill="#059669"/>
   <text x="432" y="176" font-size="11" font-weight="700" fill="#111827">深度图</text>
-  <text x="432" y="193" font-size="10" fill="#475569">t_src = t_tgt = t_cam = t；只取 Z</text>
+  <text x="432" y="193" font-size="10" fill="#475569">t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">src</tspan> = t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">tgt</tspan> = t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">cam</tspan> = t；只取 Z</text>
 
   <rect x="412" y="214" width="12" height="12" rx="3" fill="#d97706"/>
   <text x="432" y="224" font-size="11" font-weight="700" fill="#111827">外参</text>
-  <text x="432" y="241" font-size="10" fill="#475569">t_src = t_tgt = i；t_cam = j</text>
+  <text x="432" y="241" font-size="10" fill="#475569">t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">src</tspan> = t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">tgt</tspan> = i；t<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">cam</tspan> = j</text>
 
   <rect x="412" y="262" width="12" height="12" rx="3" fill="#0891b2"/>
   <text x="432" y="272" font-size="11" font-weight="700" fill="#111827">内参</text>

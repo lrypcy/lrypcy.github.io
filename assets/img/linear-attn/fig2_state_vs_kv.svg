@@ -24,9 +24,9 @@
 <text x="72.0" y="324.0" font-size="12" fill="#1f2937" text-anchor="start" font-weight="normal">token 6:  k, v</text>
 <text x="240.0" y="324.0" font-size="11.5" fill="#6b7280" text-anchor="start" font-weight="normal">→ 追加，不覆盖</text>
 <text x="62.0" y="348.0" font-size="12" fill="#6b7280" text-anchor="start" font-weight="normal">… 一直到第 T 个 token</text>
-<text x="40.0" y="386.0" font-size="13" fill="#dc2626" text-anchor="start" font-weight="600">2 n<tspan baseline-shift="sub" font-size="0.72em">kv</tspan> d T b  字节（随 T 线性增长）</text>
+<text x="40.0" y="386.0" font-size="13" fill="#dc2626" text-anchor="start" font-weight="600">2 n<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">kv</tspan> d T b  字节（随 T 线性增长）</text>
 <text x="40.0" y="410.0" font-size="12" fill="#1f2937" text-anchor="start" font-weight="normal">前缀只读 → 按 block 哈希复用，可任意 fork</text>
-<text x="40.0" y="432.0" font-size="11" fill="#6b7280" text-anchor="start" font-weight="normal">DeepSeek-V2 Table 1：GQA 2 n<tspan baseline-shift="sub" font-size="0.72em">g</tspan> d<tspan baseline-shift="sub" font-size="0.72em">h</tspan> l，MLA (d<tspan baseline-shift="sub" font-size="0.72em">c</tspan>+d<tspan baseline-shift="sub" font-size="0.72em">h</tspan><tspan baseline-shift="super" font-size="0.72em">R</tspan>) l</text>
+<text x="40.0" y="432.0" font-size="11" fill="#6b7280" text-anchor="start" font-weight="normal">DeepSeek-V2 Table 1：GQA 2 n<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">g</tspan> d<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">h</tspan> l，MLA (d<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">c</tspan>+d<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">h</tspan><tspan baseline-shift="super" font-size="0.72em">R</tspan>) l</text>
 <text x="528.0" y="96.0" font-size="15" fill="#2563eb" text-anchor="start" font-weight="600">linear attention：状态是一份矩阵，不是历史</text>
 <rect x="540.0" y="112.0" width="420.0" height="250.0" rx="4" fill="#eff6ff" stroke="#2563eb" stroke-width="1.4" stroke-dasharray="5,4"/>
 <rect x="570.0" y="140.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
@@ -69,14 +69,14 @@
 <rect x="720.0" y="252.0" width="24.0" height="22.0" rx="4" fill="#93c5fd"/>
 <rect x="750.0" y="252.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
 <rect x="780.0" y="252.0" width="24.0" height="22.0" rx="4" fill="#bfdbfe"/>
-<text x="570.0" y="292.0" font-size="13.5" fill="#1f2937" text-anchor="start" font-weight="normal">S<tspan baseline-shift="sub" font-size="0.72em">t</tspan> = α S<tspan baseline-shift="sub" font-size="0.72em">t-1</tspan> + φ(k<tspan baseline-shift="sub" font-size="0.72em">t</tspan>) v<tspan baseline-shift="sub" font-size="0.72em">t</tspan><tspan baseline-shift="super" font-size="0.72em">T</tspan></text>
+<text x="570.0" y="292.0" font-size="13.5" fill="#1f2937" text-anchor="start" font-weight="normal">S<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">t</tspan> = α S<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">t-1</tspan> + φ(k<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">t</tspan>) v<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">t</tspan><tspan baseline-shift="super" font-size="0.72em">T</tspan></text>
 <text x="570.0" y="316.0" font-size="11.5" fill="#6b7280" text-anchor="start" font-weight="normal">每步就地覆盖同一块内存，没有第 t 份副本</text>
-<text x="880.0" y="180.0" font-size="13" fill="#2563eb" text-anchor="middle" font-weight="600">d<tspan baseline-shift="sub" font-size="0.72em">k</tspan> × d<tspan baseline-shift="sub" font-size="0.72em">v</tspan></text>
-<text x="880.0" y="202.0" font-size="12" fill="#6b7280" text-anchor="middle" font-weight="normal">× n<tspan baseline-shift="sub" font-size="0.72em">h</tspan> 头</text>
+<text x="880.0" y="180.0" font-size="13" fill="#2563eb" text-anchor="middle" font-weight="600">d<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">k</tspan> × d<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">v</tspan></text>
+<text x="880.0" y="202.0" font-size="12" fill="#6b7280" text-anchor="middle" font-weight="normal">× n<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">h</tspan> 头</text>
 <path d="M 790 120 A 40 40 0 0 1 830 160" fill="none" stroke="#2563eb" stroke-width="2"/>
 <text x="870.0" y="128.0" font-size="11.5" fill="#2563eb" text-anchor="start" font-weight="normal">in-place</text>
-<text x="540.0" y="386.0" font-size="13" fill="#2563eb" text-anchor="start" font-weight="600">n<tspan baseline-shift="sub" font-size="0.72em">h</tspan> d<tspan baseline-shift="super" font-size="0.72em">2</tspan> b  字节（与 T 无关，但仍占显存）</text>
+<text x="540.0" y="386.0" font-size="13" fill="#2563eb" text-anchor="start" font-weight="600">n<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">h</tspan> d<tspan baseline-shift="super" font-size="0.72em">2</tspan> b  字节（与 T 无关，但仍占显存）</text>
 <text x="540.0" y="410.0" font-size="12" fill="#1f2937" text-anchor="start" font-weight="normal">不可回滚 → 整段 snapshot + copy-on-write + 尾部重放</text>
 <text x="540.0" y="432.0" font-size="11" fill="#6b7280" text-anchor="start" font-weight="normal">conv state / normalizer z / SSM state 同样是每层固定状态</text>
-<text x="500.0" y="478.0" font-size="12" fill="#0f766e" text-anchor="middle" font-weight="600">交叉点 T<tspan baseline-shift="super" font-size="0.72em">*</tspan> = n<tspan baseline-shift="sub" font-size="0.72em">h</tspan> d / (2 n<tspan baseline-shift="sub" font-size="0.72em">kv</tspan>)：GQA 4:1、d=128 时是 256 token</text>
+<text x="500.0" y="478.0" font-size="12" fill="#0f766e" text-anchor="middle" font-weight="600">交叉点 T<tspan baseline-shift="super" font-size="0.72em">*</tspan> = n<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">h</tspan> d / (2 n<tspan baseline-shift="sub" dy="-0.08em" font-size="0.72em">kv</tspan>)：GQA 4:1、d=128 时是 256 token</text>
 </svg>
