@@ -44,6 +44,8 @@ $M_z$、$M_{\mathrm{conv}}$、$M_{\mathrm{aux}}$、$n_{\mathrm{state}}$ 是本�
 | $\beta_t$ | delta rule 的写入强度（学习率） | [arXiv:2412.06464](https://arxiv.org/abs/2412.06464) 公式 10 |
 | $n_h,n_{kv},d,L,T$ | query 头数 / KV 头数 / 每头维度 / 层数 / 序列长度 | [DeepSeek-V2 Table 1](https://arxiv.org/html/2405.04434v5) 的口径 |
 | $b$ | 简化模型里 KV 与状态共用的每元素字节数（本文记账定义） | bf16 时 $b=2$ |
+| $N_{\mathrm{KV}}(T)$ | 单层单请求累积的 K/V 元素数（本文记账定义） | §1 的字节账 |
+| $F(C),B(C)$ | 块大小 $C$ 下的解析块内 FLOPs 与块间状态逻辑字节（本文记账定义） | §7，不是运行时间模型 |
 | $b_{\mathrm{kv}},b_{\mathrm{state}},n_{\mathrm{state}}$ | 一般口径下两侧的 dtype 字节数、每层独立状态的份数（本文记账定义） | 两者 dtype 可不同，§3 |
 | $M_z,M_{\mathrm{conv}},M_{\mathrm{aux}}$ | normalizer / 卷积状态 / 其余辅助状态的字节数（本文记账定义） | §3 一般式 |
 | $T^\ast$ | 固定状态与逐 token KV 的字节数交叉点（本文记账定义） | §3 推导 |
@@ -74,7 +76,17 @@ o_t=\frac{\sum_{j=1}^{t}\exp(q_t^\top k_j/\sqrt{d})\,v_j}{\sum_{j=1}^{t}\exp(q_t
 $$
 
 因为 $\exp(q_t^\top k_j)$ 依赖当前 $q_t$，$k_j,v_j$ 无法被压成一个与 $t$ 无关的量，只能原样存下来。
-于是每层每请求要缓存 $2\,n_{kv}\,d\,T$ 个元素（K 与 V 各一份），乘上 $b$ 就是字节数。
+这笔字节账按「每 token → 每层每请求」两步推：一个 KV 头每 token 存一对 $d$ 维向量，共 $2d$ 个元素；
+$n_{kv}$ 个头是 $2n_{kv}d$，再乘历史长度 $T$ 与每元素字节数 $b$：
+
+$$
+\begin{aligned}
+N_{\mathrm{KV}}(T)&=2d\,n_{kv}\,T,\\
+M_{\mathrm{softmax}}(T)&=N_{\mathrm{KV}}(T)\,b=2n_{kv}dTb.
+\end{aligned}
+$$
+
+这里的 $2$ 只是 K 与 V 各一份，没有乘层数 $L$；本文的账本一直按单层记（§3 会把口径摊开）。
 GQA 让多个 query 头共享一组 KV 头，把这个数按 $n_h/n_{kv}$ 缩小
 （[arXiv:2305.13245](https://arxiv.org/abs/2305.13245)）；DeepSeek-V2 的 MLA 把 K/V 联合压成一个 latent，
 每层每 token 只存 $d_c+d_h^R=576$ 个元素
@@ -124,14 +136,25 @@ Mamba 层的 `state_size` 与 attention 层的 `kv_hidden_size` 不是一回事�
 
 ## §2 三种写法是同一个东西，但与 softmax 不是
 
-把 softmax 核换成 $\phi(q)^\top\phi(k)$ 型的可分解核，第 $t$ 步输出写成
+把 softmax 核换成 $\phi(q)^\top\phi(k)$ 型的可分解核。先只动分子：令 $\phi(q_t),\phi(k_j)\in\mathbb{R}^{d_k}$、$v_j\in\mathbb{R}^{d_v}$，标量核乘向量可以改写成外积乘向量：
 
 $$
-o_t=\frac{\sum_{j\le t}\phi(q_t)^\top\phi(k_j)\,v_j}{\sum_{j\le t}\phi(q_t)^\top\phi(k_j)}
-=\frac{\phi(q_t)^\top\left(\sum_{j\le t}\phi(k_j)v_j^\top\right)}{\phi(q_t)^\top\left(\sum_{j\le t}\phi(k_j)\right)}
+\phi(q_t)^\top\phi(k_j)\,v_j=\phi(q_t)^\top\big(\phi(k_j)v_j^\top\big)
 $$
 
-括号里两项都能递推。记
+括号里是 $d_k\times d_v$ 的矩阵。对 $j\le t$ 求和时 $\phi(q_t)$ 与 $j$ 无关，可以提到求和号外；分母把 $v_j$ 换成标量 1，得到
+
+$$
+\begin{aligned}
+\sum_{j\le t}\phi(q_t)^\top\phi(k_j)v_j
+&=\phi(q_t)^\top\sum_{j\le t}\phi(k_j)v_j^\top=\phi(q_t)^\top S_t,\\
+\sum_{j\le t}\phi(q_t)^\top\phi(k_j)
+&=\phi(q_t)^\top\sum_{j\le t}\phi(k_j)=\phi(q_t)^\top z_t,\\
+o_t&=\frac{\phi(q_t)^\top S_t}{\phi(q_t)^\top z_t}.
+\end{aligned}
+$$
+
+这两个累加项都能递推。记
 
 $$
 S_t=S_{t-1}+\phi(k_t)v_t^\top,\qquad z_t=z_{t-1}+\phi(k_t)
@@ -218,15 +241,21 @@ M_{\mathrm{state}}=n_{\mathrm{state}}\,d_k\,d_v\,b_{\mathrm{state}}+M_z+M_{\math
 $$
 
 其中 $M_z$、$M_{\mathrm{conv}}$、$M_{\mathrm{aux}}$ 分别是 normalizer、卷积状态与其余辅助状态；
-两侧 dtype 分开写，是因为引擎常把它们分别配置（§9）。令两者相等，交叉点只由
-「固定那一侧的总字节」与「每 token 那一侧的字节」决定：
+两侧 dtype 分开写，是因为引擎常把它们分别配置（§9）。令两者相等就能解出交叉点：
 
 $$
-T^\ast=\frac{M_{\mathrm{state}}}{2\,n_{kv}\,d_{kv}\,b_{\mathrm{kv}}}
+\begin{aligned}
+2n_{kv}d_{kv}b_{kv}\,T^\ast
+&=n_{\mathrm{state}}d_kd_vb_{\mathrm{state}}+M_z+M_{\mathrm{conv}}+M_{\mathrm{aux}},\\
+T^\ast&=\frac{n_{\mathrm{state}}d_kd_vb_{\mathrm{state}}+M_z+M_{\mathrm{conv}}+M_{\mathrm{aux}}}{2n_{kv}d_{kv}b_{\mathrm{kv}}}
+=\frac{M_{\mathrm{state}}}{2n_{kv}d_{kv}b_{\mathrm{kv}}}.
+\end{aligned}
 $$
 
-换成 MLA 的 latent、换成 fp32 状态、或把 conv state 算进来，都只是替换这两个量，
-式子的形式不变。按架构把两侧填开，就是一张缓存账本（每层、单请求，暂略辅助状态）：
+分母是「每多一个 token 要多存多少字节」，分子是「与 $T$ 无关的固定字节」，
+两者相除的量纲是 token。换成 MLA 的 latent、换成 fp32 状态、或把 conv state 算进来，
+都只是替换这两个量，式子的形式不变。按架构把两侧填开，
+就是一张缓存账本（每层、单请求，暂略辅助状态）：
 
 | 架构 | 每 token 历史缓存 | 固定状态 | 核心特点 |
 |:---|:---|:---|:---|
@@ -250,6 +279,10 @@ $$
 $$
 T^\ast=\frac{n_h\,d^2}{2\,n_{kv}\,d}=\frac{n_h\,d}{2\,n_{kv}}
 $$
+
+约掉的是两侧共用的 $b$ 与一个 $d$：$n_hd^2b/(2n_{kv}db)=n_hd/(2n_{kv})$。
+所以简化模型下的交叉点与 dtype 字节数无关（前提是两侧同 dtype），只由头数比与每头维度决定；
+dtype 改变的是两侧各自的绝对字节，不改变它们相等的那一点。
 
 $n_h=n_{kv}$ 时退化为 $d/2$；GQA 把 $n_{kv}$ 压小，交叉点会被放大
 （分母小了，状态相对更贵）。代入一组工程上常见的配置
@@ -292,12 +325,22 @@ $n_{\mathrm{state}}$ 已按 $n_h$ 计入上面那份 1 MiB；
 左半段紫线在红线之上——短上下文里混合架构的缓存反而更大；
 右半段两条线逐渐拉开，但减少比例只能趋近 75%，永远到不了。
 
-在简化模型下把混合记为线性层占比 $f$，减少比例的闭式是
+在简化模型下把混合记为线性层占比 $f$，全注意力层占比就是 $1-f$。
+每层每请求的总字节是两类层按占比加权之和，相对纯 softmax 的减少比例可以一步步化简：
 
 $$
-\text{save}(T)=1-\frac{(1-f)\,M_{\mathrm{softmax}}(T)+f\,M_{\mathrm{state}}}{M_{\mathrm{softmax}}(T)}
-=f\left(1-\frac{T^\ast}{T}\right)
+\begin{aligned}
+\text{save}(T)
+&=1-\frac{(1-f)M_{\mathrm{softmax}}(T)+fM_{\mathrm{state}}}{M_{\mathrm{softmax}}(T)}\\
+&=1-\left((1-f)+f\,\frac{M_{\mathrm{state}}}{M_{\mathrm{softmax}}(T)}\right)\\
+&=f\left(1-\frac{M_{\mathrm{state}}}{M_{\mathrm{softmax}}(T)}\right)
+=f\left(1-\frac{T^\ast}{T}\right).
+\end{aligned}
 $$
+
+最后一步用 $M_{\mathrm{state}}=2n_{kv}db\,T^\ast$ 与 $M_{\mathrm{softmax}}(T)=2n_{kv}db\,T$：
+同一个每 token 系数在分子分母里约掉。因此 $f$ 是这条曲线的上界，任意有限 $T$ 下
+$\text{save}(T)<f$。
 
 $f=3/4$ 时就是 $0.75(1-256/T)$：4K 是 70.3125%，1M 是 74.9817%。
 这条式子把「官方 75%」和「显存口径」分得干干净净（§6 再对表）。
@@ -333,11 +376,18 @@ S_t=\sum_{j\le t}v_j\phi(k_j)^\top,\qquad
 \hat v_j=S_t\phi(k_j)=\sum_{i\le t}\big(\phi(k_j)^\top\phi(k_i)\big)v_i
 $$
 
-把 $N$ 个 key 堆成 $K_\phi$，记 Gram 矩阵 $G=K_\phi K_\phi^\top$，
-整张读回表就是 $\hat V=GV$。于是有三件不同的事，不能混为一谈：
+按行排布把 $N$ 个 key 与 value 堆成 $K_\phi\in\mathbb{R}^{N\times d_k}$、$V\in\mathbb{R}^{N\times d_v}$，
+则 $S=V^\top K_\phi\in\mathbb{R}^{d_v\times d_k}$，Gram 矩阵 $G=K_\phi K_\phi^\top\in\mathbb{R}^{N\times N}$，
+整张读回表是 $\hat V=GV$（每行是一个 $\hat v_j^\top$）。第一条的秩上界直接来自矩阵乘的秩不等式：
 
-1. **状态维度**：$S_t$ 只有 $d_k d_v$ 个元素，$\mathrm{rank}(S_t)\le\min(N,d_k,d_v)$。
-   这是自由度的上界，不是「能记住几对关联」的答案。
+$$
+\mathrm{rank}(S)=\mathrm{rank}(V^\top K_\phi)\le\min\{\mathrm{rank}(V),\mathrm{rank}(K_\phi)\}\le\min(N,d_k,d_v).
+$$
+
+于是有三件不同的事，不能混为一谈：
+
+1. **状态维度**：$S_t$ 只有 $d_k d_v$ 个元素，上式给出的是自由度上界，
+   不是「能记住几对关联」的答案。
 2. **记忆容量**：能否把 $N$ 对关联无损写进状态，取决于是否存在线性映射 $W$ 使
    $K_\phi W=V$；$N\le d_k$ 时通常有解，$N>d_k$ 时一般没有（组 3 的最小二乘残差）。
 3. **读回串扰**：即便映射存在，用 $k_j$ 去读时其他 key 的贡献由 $G$ 的非对角元给出，
@@ -370,8 +420,8 @@ $$
 
 注意 $\mathrm{rank}(S)=6$ 是因为 $d_v=6$ 也压住了秩；
 真实模型里 $d_k=d_v=128$，天花板会高得多，但**有限**这一点不变。
-「最小二乘残差」从机器精度跳到 $0.72$ 以上，只说明该 $K$ 下不存在精确的
-线性读回映射，不等于真实模型在这些 $N$ 上的 recall 准确率；
+最小二乘那一列的突变也能从形状读出来：解 $KW=V$ 时 $K$ 是 $N\times d_k$、$W$ 是 $d_k\times d_v$、$V$ 是 $N\times d_v$。$N\le d_k$ 且 $K$ 行满秩时，方程数不超过未知量，通常存在精确解；$N>d_k$ 时方程数多于未知量，随机 $V$ 一般不在 $K$ 的列空间里，残差于是从机器精度跳到 $0.72$ 以上。
+这只说明该 $K$ 下不存在精确的线性读回映射，不等于真实模型在这些 $N$ 上的 recall 准确率；
 读回误差随 $N$ 单调上升，才是 $\hat V=GV$ 里非对角元累积的直接后果。
 Gated DeltaNet 论文 §1 把这个现象叫 memory collisions：
 「可存储的正交 key-value 对数受模型维度限制，序列长度超过该维度时碰撞不可避免」
@@ -393,9 +443,18 @@ $$
 S_t=S_{t-1}\left(I-\beta_t k_t k_t^\top\right)+\beta_t v_t k_t^\top
 $$
 
-这是 Gated DeltaNet 公式 10 去掉门控 $\alpha_t$ 后的形态，$\beta_t=1$ 且 $k_t$ 单位时，
-同一个 key 写两次，读回的是第二次的 $v$；加性外积则读回两次之和。
-组 3 里这两个数分别是 $0.000\mathrm{e}+00$ 与 $1.8337$。
+这个式子就是「先擦旧值、再写新值」两步合并。按 §4 的 $d_v\times d_k$ 排布，用 $k_t$ 读回时 $S_{t-1}k_t$ 是旧值，直接把右边乘到 $k_t$ 上：
+
+$$
+\begin{aligned}
+S_t k_t
+&=S_{t-1}(I-\beta_t k_t k_t^\top)k_t+\beta_t v_t(k_t^\top k_t)\\
+&=S_{t-1}k_t-\beta_t S_{t-1}k_t\,(k_t^\top k_t)+\beta_t v_t(k_t^\top k_t).
+\end{aligned}
+$$
+
+$k_t$ 单位时 $k_t^\top k_t=1$，再取 $\beta_t=1$，上式收成 $S_t k_t=v_t$：同一个 key 写两次，读回的是新值。加性外积 $S_t=S_{t-1}+v_t k_t^\top$ 则给 $S_t k_t=S_{t-1}k_t+v_t$，读回的是两次 value 之和；组 3 用随机 value，这两个误差分别是 $0.000\mathrm{e}+00$ 与 $1.8337$。
+这是 Gated DeltaNet 公式 10 去掉门控 $\alpha_t$ 后的形态。
 Qwen 官方把整条证据链压成一句工程判断：「linear attention is fast but weak at recall」
 （[Qwen3-Next 官方博客](https://qwen.ai/blog?id=4074cca80393150c248e508aa62983f9cb7d27cd)）。
 
@@ -576,6 +635,20 @@ chunkwise 形式「rich in matrix multiplications」，才能吃到矩阵乘硬�
   256 |       268.4355 |             0.5000 |       134.2177
 ```
 
+表里两列都能从形状推出来，不需要背。每块长度 $C$，块内按 $QK^\top$ 与 $AV$ 两次矩阵乘计，每次的量级是 $C^2d$，所以一块是 $2C^2d$；共 $T/C$ 块：
+
+$$
+F(C)=\frac{T}{C}\cdot 2C^2d=2CdT.
+$$
+
+块间每块传一份 $d\times d$ 状态，按每元素 $b$ 字节、共 $T/C$ 块，逻辑传输量是
+
+$$
+B(C)=\frac{T}{C}\cdot d^2b.
+$$
+
+两者相乘 $F(C)B(C)=2T^2d^3b$，$C$ 正好约掉——这就是表中乘积恒定的来源。把 $F$ 换成 M（除以 $10^6$）、$B$ 换成 MiB（除以 $2^{20}$），代入 $T=4096$、$d=128$、$b=2$：$C=16$ 时 $F=2\times16\times128\times4096=16.7772$ M，$B=(4096/16)\times128^2\times2=8.0000$ MiB。
+
 $C$ 翻倍，块内算力翻倍，块间状态传递减半，乘积恒定——**块大小是一个权衡旋钮，不是免费的加速开关**。
 但乘积恒定只是两条解析曲线的代数恒等式，不是运行时间模型：它把两项按同等权重相乘，
 既不含各自的单位成本，也不含调度与同步开销，推不出最优 $C$。
@@ -683,8 +756,20 @@ GLA §4.3 给出一手说明：朴素 parallel 形式需要 **log-space 的广�
 （[arXiv:2312.06635](https://arxiv.org/abs/2312.06635)）。
 xLSTM 同样为指数门控可能溢出而加 stabilizer state，并给 mLSTM 的分母加下界。
 
-组 5 用两个合成探针把量级跑出来。参考精度与误差度量先说清：第一行的参考值是
-fp64 闭式累加的 $S_T=\sum_j\alpha^{T-1-j}k_j v_j^\top$（$\alpha=0.999$、$T=20000$、$d=8$），
+先看第一行的闭式从哪来。把 $S_t=\alpha S_{t-1}+k_t v_t^\top$ 逐项展开：
+
+$$
+\begin{aligned}
+S_T&=\alpha S_{T-1}+k_T v_T^\top\\
+&=\alpha\big(\alpha S_{T-2}+k_{T-1}v_{T-1}^\top\big)+k_T v_T^\top\\
+&=\sum_{j=1}^{T}\alpha^{T-j}k_j v_j^\top.
+\end{aligned}
+$$
+
+探针用 fp64 直接算最后这个和当真值，再与 fp32 / fp16 的逐步递推比，误差只来自递推中的舍入。
+
+组 5 用两个合成探针把量级跑出来。参考精度与误差度量先说清：第一行的参考值就是这个
+fp64 闭式累加 $S_T=\sum_{j=1}^{T}\alpha^{T-j}k_j v_j^\top$（$\alpha=0.999$、$T=20000$、$d=8$），
 误差取 Frobenius 范数的相对偏差 $\lVert \hat S-S_T\rVert_F/\lVert S_T\rVert_F$；
 第二行的参考值是 fp64 的 $\exp(\sum\log\gamma)$，$\gamma\sim U(0.70,0.99)$、$C=128$，
 误差取标量相对偏差。
@@ -702,6 +787,11 @@ fp64 闭式累加的 $S_T=\sum_j\alpha^{T-1-j}k_j v_j^\top$（$\alpha=0.999$、$
 第二行是「块内衰减连乘」：128 个 0.70–0.99 的因子相乘，真值 1.824637e-10 已落在
 fp16 的 subnormal 区，直接连乘得到 5.960464e-08（相对误差 325.7 倍），
 改成 log-space 求和再取指数，相对误差回到 8.729e-07。
+两个算法用的是同一个恒等式 $\prod_i\gamma_i=\exp\big(\sum_i\log\gamma_i\big)$，
+区别只在中间量被表示在哪里：直接连乘的每一步都要用 fp16 表示，乘过 fp16 最小的 subnormal
+$2^{-24}=5.960464\times10^{-8}$ 之后就只剩 0 或这个最小格点；128 个因子的真值
+$1.824637\times10^{-10}$ 只有该格点的约 $1/327$，所以表里 fp16 直接连乘得到的正好是
+$2^{-24}$ 本身。对数域把连乘换成求和，直到最后一步取指数才生成结果，中间不再经过 subnormal。
 这正是 GLA 论文那句「log-space / full precision」的数值来源。
 
 工程侧对应的是状态 dtype 开关，而不是一条定理：
